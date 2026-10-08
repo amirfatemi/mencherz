@@ -86,7 +86,7 @@ const POOLS: Record<ReactionGroup, string[]> = {
 };
 
 /** How long a reaction stays up. */
-export const REACTION_MS = 5000;
+export const REACTION_MS = 8000;
 /** Knock-outs of pieces at or past this square (the second half of the route, home column included) set off reactions. */
 export const HURT_FROM = EARLY_UNTIL + 1;
 

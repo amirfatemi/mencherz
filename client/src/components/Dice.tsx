@@ -11,50 +11,8 @@ const PIPS: Record<number, [number, number][]> = {
   6: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2]],
 };
 
-/** The two side faces shown next to each top face, as on a real die (opposite faces add up to 7). */
-const SIDES: Record<number, [number, number]> = {
-  1: [2, 3],
-  2: [6, 3],
-  3: [1, 5],
-  4: [5, 1],
-  5: [3, 6],
-  6: [4, 2],
-};
-
-// Isometric cube: each face is a 100x100 square mapped onto one rhombus of a hexagon of radius R.
-const R = 50;
-const C = 0.866 * R;
-const FACES = {
-  top: `matrix(${C / 100} ${R / 200} ${-C / 100} ${R / 200} 0 ${-R})`,
-  left: `matrix(${C / 100} ${R / 200} 0 ${R / 100} ${-C} ${-R / 2})`,
-  right: `matrix(${C / 100} ${-R / 200} 0 ${R / 100} 0 0)`,
-};
-const HEX = `0,${-R} ${C},${-R / 2} ${C},${R / 2} 0,${R} ${-C},${R / 2} ${-C},${-R / 2}`;
-
-function Face({ n, side, rim }: { n: number; side: keyof typeof FACES; rim: string }) {
-  const big = n === 1;
-  return (
-    <g transform={FACES[side]}>
-      <rect x={1.5} y={1.5} width={97} height={97} rx={14} fill={`url(#die-${side})`} />
-      {PIPS[n].map(([cx, cy]) => {
-        const x = 24 + cx * 26;
-        const y = 24 + cy * 26;
-        const r = big ? 17 : 11.2;
-        return (
-          <g key={`${cx}${cy}`}>
-            {/* A sunken pip: a dark rim on the upper edge, a glossy white bead, and a spot of light. */}
-            <circle cx={x} cy={y} r={r + 1.8} fill="rgba(255,255,255,0.35)" />
-            <circle cx={x - 0.6} cy={y - 0.8} r={r + 0.6} fill={rim} />
-            <circle cx={x} cy={y} r={r} fill="url(#die-pip)" />
-            <ellipse cx={x - r * 0.25} cy={y - r * 0.36} rx={r * 0.4} ry={r * 0.22} fill="rgba(255,255,255,0.8)" />
-          </g>
-        );
-      })}
-    </g>
-  );
-}
-
 interface Props {
+  /** The face to show; null shows a blank face, waiting for a roll. */
   value: number | null;
   rolling: boolean;
   color: string;
@@ -62,59 +20,63 @@ interface Props {
   onRoll?: () => void;
 }
 
+/** A flat, glossy die in the roller's colour with white pips. */
 export function Dice({ value, rolling, color, canRoll, onRoll }: Props) {
-  const [face, setFace] = useState(value ?? 6);
+  const [face, setFace] = useState<number | null>(value);
   const [landed, setLanded] = useState(0);
 
   useEffect(() => {
     if (!rolling) {
-      if (value) setFace(value);
-      setLanded((n) => n + 1);
+      setFace(value);
+      if (value !== null) setLanded((n) => n + 1);
       return;
     }
-    const t = setInterval(() => setFace((f) => ((f + 1 + Math.floor(Math.random() * 5)) % 6) + 1), 70);
+    const t = setInterval(() => setFace((f) => (((f ?? 1) + Math.floor(Math.random() * 5)) % 6) + 1), 70);
     return () => clearInterval(t);
   }, [rolling, value]);
 
-  const [left, right] = SIDES[face];
+  const edge = shade(color, -0.35);
   return (
     <button
       type="button"
-      className={`dice${rolling ? ' rolling' : ''}${canRoll ? ' can-roll' : ''}${value === null && !rolling ? ' idle' : ''}`}
+      className={`dice flat${rolling ? ' rolling' : ''}${canRoll ? ' can-roll' : ''}`}
       style={{ '--dice-color': color } as CSSProperties}
       onClick={canRoll ? onRoll : undefined}
       disabled={!canRoll}
-      aria-label={canRoll ? 'Roll the dice' : value ? `Dice shows ${value}` : 'Dice'}
+      aria-label={canRoll ? 'Roll the dice' : face ? `Dice shows ${face}` : 'Dice'}
     >
-      <svg viewBox="-56 -58 112 122" aria-hidden>
+      <svg viewBox="0 0 100 104" aria-hidden>
         <defs>
-          {/* The dice takes the colour of whoever rolls: lit from the top, darker on the right. */}
-          <linearGradient id="die-top" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor={shade(color, 0.42)} />
-            <stop offset="1" stopColor={shade(color, 0.16)} />
-          </linearGradient>
-          <linearGradient id="die-left" x1="0" y1="0" x2="0.3" y2="1">
-            <stop offset="0" stopColor={shade(color, 0.18)} />
-            <stop offset="1" stopColor={shade(color, -0.1)} />
-          </linearGradient>
-          <linearGradient id="die-right" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor={shade(color, -0.02)} />
-            <stop offset="1" stopColor={shade(color, -0.3)} />
+          <linearGradient id="die-face" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={shade(color, 0.3)} />
+            <stop offset="0.55" stopColor={color} />
+            <stop offset="1" stopColor={shade(color, -0.12)} />
           </linearGradient>
           <radialGradient id="die-pip" cx="0.4" cy="0.32" r="0.75">
             <stop offset="0" stopColor="#ffffff" />
-            <stop offset="0.55" stopColor="#f2f3f5" />
-            <stop offset="1" stopColor="#c4c8d0" />
+            <stop offset="0.6" stopColor="#f1f2f5" />
+            <stop offset="1" stopColor="#c9ccd4" />
           </radialGradient>
         </defs>
-        <ellipse className="dice-shadow" cx={0} cy={R + 4} rx={C * 0.95} ry={7} fill="rgba(0,0,0,0.22)" />
+        <ellipse className="dice-shadow" cx={50} cy={99} rx={38} ry={4.5} fill="rgba(0,0,0,0.18)" />
         <g key={landed} className="dice-body">
-          {/* The rounded body behind the faces fills the seams so the edges look bevelled. */}
-          <polygon points={HEX} fill={shade(color, -0.22)} stroke={shade(color, -0.22)} strokeWidth={7} strokeLinejoin="round" />
-          <Face n={face} side="top" rim={shade(color, -0.55)} />
-          <Face n={left} side="left" rim={shade(color, -0.55)} />
-          <Face n={right} side="right" rim={shade(color, -0.55)} />
-          <path d={`M${-C + 4} ${-R / 2 + 2} L0 -2 L${C - 4} ${-R / 2 + 2}`} fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={2} strokeLinecap="round" />
+          {/* The darker slab below gives the face some thickness; the band on top is the shine. */}
+          <rect x={5} y={9} width={90} height={88} rx={22} fill={edge} />
+          <rect x={5} y={3} width={90} height={88} rx={22} fill="url(#die-face)" stroke={edge} strokeWidth={1.5} />
+          <rect x={13} y={8} width={74} height={30} rx={14} fill="rgba(255,255,255,0.22)" />
+          {face !== null &&
+            PIPS[face].map(([cx, cy]) => {
+              const x = 26 + cx * 24;
+              const y = 23 + cy * 24;
+              const r = face === 1 ? 12 : 8.6;
+              return (
+                <g key={`${cx}${cy}`}>
+                  <circle cx={x - 0.5} cy={y - 0.8} r={r + 1.2} fill={shade(color, -0.5)} />
+                  <circle cx={x} cy={y} r={r} fill="url(#die-pip)" />
+                  <ellipse cx={x - r * 0.25} cy={y - r * 0.36} rx={r * 0.38} ry={r * 0.22} fill="rgba(255,255,255,0.9)" />
+                </g>
+              );
+            })}
         </g>
       </svg>
     </button>

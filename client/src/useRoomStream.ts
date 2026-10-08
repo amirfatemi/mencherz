@@ -7,6 +7,7 @@ import { POINTS } from '../../shared/scoring.ts';
 import {
   BOMB_MS,
   BOX_REVEAL_MS,
+  PASS_HOLD_MS,
   CAPTURE_MS,
   ROLL_MS,
   STEP_MS,
@@ -209,6 +210,8 @@ export function useRoomStream(code: string) {
   const [popups, setPopups] = useState<Popup[]>([]);
   const [reactions, setReactions] = useState<ActiveReaction[]>([]);
   const [reveal, setReveal] = useState<BoxReveal | null>(null);
+  /** A roll that couldn't be played, kept on the dice for a while before the next player goes. */
+  const [held, setHeld] = useState<{ seat: Seat; value: number } | null>(null);
 
   const queue = useRef<RoomUpdate[]>([]);
   const running = useRef(false);
@@ -276,6 +279,14 @@ export function useRoomStream(code: string) {
             await sleep(ROLL_MS / speed);
             setRolling(false);
             if (ev.penalized.length) await play(penaltyTimeline(ev), speed);
+            if (ev.outcome === 'pass') {
+              // Show the turn moving on, but keep the number up and the next player waiting.
+              commit(u.room);
+              setHeld({ seat: ev.seat, value: ev.dice });
+              await sleep(PASS_HOLD_MS / speed);
+              setHeld(null);
+              continue;
+            }
           } else if (ev.type === 'bomb' || ev.type === 'box') {
             // The bomb or box drops in (CSS) once the new state is shown.
             commit(u.room);
@@ -307,6 +318,7 @@ export function useRoomStream(code: string) {
       running.current = false;
       setAnimating(false);
       setRolling(false);
+      setHeld(null);
     }
   }, [commit, play]);
 
@@ -347,5 +359,5 @@ export function useRoomStream(code: string) {
 
   const now = useCallback(() => Date.now() + clockOffset.current, []);
 
-  return { view, error, anim, rolling, lastRoll, animating, popups, reactions, reveal, now };
+  return { view, error, anim, rolling, lastRoll, held, animating, popups, reactions, reveal, now };
 }

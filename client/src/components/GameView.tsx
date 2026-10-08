@@ -109,8 +109,11 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   });
 
   const hostName = view.seats.find((s) => s.userId === view.hostId)?.name ?? 'the host';
+  const held = stream.held;
   let status: string;
-  if (paused) {
+  if (held && !over) {
+    status = `${held.seat === mySeat ? 'You' : seatName(view.seats, held.seat)} rolled ${held.value} — no move`;
+  } else if (paused) {
     status = isHost ? '⏸ Game paused' : `⏸ Paused by ${hostName}`;
   } else if (over) {
     const top = game.standings[0];
@@ -142,8 +145,10 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
     status = `${turnName} ${thinking}…`;
   }
 
-  const diceSeat = stream.rolling && stream.lastRoll ? stream.lastRoll.seat : game.turn;
-  const diceValue = game.phase === 'move' ? game.dice : (stream.lastRoll?.value ?? null);
+  // The dice shows a roll until its move is made, then goes blank for the next roll. A roll that
+  // couldn't be played stays up for a few seconds (held) in the colour of whoever rolled it.
+  const diceSeat = stream.rolling && stream.lastRoll ? stream.lastRoll.seat : (held?.seat ?? game.turn);
+  const diceValue = game.phase === 'move' ? game.dice : (held?.value ?? null);
 
   return (
     <div className="game">

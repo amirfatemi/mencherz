@@ -16,7 +16,7 @@ export function BoxRevealCard({ reveal, seats }: { reveal: BoxReveal; seats: Sea
     box.outcome === 'bomb'
       ? box.saved
         ? ['🦺', 'A bomb — but the vest saved it!', `${who}'s piece stays on the board. The vest is used up.`]
-        : ['💣', 'A bomb!', `${who}'s piece goes back to the hangar. +${box.points} for ${owner}.`]
+        : ['💣', 'A bomb!', `${who}'s piece goes back to the hangar.${box.points ? ` +${box.points} for ${owner}.` : ''}`]
       : box.outcome === 'vest'
         ? ['🦺', 'A protective vest!', `The next bomb ${who} lands on won't hurt.`]
         : box.outcome === 'empty'
@@ -26,7 +26,7 @@ export function BoxRevealCard({ reveal, seats }: { reveal: BoxReveal; seats: Sea
     <div className="box-reveal" aria-live="polite">
       <div className={`box-reveal-card ${blast || box.outcome === 'minus' ? 'bad' : good ? 'good' : ''}`} style={{ '--seat': COLOR_HEX[seat] } as CSSProperties}>
         <div className="box-reveal-head">
-          🎁 {who} opened {box.owner === seat ? 'a' : `${owner}'s`} magic box
+          🎁 {who} opened {box.owner === seat ? 'their own' : `${owner}'s`} magic box
         </div>
         <div className="box-reveal-art">
           <span className="box-reveal-box">🎁</span>

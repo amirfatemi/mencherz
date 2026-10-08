@@ -42,14 +42,15 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     else bits.push(b.owner === ev.seat ? 'stepped on their own bomb 💣' : `stepped on ${whose} bomb 💣 +${b.points} for ${seatName(seats, b.owner)}`);
   }
   if (ev.box?.outcome) {
+    const own = ev.box.owner === ev.seat;
     const owner = seatName(seats, ev.box.owner);
     const inside = {
-      bomb: ev.box.saved ? 'a bomb, but the vest saved it 🦺' : `a bomb! 💣 +${ev.box.points} for ${owner}`,
+      bomb: ev.box.saved ? 'a bomb, but the vest saved it 🦺' : `a bomb! 💣${ev.box.points ? ` +${ev.box.points} for ${owner}` : ''}`,
       vest: 'a protective vest 🦺',
       empty: 'nothing',
       minus: `−${POINTS.boxPenalty} points`,
     }[ev.box.outcome];
-    bits.push(`opened ${owner}'s magic box 🎁: ${inside}`);
+    bits.push(`opened ${own ? 'their own' : `${owner}'s`} magic box 🎁: ${inside}`);
   }
   if (ev.to === GOAL) bits.push('piece home 🏁 +100');
   let text = bits.join(' · ');

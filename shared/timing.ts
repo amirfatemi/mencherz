@@ -15,10 +15,14 @@ export const CAPTURE_MS = 700;
 export const BOMB_MS = 700;
 /** How long an opened magic box shows what was inside; the piece waits on the box meanwhile. */
 export const BOX_REVEAL_MS = 3000;
+/** A roll that can't be played stays on the dice this long before the next player goes. */
+export const PASS_HOLD_MS = 5000;
 
 export function eventDuration(event: GameEvent | null | undefined): number {
   if (!event) return 0;
-  if (event.type === 'roll') return ROLL_MS + (event.penalized.length ? CAPTURE_MS : 0);
+  if (event.type === 'roll') {
+    return ROLL_MS + (event.penalized.length ? CAPTURE_MS : 0) + (event.outcome === 'pass' ? PASS_HOLD_MS : 0);
+  }
   if (event.type === 'bomb' || event.type === 'box') return BOMB_MS;
   let ms = settledAt(event);
   // Knocked-out pieces, or the mover itself after a bomb, fly back to the hangar.

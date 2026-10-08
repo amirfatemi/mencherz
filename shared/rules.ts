@@ -34,8 +34,8 @@ export interface Rules {
   /** How mean the dice is: harder makes a third six and landing on a bomb more likely. Normal is a fair dice. */
   difficulty: 'easy' | 'normal' | 'hard';
   /**
-   * Before the first roll everyone hides a magic box on a track square. Another player's piece landing on it
-   * opens it: a bomb, a protective vest, nothing, or lost points, at random.
+   * Before the first roll everyone hides a magic box on a track square. Any piece landing on it, its
+   * owner's included, opens it: a bomb, a protective vest, nothing, or lost points, at random.
    */
   magicBoxes: boolean;
   /** Overshooting the goal bounces back, or the move is not allowed. */
@@ -78,7 +78,7 @@ export interface Bomb {
   owner: Seat;
 }
 
-/** A magic box; it does nothing to its owner's pieces. */
+/** A magic box. Whoever lands on it first opens it, the owner too. */
 export interface MagicBox {
   square: number;
   owner: Seat;
@@ -321,14 +321,16 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
       if (!saved) return true;
     }
     captureAt(pos);
-    const box = state.boxes?.find((b) => b.square === square && b.owner !== seat);
+    // Anyone's piece opens a box, its owner's included.
+    const box = state.boxes?.find((b) => b.square === square);
     if (box && !plan.box) {
       const outcome = openBox?.();
       const blast = outcome === 'bomb';
       const saved = blast && vests > 0;
       if (saved) vests--;
       if (outcome === 'vest') vests++;
-      plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, points: blast && !saved ? captureValue(pos) : 0 };
+      const scores = blast && !saved && box.owner !== seat;
+      plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, points: scores ? captureValue(pos) : 0 };
       if (blast && !saved) return true;
     }
     return false;
@@ -539,8 +541,10 @@ export function applyMove(
     if (outcome === 'bomb' && saved) s.vests[seat]--;
     if (outcome === 'bomb' && !saved) {
       s.stats[seat].lost++;
-      s.stats[owner].captures++;
-      s.stats[owner].points += points;
+      if (owner !== seat) {
+        s.stats[owner].captures++;
+        s.stats[owner].points += points;
+      }
     }
   }
   if (plan.to === GOAL) s.stats[seat].home++;

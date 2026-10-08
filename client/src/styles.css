@@ -1684,7 +1684,7 @@ button.user-chip:hover {
   background: #222;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   pointer-events: none;
-  animation: reaction-in 5s ease both;
+  animation: reaction-in 8s ease both;
 }
 
 @keyframes reaction-in {

@@ -89,7 +89,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 6. After a full lap, planes turn at the arrow into their home column. An overshoot bounces back from the centre.
 7. **Three sixes** in a row: every piece not yet in the centre goes back to the hangar.
 8. **Bomb 💣:** after that penalty, the same player drops a bomb on any empty track square (home columns can't be bombed). The next piece to land there goes back to its hangar, whoever it belongs to. Passing over a bomb is safe. The bomb's owner scores as for a knock-out.
-9. **Magic box 🎁:** before the first roll, everyone hides one box on a track square, in turn order. A box never affects its owner. Another player's piece landing on it opens it, and one of these happens at random:
+9. **Magic box 🎁:** before the first roll, everyone hides one box on a track square, in turn order. Any piece landing on it opens it, the owner's included, and one of these happens at random:
    - a bomb, which sends the piece home and scores for the box's owner
    - a protective vest 🦺, which stops the next bomb that player lands on
    - nothing

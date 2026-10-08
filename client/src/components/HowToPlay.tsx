@@ -35,8 +35,8 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
             included, goes back to its hangar, and you score for it as if you'd knocked it out. Passing over a bomb is safe.
           </li>
           <li>
-            <b>Magic box 🎁.</b> Before the first roll, everyone hides one box on any square of the track. It never affects its owner. When
-            someone else lands on it, it opens and they get one of these at random: a <b>bomb</b> that sends the piece home, a protective{' '}
+            <b>Magic box 🎁.</b> Before the first roll, everyone hides one box on any square of the track. Whoever lands on it first, its owner
+            included, opens it and gets one of these at random: a <b>bomb</b> that sends the piece home, a protective{' '}
             <b>vest</b> 🦺 that stops the next bomb they land on, <b>nothing</b>, or <b>−10 points</b>.
           </li>
         </ol>

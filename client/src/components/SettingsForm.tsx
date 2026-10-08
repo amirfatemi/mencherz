@@ -117,7 +117,7 @@ export function SettingsForm({ value, onChange }: Props) {
         <Toggle label="A 6 gives another roll" checked={rules.bonusRollOnSix} onChange={(v) => setRules({ bonusRollOnSix: v })} />
         <Toggle
           label="Magic boxes 🎁"
-          hint="Before the first roll everyone hides a box. Another player landing on it gets a bomb, a protective vest, nothing, or −10 points."
+          hint="Before the first roll everyone hides a box. Whoever lands on it, its owner too, gets a bomb, a protective vest, nothing, or −10 points."
           checked={rules.magicBoxes}
           onChange={(v) => setRules({ magicBoxes: v })}
         />

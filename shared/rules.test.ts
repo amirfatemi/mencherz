@@ -24,7 +24,7 @@ import {
 } from './board.ts';
 import { MEANNESS, rollWeighted, rollWeights } from './dice.ts';
 import { REACTION_BY_ID, reactionsFor } from './reactions.ts';
-import { BOX_REVEAL_MS, blastAt, boxOpenAt, eventDuration } from './timing.ts';
+import { BOX_REVEAL_MS, PASS_HOLD_MS, ROLL_MS, blastAt, boxOpenAt, eventDuration } from './timing.ts';
 import { EARLY_UNTIL, LATE_FROM, POINTS, captureValue } from './scoring.ts';
 import {
   DEFAULT_RULES,
@@ -113,10 +113,11 @@ describe('launching', () => {
     assert.equal(planMove(game([0, 1], { launchOn: 'even' }), 0, 0, 3), null);
   });
 
-  test('no legal move passes the turn', () => {
+  test('no legal move passes the turn, after the roll has stayed up a while', () => {
     const { state, event } = applyRoll(game(), 3);
     assert.equal(event.outcome, 'pass');
     assert.equal(state.turn, 1);
+    assert.equal(eventDuration(event), ROLL_MS + PASS_HOLD_MS, 'bots and timers wait for it too');
   });
 });
 
@@ -576,15 +577,21 @@ describe('magic boxes', () => {
     assert.equal(minus.state.stats[0].points, -POINTS.boxPenalty);
   });
 
-  test("a box does nothing to its owner's pieces, and passing over is safe", () => {
+  test('a box opens for its owner too, with no points for blowing yourself up; passing over is safe', () => {
     const g = at(game([0, 1]), 0, [30, 5]);
     g.boxes = [
       { square: trackIndex(0, 32), owner: 0 },
       { square: trackIndex(0, 31), owner: 1 },
     ];
-    const plan = planMove(g, 0, 0, 2, () => 'bomb')!;
-    assert.equal(plan.box, undefined);
-    assert.equal(plan.to, 32);
+    Object.assign(g, { phase: 'move', dice: 2, movable: [0, 1] });
+    const { state, event } = applyMove(g, 0, pick('bomb'));
+    assert.equal(event.box?.owner, 0, 'its own box, not the one it passed');
+    assert.equal(event.box?.points, 0);
+    assert.equal(state.pieces[0][0], HANGAR);
+    assert.deepEqual(state.boxes, [{ square: trackIndex(0, 31), owner: 1 }]);
+    assert.equal(state.stats[0].points, 0);
+    assert.equal(state.stats[0].captures, 0);
+    assert.equal(state.stats[0].lost, 1);
   });
 
   test('a preview leaves the box closed', () => {
