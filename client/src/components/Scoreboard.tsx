@@ -54,7 +54,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
   // Who just scored: the mover, and the owner of a bomb that went off.
   const gains = new Map<Seat, number>();
   if (last?.type === 'move') {
-    if (last.points) gains.set(last.seat, last.points);
+    if (last.points || last.bonus) gains.set(last.seat, last.points + (last.bonus ?? 0));
     for (const hit of [last.bombed, last.box]) {
       if (hit?.points) gains.set(hit.owner, (gains.get(hit.owner) ?? 0) + hit.points);
     }
@@ -121,6 +121,9 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
         <ul>
           <li>
             🏁 A piece reaches the centre: <b>+{POINTS.home}</b>
+          </li>
+          <li>
+            🏆 First to bring all four home: <b>+{POINTS.firstHome}</b>
           </li>
           <li>
             💥 Knock out a piece in the first half of its route (squares 1–{EARLY_UNTIL}): <b>+{POINTS.captureEarly}</b>

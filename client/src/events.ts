@@ -54,6 +54,6 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
   }
   if (ev.to === GOAL) bits.push('piece home 🏁 +100');
   let text = bits.join(' · ');
-  if (ev.seatFinished) text += ` — ${who} brought all pieces home!`;
+  if (ev.seatFinished) text += ev.bonus ? ` — ${who} brought all pieces home first! 🏆 +${ev.bonus}` : ` — ${who} brought all pieces home!`;
   return text;
 }

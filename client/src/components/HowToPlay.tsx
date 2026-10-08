@@ -48,6 +48,7 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
         <h3>Points</h3>
         <ul>
           <li>🏁 Each piece that reaches the centre: <b>+100</b></li>
+          <li>🏆 The first player to bring all four home: <b>+500</b></li>
           <li>💥 Knocking out a piece in the first half of its route: <b>+20</b>, further along: <b>+25</b>, in the last 15%: <b>+30</b></li>
           <li>✈ Flying over a piece in its home column, which only the player opposite can do: <b>+70</b></li>
         </ul>

@@ -215,6 +215,8 @@ export interface MoveEvent extends MovePlan {
   type: 'move';
   extraRoll: boolean;
   seatFinished: boolean;
+  /** Points on top of `points` for being the first to bring every piece home. */
+  bonus: number;
   gameOver: boolean;
 }
 
@@ -550,10 +552,14 @@ export function applyMove(
   if (plan.to === GOAL) s.stats[seat].home++;
   if (dice === 6) s.streakMoved.push(piece);
 
-  const event: MoveEvent = { ...plan, type: 'move', extraRoll: false, seatFinished: false, gameOver: false };
+  const event: MoveEvent = { ...plan, type: 'move', extraRoll: false, seatFinished: false, bonus: 0, gameOver: false };
 
   if (seatFinished(s, seat)) {
     event.seatFinished = true;
+    if (s.ranking.length === 0) {
+      event.bonus = POINTS.firstHome;
+      s.stats[seat].points += POINTS.firstHome;
+    }
     s.ranking.push(seat);
     const remaining = s.active
       .filter((x) => !s.ranking.includes(x))

@@ -13,6 +13,8 @@ export const POINTS = {
   captureHomeColumn: 70,
   /** Lost when a magic box turns out to take points. */
   boxPenalty: 10,
+  /** For the first player to bring all four pieces home. */
+  firstHome: 500,
 } as const;
 
 /** A game counts on the leaderboard only with at least this many people in it, so games against computers alone don't. */

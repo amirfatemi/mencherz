@@ -358,6 +358,21 @@ describe('points', () => {
     assert.equal(planMove(g, 0, 0, 3)!.points, POINTS.captureHomeColumn);
   });
 
+  test('the first to bring all four home gets the bonus; the next one does not', () => {
+    const g = at(game([0, 1, 2], { playUntil: 'all' }), 0, [GOAL, GOAL, GOAL, GOAL - 2]);
+    at(g, 1, [GOAL, GOAL, GOAL, GOAL - 2]);
+    Object.assign(g, { phase: 'move', dice: 2, movable: [3] });
+    const first = applyMove(g, 3);
+    assert.equal(first.event.bonus, POINTS.firstHome);
+    assert.equal(first.state.stats[0].points, POINTS.home + POINTS.firstHome);
+    const s2 = first.state;
+    Object.assign(s2, { turn: 1, phase: 'move', dice: 2, movable: [3] });
+    const second = applyMove(s2, 3);
+    assert.equal(second.event.seatFinished, true);
+    assert.equal(second.event.bonus, 0);
+    assert.equal(second.state.stats[1].points, POINTS.home);
+  });
+
   test('a piece reaching the centre scores 100', () => {
     const g = at(game(), 0, [GOAL - 3]);
     Object.assign(g, { phase: 'move', dice: 3, movable: [0] });
@@ -366,10 +381,10 @@ describe('points', () => {
     assert.equal(state.stats[0].home, 1);
   });
 
-  test('by points, a big scorer beats the first player home', () => {
+  test('by points, a big scorer beats the first player home, bonus and all', () => {
     let g = at(game([0, 2]), 0, [GOAL, GOAL, GOAL, GOAL - 3]);
     g.stats[0].points = 300;
-    g.stats[2].points = 450;
+    g.stats[2].points = 300 + POINTS.home + POINTS.firstHome + 50;
     g = applyRoll(g, 3).state;
     const { state } = applyMove(g, 3);
     assert.equal(state.phase, 'over');
@@ -399,7 +414,10 @@ describe('points', () => {
         g = r.state;
       }
     }
-    for (const s of SEATS) assert.equal(g.stats[s].points, g.stats[s].home * POINTS.home + earned[s]);
+    for (const s of SEATS) {
+      const bonus = s === g.ranking[0] ? POINTS.firstHome : 0;
+      assert.equal(g.stats[s].points, g.stats[s].home * POINTS.home + earned[s] + bonus);
+    }
     assert.equal(g.standings.length, 4);
     assert.ok(g.standings.every((s, i) => i === 0 || g.stats[g.standings[i - 1]].points >= g.stats[s].points));
   });

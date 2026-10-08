@@ -105,6 +105,7 @@ By default the game is scored, so knocking pieces out matters as much as racing:
 | | Points |
 | --- | --- |
 | A piece reaches the centre | 100 |
+| The first player to bring all four pieces home | 500 |
 | Knock out a piece in the first half of its track (squares 1–25) | 20 |
 | …between halfway and the last 15% (26–42) | 25 |
 | …in the last 15% (43–50) | 30 |
