@@ -1,0 +1,36 @@
+{
+  "name": "mencherz",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Online Aeroplane Chess (Flying Chess / Battle Ludo) for the browser",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "node --watch --watch-path=server --watch-path=shared server/index.ts",
+    "dev:client": "vite",
+    "build": "vite build",
+    "start": "node server/index.ts",
+    "test": "node --test \"shared/**/*.test.ts\" \"server/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.server.json && tsc -p client/tsconfig.json"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "socket.io-client": "^4.8.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}
