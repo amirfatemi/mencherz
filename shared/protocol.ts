@@ -98,6 +98,25 @@ export interface PublicUser {
   wins: number;
   /** Points from every finished game. */
   points: number;
+  /** Can see every account and set their passwords (see /admin). */
+  isAdmin: boolean;
+}
+
+/** A "what is a + b?" check on the sign-in and sign-up forms. */
+export interface Captcha {
+  id: string;
+  question: string;
+}
+
+/** An account as the admin page lists it. */
+export interface AdminUserRow {
+  id: number;
+  username: string;
+  createdAt: number;
+  gamesPlayed: number;
+  wins: number;
+  points: number;
+  isAdmin: boolean;
 }
 
 export interface LeaderRow {

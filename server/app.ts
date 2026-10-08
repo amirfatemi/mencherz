@@ -23,6 +23,8 @@ export interface ServerConfig {
   allowedOrigins?: string[];
   /** Multiplies bot/turn delays. Tests use a small value. */
   timeScale?: number;
+  /** Usernames that are admins. */
+  admins?: string[];
 }
 
 /** Turns a Node request into a fetch Request for the shared API handler. */
@@ -48,6 +50,7 @@ export async function startServer(config: ServerConfig) {
     secureCookies: config.secureCookies,
     allowedOrigins: config.allowedOrigins,
     timeScale: config.timeScale,
+    admins: config.admins,
   });
 
   const app = express();

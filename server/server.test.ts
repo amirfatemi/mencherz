@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import WebSocket from 'ws';
 import { chooseBomb, chooseBox, chooseMove } from '../shared/ai.ts';
-import type { LeaderRow, PublicUser, RoomUpdate, RoomView } from '../shared/protocol.ts';
+import type { AdminUserRow, Captcha, LeaderRow, PublicUser, RoomUpdate, RoomView } from '../shared/protocol.ts';
 import { REACTION_BY_ID } from '../shared/reactions.ts';
 import { GameSocket, type WsLike } from '../shared/socket-client.ts';
 import { WS_PATH } from '../shared/wire.ts';
@@ -27,16 +27,28 @@ async function boot() {
     trustProxy: false,
     clientDir: null,
     timeScale: 0.01,
+    admins: ['boss'],
   });
   base = `http://127.0.0.1:${server.port}`;
 }
 
-async function signUp(username: string, password = 'secret123') {
-  const res = await fetch(`${base}/api/register`, {
+/** Gets a sign-in sum and answers it, as a person would. */
+async function solved(): Promise<{ captchaId: string; captchaAnswer: string }> {
+  const c = (await (await fetch(`${base}/api/captcha`)).json()) as Captcha;
+  const [a, b] = c.question.split('+').map(Number);
+  return { captchaId: c.id, captchaAnswer: String(a + b) };
+}
+
+async function post(path: string, body: unknown, cookie?: string) {
+  return fetch(`${base}/api${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
   });
+}
+
+async function signUp(username: string, password = 'secret123') {
+  const res = await post('/register', { username, password, ...(await solved()) });
   assert.equal(res.status, 201, await res.clone().text());
   return res.headers.get('set-cookie')!.split(';')[0];
 }
@@ -115,28 +127,55 @@ describe('auth', () => {
     const me = await fetch(`${base}/api/me`, { headers: { cookie } });
     assert.equal(((await me.json()) as { username: string }).username, 'carol');
 
-    const dup = await fetch(`${base}/api/register`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'CAROL', password: 'whatever1' }),
-    });
+    const dup = await post('/register', { username: 'CAROL', password: 'whatever1', ...(await solved()) });
     assert.equal(dup.status, 409);
 
-    const bad = await fetch(`${base}/api/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'carol', password: 'nope-nope' }),
-    });
+    const bad = await post('/login', { username: 'carol', password: 'nope-nope', ...(await solved()) });
     assert.equal(bad.status, 401);
 
-    const good = await fetch(`${base}/api/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'carol', password: 'secret123' }),
-    });
+    const good = await post('/login', { username: 'carol', password: 'secret123', ...(await solved()) });
     assert.equal(good.status, 200);
 
     await assert.rejects(socketFor('mz_session=forged'), /unauthorized/);
+  });
+});
+
+describe('sign-in sum', () => {
+  test('signing in and up needs the right answer, and each sum works once', async () => {
+    await signUp('dora');
+    const login = (extra: object) => post('/login', { username: 'dora', password: 'secret123', ...extra });
+    assert.equal((await login({})).status, 400, 'no sum');
+    const sum = await solved();
+    assert.equal((await login({ ...sum, captchaAnswer: String(Number(sum.captchaAnswer) + 1) })).status, 400, 'wrong answer');
+    assert.equal((await login(sum)).status, 400, 'a sum is used up by a wrong try');
+    const fresh = await solved();
+    assert.equal((await login(fresh)).status, 200);
+    assert.equal((await login(fresh)).status, 400, 'and by a right one');
+    const reg = await post('/register', { username: 'eve2', password: 'secret123', captchaId: 'made-up', captchaAnswer: '7' });
+    assert.equal(reg.status, 400);
+  });
+});
+
+describe('admin', () => {
+  test('an admin lists every player and sets a password; others may not', async () => {
+    const boss = await signUp('boss');
+    const frank = await signUp('frank');
+    const me = (await (await fetch(`${base}/api/me`, { headers: { cookie: boss } })).json()) as PublicUser;
+    assert.equal(me.isAdmin, true);
+    assert.equal(((await (await fetch(`${base}/api/me`, { headers: { cookie: frank } })).json()) as PublicUser).isAdmin, false);
+
+    assert.equal((await fetch(`${base}/api/admin/users`, { headers: { cookie: frank } })).status, 403);
+    const users = (await (await fetch(`${base}/api/admin/users`, { headers: { cookie: boss } })).json()) as AdminUserRow[];
+    const row = users.find((u) => u.username === 'frank')!;
+    assert.ok(row && users.some((u) => u.username === 'boss' && u.isAdmin));
+    assert.equal(JSON.stringify(users).includes('scrypt'), false, 'no password hashes');
+
+    assert.equal((await post('/admin/password', { userId: row.id, password: 'fresh-pass' }, frank)).status, 403);
+    assert.equal((await post('/admin/password', { userId: row.id, password: '123' }, boss)).status, 400);
+    assert.equal((await post('/admin/password', { userId: row.id, password: 'fresh-pass' }, boss)).status, 200);
+    assert.equal((await fetch(`${base}/api/me`, { headers: { cookie: frank } })).status, 401, 'signed out everywhere');
+    assert.equal((await post('/login', { username: 'frank', password: 'secret123', ...(await solved()) })).status, 401);
+    assert.equal((await post('/login', { username: 'frank', password: 'fresh-pass', ...(await solved()) })).status, 200);
   });
 });
 

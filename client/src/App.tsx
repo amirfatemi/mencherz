@@ -3,6 +3,7 @@ import type { PublicUser } from '../../shared/protocol.ts';
 import { api } from './api.ts';
 import { Logo } from './components/Logo.tsx';
 import { AccountPage } from './pages/AccountPage.tsx';
+import { AdminPage } from './pages/AdminPage.tsx';
 import { AuthPage } from './pages/AuthPage.tsx';
 import { LobbyPage } from './pages/LobbyPage.tsx';
 import { RoomPage } from './pages/RoomPage.tsx';
@@ -62,6 +63,7 @@ export function App() {
 
   const room = path.match(/^\/g\/([A-Za-z0-9]{4,8})\/?$/);
   const settings = /^\/settings\/?$/.test(path);
+  const admin = /^\/admin\/?$/.test(path);
 
   return (
     <div className="app">
@@ -71,6 +73,11 @@ export function App() {
         </button>
         <div className="topbar-right">
           {!online && <span className="pill warn">Reconnecting…</span>}
+          {user.isAdmin && (
+            <button className="btn ghost small" onClick={() => navigate('/admin')}>
+              Admin
+            </button>
+          )}
           <button
             className="user-chip"
             title={`${user.points} points · ${user.gamesPlayed} games · ${user.wins} wins — settings`}
@@ -95,6 +102,8 @@ export function App() {
           <RoomPage key={room[1].toUpperCase()} code={room[1].toUpperCase()} user={user} />
         ) : settings ? (
           <AccountPage user={user} onVisible={refreshUser} />
+        ) : admin ? (
+          <AdminPage user={user} />
         ) : (
           <LobbyPage user={user} onVisible={refreshUser} />
         )}

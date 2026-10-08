@@ -12,6 +12,7 @@ const server = await startServer({
   secureCookies: env.COOKIE_SECURE === 'true',
   trustProxy: env.TRUST_PROXY === 'true',
   allowedOrigins: env.ALLOWED_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean),
+  admins: env.ADMINS?.split(',').map((s) => s.trim()).filter(Boolean),
   clientDir: join(root, 'dist', 'client'),
 });
 console.log(`Mencherz listening on http://localhost:${server.port}`);

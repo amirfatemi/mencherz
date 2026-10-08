@@ -12,6 +12,8 @@ export interface CoreConfig {
   allowedOrigins?: string[];
   /** Multiplies bot/turn delays. Tests use a small value. */
   timeScale?: number;
+  /** Usernames that are admins. */
+  admins?: string[];
 }
 
 /** What the runtime knows about a WebSocket upgrade request. */
@@ -28,7 +30,7 @@ export interface UpgradeInfo {
 export function createGameServer(config: CoreConfig) {
   const { db } = config;
   initSchema(db);
-  const auth = createAuth(db, { secureCookies: config.secureCookies });
+  const auth = createAuth(db, { secureCookies: config.secureCookies, admins: config.admins });
   const hub = new Hub<ClientToServer, ServerToClient, SocketData>();
   const rooms = createRooms(hub, db, auth, { timeScale: config.timeScale ?? 1 });
   const sweep = setInterval(() => hub.sweep(), 15_000);

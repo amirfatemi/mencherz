@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import type { PublicUser } from '../../../shared/protocol.ts';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import type { Captcha, PublicUser } from '../../../shared/protocol.ts';
 import { api } from '../api.ts';
 import { Logo } from '../components/Logo.tsx';
 
@@ -10,6 +10,17 @@ export function AuthPage({ onSignedIn }: { onSignedIn: (u: PublicUser) => void }
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [captcha, setCaptcha] = useState<Captcha | null>(null);
+  const [answer, setAnswer] = useState('');
+
+  // Each sum works once, so a new one comes with every attempt.
+  const newCaptcha = useCallback(() => {
+    setAnswer('');
+    api<Captcha>('/captcha')
+      .then(setCaptcha)
+      .catch(() => setCaptcha(null));
+  }, []);
+  useEffect(newCaptcha, [newCaptcha]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -17,9 +28,11 @@ export function AuthPage({ onSignedIn }: { onSignedIn: (u: PublicUser) => void }
     if (mode === 'register' && password !== confirm) return setError('Passwords do not match');
     setBusy(true);
     try {
-      onSignedIn(await api<PublicUser>(mode === 'login' ? '/login' : '/register', { username, password }));
+      const body = { username, password, captchaId: captcha?.id, captchaAnswer: answer };
+      onSignedIn(await api<PublicUser>(mode === 'login' ? '/login' : '/register', body));
     } catch (err) {
       setError((err as Error).message);
+      newCaptcha();
     } finally {
       setBusy(false);
     }
@@ -79,8 +92,19 @@ export function AuthPage({ onSignedIn }: { onSignedIn: (u: PublicUser) => void }
             <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" required />
           </label>
         )}
+        <label className="field captcha">
+          <span>What is {captcha ? captcha.question : '…'}?</span>
+          <input
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value.replace(/\D/g, '').slice(0, 2))}
+            inputMode="numeric"
+            autoComplete="off"
+            required
+            aria-label="Answer to the sum"
+          />
+        </label>
         {error && <div className="error">{error}</div>}
-        <button className="btn primary block" disabled={busy}>
+        <button className="btn primary block" disabled={busy || !captcha}>
           {busy ? '…' : mode === 'login' ? 'Sign in' : 'Create account'}
         </button>
       </form>

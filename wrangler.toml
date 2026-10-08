@@ -1,7 +1,7 @@
 # Cloudflare Workers deployment, like the shahvar site: static assets plus a Worker.
 #
 # The built client (dist/client) is served from Cloudflare's edge. Only /api/* and the /ws game
-# socket run the Worker, which hands them to one Durable Object (GameHub) holding all games,
+# socket run the Worker, which hands them to one Durable Object (MencherzHub) holding all games,
 # accounts and the leaderboard in its SQLite storage. Durable Objects with SQLite storage are
 # available on the Workers Free plan.
 #
@@ -26,15 +26,30 @@ run_worker_first = ["/api/*", "/ws"]
 # Client-side routes such as /g/K7Q2X and /settings return index.html.
 not_found_handling = "single-page-application"
 
+[vars]
+# Usernames that are admins: they can list every account and set passwords at /admin.
+ADMINS = "amir"
+
 [[durable_objects.bindings]]
 name = "HUB"
-class_name = "GameHub"
+class_name = "MencherzHub"
 
-# Creates the GameHub class with SQLite storage (required on the Free plan). Never edit an applied
+# Durable Object classes, with SQLite storage (required on the Free plan). Never edit an applied
 # migration; add a new [[migrations]] entry instead.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["GameHub"]
+
+# The reset of 2026-10-08: the binding moved to a new, empty class (v2), then the old class and all
+# its data were deleted (v3). Cloudflare won't delete a class in the deploy that moves its binding,
+# so wiping everything again takes the same two deploys.
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["MencherzHub"]
+
+[[migrations]]
+tag = "v3"
+deleted_classes = ["GameHub"]
 
 [[routes]]
 pattern = "mencherz.shahvar.cloud"

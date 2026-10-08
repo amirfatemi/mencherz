@@ -41,6 +41,7 @@ docker run -p 3000:3000 -v mencherz-data:/data mencherz
 | `COOKIE_SECURE` | `false` | Set to `true` when served over HTTPS |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so rate limiting sees real client IPs |
 | `ALLOWED_ORIGINS` | – | Comma-separated extra origins allowed to open a game socket. The server's own host is always allowed. |
+| `ADMINS` | – | Comma-separated usernames that are admins. On Cloudflare, it is set in `wrangler.toml` `[vars]`. |
 
 Behind a reverse proxy, forward WebSocket upgrades for `/ws` and keep the original `Host` header.
 
@@ -54,6 +55,8 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 ## What's in the game
 
 - **Accounts:** username + password (scrypt-hashed), with sessions in an httpOnly cookie.
+  - Signing in and signing up ask a small sum ("What is 3 + 5?"). Each sum works once.
+  - **Admins** (named in `ADMINS`) get an Admin page. It lists every player and can set a new password for any of them, which signs that player out everywhere.
 - **Lobby:**
   - Create an online game, or play together on one device. Any seat can be a computer player.
   - Join by code or invite link.
@@ -156,7 +159,7 @@ server/     the game server, independent of where it runs
   rooms.ts    lobby, seats, turn flow, bots, timers, persistence
   db.ts       SQLite schema, behind an interface both runtimes implement
   app.ts, index.ts, sqlite.ts   the Node runtime: Express for the client, `ws`, node:sqlite
-worker/     the Cloudflare runtime: static assets, plus a Durable Object (GameHub) running server/core.ts on its SQLite storage
+worker/     the Cloudflare runtime: static assets, plus a Durable Object (MencherzHub) running server/core.ts on its SQLite storage
 client/     React + SVG (Vite)
   src/components/Board.tsx   board, planes, move preview
   src/useRoomStream.ts       joins a room and plays its updates in order, with animations

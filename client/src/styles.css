@@ -2091,3 +2091,53 @@ button.user-chip:hover {
   margin-left: 4px;
   font-size: 0.85rem;
 }
+
+/* ---------- sign-in sum, admin ---------- */
+
+.field.captcha input {
+  max-width: 120px;
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-head h2 {
+  margin: 0;
+}
+
+.admin-head input {
+  max-width: 220px;
+}
+
+.admin-users td .pill {
+  margin-left: 6px;
+}
+
+.admin-users .who {
+  max-width: none;
+  width: auto;
+}
+
+.admin-password {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+
+.admin-password-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-users td:first-child {
+  width: auto;
+  text-align: left;
+}

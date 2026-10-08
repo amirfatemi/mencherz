@@ -4,18 +4,22 @@ import { WS_PATH } from '../shared/wire.ts';
 import { durableDb } from './durable-db.ts';
 
 // Mencherz on Cloudflare. The built client is served as static assets; /api/* and the /ws socket go
-// to a single Durable Object, GameHub, which runs the same game server as Node (server/core.ts) with
-// the Durable Object's SQLite storage. One object holds every game, which is plenty for this scale
+// to a single Durable Object, MencherzHub, which runs the same game server as Node (server/core.ts)
+// with the Durable Object's SQLite storage. One object holds every game, which is plenty for this scale
 // and keeps lobby, rooms and accounts in one place.
 
 interface Env {
-  HUB: DurableObjectNamespace<GameHub>;
+  HUB: DurableObjectNamespace<MencherzHub>;
   ASSETS: Fetcher;
   /** Comma-separated extra origins allowed to open a socket (optional). */
   ALLOWED_ORIGINS?: string;
+  /** Comma-separated usernames that are admins. */
+  ADMINS?: string;
 }
 
-export class GameHub extends DurableObject<Env> {
+const list = (v: string | undefined) => v?.split(',').map((s) => s.trim()).filter(Boolean);
+
+export class MencherzHub extends DurableObject<Env> {
   private game: GameServer;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -23,7 +27,8 @@ export class GameHub extends DurableObject<Env> {
     this.game = createGameServer({
       db: durableDb(ctx.storage.sql),
       secureCookies: true,
-      allowedOrigins: env.ALLOWED_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean),
+      allowedOrigins: list(env.ALLOWED_ORIGINS),
+      admins: list(env.ADMINS),
     });
   }
 

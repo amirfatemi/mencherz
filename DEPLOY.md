@@ -7,9 +7,9 @@
 
 Cloudflare serves the built web app (`dist/client`) as static assets from its edge network.
 
-Only `/api/*` and the `/ws` game socket run the Worker (`assets.run_worker_first`). The Worker hands both to one Durable Object, `GameHub`.
+Only `/api/*` and the `/ws` game socket run the Worker (`assets.run_worker_first`). The Worker hands both to one Durable Object, `MencherzHub`.
 
-`GameHub` runs the same game server as the Node version (`server/core.ts`):
+`MencherzHub` runs the same game server as the Node version (`server/core.ts`):
 - accounts, sessions, saved games and the leaderboard live in the object's own SQLite storage
 - every player's WebSocket connects to it
 - bot moves and turn clocks run on its timers
@@ -18,7 +18,7 @@ One object for all games is plenty at this scale, and it keeps lobby, rooms and 
 
 **Why this fits the Free plan:**
 - Static assets are free and unlimited.
-- Durable Objects with SQLite storage are available on the Workers Free plan. The `[[migrations]]` block in `wrangler.toml` creates `GameHub` with `new_sqlite_classes`.
+- Durable Objects with SQLite storage are available on the Workers Free plan. The `[[migrations]]` block in `wrangler.toml` creates the class with `new_sqlite_classes`.
 - A Durable Object request may use up to 30 s of CPU, so password hashing (scrypt) and the game logic fit easily.
 
 ## Verification status
@@ -84,6 +84,18 @@ Do **not** add a DNS record for it by hand.
 The live site has its own data, in the Durable Object. It starts empty: accounts from a local `data/mencherz.db` are not copied over.
 
 `npm run cf:dev` keeps its local data under `.wrangler/state`.
+
+## Admins
+
+`ADMINS` in `wrangler.toml` `[vars]` names the admin accounts; it is currently `amir`. An admin sees **Admin** in the top bar: every player, and a **Reset password** button for each.
+
+## Wiping all data
+
+Use a Durable Object migration (see `wrangler.toml`). Add a new `[[migrations]]` tag that deletes the current class and creates one under a new name, then point the `HUB` binding and the exported class at the new name.
+
+Cloudflare deletes the old class's objects and all their storage. The new class starts empty and runs the new code right away. This is how the reset of 2026-10-08 was done: `GameHub` was deleted, `MencherzHub` created.
+
+A plain redeploy keeps the data. A running object may also keep serving the previous code until its connections close, so a migration is the dependable way to switch at once.
 
 ## Changing the Durable Object
 
