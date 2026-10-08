@@ -14,6 +14,8 @@ export interface CoreConfig {
   timeScale?: number;
   /** Usernames that are admins. */
   admins?: string[];
+  /** The deployed version, reported by /api/health. */
+  version?: string;
 }
 
 /** What the runtime knows about a WebSocket upgrade request. */
@@ -49,7 +51,7 @@ export function createGameServer(config: CoreConfig) {
   return {
     async api(request: Request, ip: string): Promise<Response> {
       const path = new URL(request.url).pathname;
-      if (path === '/api/health') return auth.json({ ok: true });
+      if (path === '/api/health') return auth.json({ ok: true, version: config.version ?? null });
       try {
         return (await auth.handle(request, ip)) ?? auth.json({ error: 'Not found' }, 404);
       } catch (err) {

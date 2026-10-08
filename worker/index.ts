@@ -15,7 +15,11 @@ interface Env {
   ALLOWED_ORIGINS?: string;
   /** Comma-separated usernames that are admins. */
   ADMINS?: string;
+  /** Which deployed version this code is (wrangler.toml [version_metadata]). */
+  CF_VERSION_METADATA?: { id: string };
 }
+
+const VERSION_HEADER = 'x-mencherz-version';
 
 const list = (v: string | undefined) => v?.split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -29,10 +33,17 @@ export class MencherzHub extends DurableObject<Env> {
       secureCookies: true,
       allowedOrigins: list(env.ALLOWED_ORIGINS),
       admins: list(env.ADMINS),
+      version: env.CF_VERSION_METADATA?.id,
     });
   }
 
   async fetch(request: Request): Promise<Response> {
+    // A running object keeps its code across deploys while players are connected. When a request
+    // comes from a newer Worker, restart: games are saved on every change, and sockets reconnect.
+    const wanted = request.headers.get(VERSION_HEADER);
+    const mine = this.env.CF_VERSION_METADATA?.id;
+    if (wanted && mine && wanted !== mine) this.ctx.abort('a newer version was deployed');
+
     const url = new URL(request.url);
     if (url.pathname !== WS_PATH) return this.game.api(request, request.headers.get('CF-Connecting-IP') ?? '');
 
@@ -73,7 +84,18 @@ export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (pathname.startsWith('/api/') || pathname === WS_PATH) {
-      return env.HUB.get(env.HUB.idFromName('mencherz')).fetch(request);
+      const headers = new Headers(request.headers);
+      if (env.CF_VERSION_METADATA) headers.set(VERSION_HEADER, env.CF_VERSION_METADATA.id);
+      // Read the body once, so the request can be sent again (bodies are small JSON).
+      const body = request.method === 'GET' || request.method === 'HEAD' ? null : await request.arrayBuffer();
+      const forward = () => new Request(request.url, { method: request.method, headers, body });
+      const hub = () => env.HUB.get(env.HUB.idFromName('mencherz'));
+      try {
+        return await hub().fetch(forward());
+      } catch {
+        // The object restarted to pick up this version; the next instance runs it.
+        return hub().fetch(forward());
+      }
     }
     return env.ASSETS.fetch(request);
   },

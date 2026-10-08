@@ -26,6 +26,10 @@ run_worker_first = ["/api/*", "/ws"]
 # Client-side routes such as /g/K7Q2X and /settings return index.html.
 not_found_handling = "single-page-application"
 
+# Lets the Worker tell the Durable Object which version it is (see worker/index.ts).
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
 [vars]
 # Usernames that are admins: they can list every account and set passwords at /admin.
 ADMINS = "amir"
