@@ -34,7 +34,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     if (step.kind === 'jump') bits.push('jumped');
     if (step.kind === 'fly') bits.push('took the shortcut ✈');
   }
-  for (const c of ev.captures) bits.push(`sent ${seatName(seats, c.seat)} back 💥 +${c.points}`);
+  for (const c of ev.captures) bits.push(`sent ${seatName(seats, c.seat)} back 💥 +${c.points}${c.revenge ? ' ⚔️ revenge' : ''}`);
   if (ev.bombed) {
     const b = ev.bombed;
     const whose = b.owner === ev.seat ? 'their own' : `${seatName(seats, b.owner)}'s`;
@@ -52,7 +52,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     }[ev.box.outcome];
     bits.push(`opened ${own ? 'their own' : `${owner}'s`} magic box 🎁: ${inside}`);
   }
-  if (ev.to === GOAL) bits.push('piece home 🏁 +100');
+  if (ev.to === GOAL) bits.push(`piece home 🏁 +${POINTS.home}`);
   let text = bits.join(' · ');
   if (ev.seatFinished) text += ev.bonus ? ` — ${who} brought all pieces home first! 🏆 +${ev.bonus}` : ` — ${who} brought all pieces home!`;
   return text;

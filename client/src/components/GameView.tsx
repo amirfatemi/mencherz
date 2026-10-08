@@ -246,7 +246,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
             </button>
           </div>
           <button className="btn ghost small" onClick={() => setHelp(true)}>
-            How to play
+            📖 آموزش
           </button>
           {mySeat >= 0 && !over ? (
             <button className="btn ghost small" onClick={() => setConfirmLeave(true)}>

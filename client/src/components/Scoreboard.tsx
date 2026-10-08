@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { COLOR_HEX, PIECES_PER_SEAT, type Seat } from '../../../shared/board.ts';
 import type { SeatView } from '../../../shared/protocol.ts';
 import type { GameEvent, GameState } from '../../../shared/rules.ts';
-import { EARLY_UNTIL, LATE_FROM, POINTS } from '../../../shared/scoring.ts';
+import { EARLY_UNTIL, LATE_FROM, POINTS, REVENGE } from '../../../shared/scoring.ts';
 import { describe, seatName } from '../events.ts';
 
 export const MEDALS = ['🥇', '🥈', '🥉', '4th'];
@@ -138,6 +138,9 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
             ✈ Fly over a piece in its home column (only the player opposite can): <b>+{POINTS.captureHomeColumn}</b>
           </li>
           <li>💣 Someone lands on your bomb, or on the bomb in your magic box: the same as knocking that piece out</li>
+          <li>
+            ⚔️ Revenge: knocking out whoever last knocked out one of yours counts <b>×{REVENGE}</b>
+          </li>
           <li>
             🎁 A magic box that takes points: <b>−{POINTS.boxPenalty}</b>
           </li>

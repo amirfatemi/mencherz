@@ -2141,3 +2141,41 @@ button.user-chip:hover {
   width: auto;
   text-align: left;
 }
+
+/* ---------- Persian tutorial ---------- */
+
+.howto.fa {
+  font-family: 'Vazirmatn', var(--font);
+  line-height: 1.9;
+}
+
+.howto.fa h3 {
+  margin: 18px 0 6px;
+}
+
+.howto.fa ul {
+  padding-right: 20px;
+  padding-left: 0;
+}
+
+.howto-points {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 4px;
+}
+
+.howto-points td {
+  padding: 6px 10px;
+  background: var(--card-soft);
+}
+
+.howto-points td:first-child {
+  border-radius: 0 10px 10px 0;
+}
+
+.howto-points td:last-child {
+  border-radius: 10px 0 0 10px;
+  width: 64px;
+  text-align: center;
+  font-weight: 700;
+}

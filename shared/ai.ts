@@ -46,7 +46,7 @@ function score(state: GameState, plan: MovePlan, careful: boolean): number {
   // A magic box is a gamble: a 1 in 4 chance of a bomb, and of losing points.
   if (plan.box) s -= value(plan.to) * 0.25 + 1;
   // When points decide the winner, knock-outs and pieces home are worth chasing for their own sake.
-  if (state.rules.winBy === 'points') s += plan.points * 0.3;
+  if (state.rules.winBy === 'points') s += plan.points * 1.5;
   if (careful) {
     const before = threatTo(state, plan.seat, plan.piece) * (value(plan.from) + 12);
     const after = threatTo(applyPlan(state, plan), plan.seat, plan.piece) * (value(plan.to) + 12);

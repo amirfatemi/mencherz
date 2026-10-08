@@ -14,6 +14,7 @@ export function upgradeGame(game: GameState): GameState {
   g.bombs ??= [];
   g.boxes ??= [];
   g.vests ??= SEATS.map(() => 0);
+  g.lastHitBy ??= SEATS.map(() => null);
   g.standings ??= g.phase === 'over' && g.ranking.length ? standingsOf(g) : [];
   return g;
 }

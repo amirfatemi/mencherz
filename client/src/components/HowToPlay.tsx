@@ -1,58 +1,173 @@
+import { TRACK_LAST } from '../../../shared/board.ts';
+import { EARLY_UNTIL, LATE_FROM, POINTS, REVENGE } from '../../../shared/scoring.ts';
+import { BOX_REVEAL_MS, PASS_HOLD_MS } from '../../../shared/timing.ts';
 import { Modal } from './Modal.tsx';
 
+/** A number in Persian digits. */
+const fa = (n: number) => n.toLocaleString('fa-IR');
+
+/** The full rules and scoring, in Persian. */
 export function HowToPlay({ onClose }: { onClose: () => void }) {
   return (
-    <Modal title="How to play" onClose={onClose}>
-      <div className="howto">
+    <Modal title="آموزش بازی" onClose={onClose}>
+      <div className="howto fa" dir="rtl" lang="fa">
+        <h3>هدف بازی</h3>
         <p>
-          Everyone has four pieces in their <b>hangar</b>. Score points by bringing pieces into the centre and by knocking out opponents. The
-          game ends when someone has all four home, and the <b>most points</b> wins — so a good hunter can beat a fast runner.
+          هر بازیکن چهار مهره دارد که در شروع بازی در <b>آشیانه</b>، یعنی گوشهٔ هم‌رنگ خودش، هستند. مهره‌ها را دور صفحه می‌چرخانید و به
+          خانهٔ وسط می‌رسانید و در این راه با رساندن مهره‌ها و زدن مهرهٔ دیگران <b>امتیاز</b> جمع می‌کنید. برنده کسی است که در پایان
+          بیشترین امتیاز را دارد.
         </p>
-        <ol>
-          <li>
-            <b>Launch.</b> Roll a <b>6</b> to move a plane from the hangar to your takeoff spot. A 6 also gives you another roll.
-          </li>
-          <li>
-            <b>Fly around.</b> Planes travel clockwise around the coloured track. When several planes can move, you pick which one.
-          </li>
-          <li>
-            <b>Colour jump.</b> Land on a square of <b>your colour</b> and you jump straight to the next square of your colour.
-          </li>
-          <li>
-            <b>Shortcut ✈.</b> Land on your colour's plane square and you fly along the dashed line across the board, skipping a whole arm. Any opponent sitting on the home square under the flight is sent back to its hangar.
-          </li>
-          <li>
-            <b>Capture 💥.</b> End a move on an opponent's plane and it goes back to its hangar.
-          </li>
-          <li>
-            <b>Home.</b> After a full lap, planes turn at the arrow into their coloured home column. Too high a roll bounces back from the centre.
-          </li>
-          <li>
-            <b>Three sixes</b> in a row is bad luck: every piece that isn't home yet goes back to the hangar.
-          </li>
-          <li>
-            <b>Bomb 💣.</b> After three sixes you get your revenge: drop a bomb on any empty square of the track. The next piece to land on it, yours
-            included, goes back to its hangar, and you score for it as if you'd knocked it out. Passing over a bomb is safe.
-          </li>
-          <li>
-            <b>Magic box 🎁.</b> Before the first roll, everyone hides one box on any square of the track. Whoever lands on it first, its owner
-            included, opens it and gets one of these at random: a <b>bomb</b> that sends the piece home, a protective{' '}
-            <b>vest</b> 🦺 that stops the next bomb they land on, <b>nothing</b>, or <b>−10 points</b>.
-          </li>
-        </ol>
-        <h3>Difficulty</h3>
+
+        <h3>شروع: جعبهٔ جادو 🎁</h3>
         <p>
-          On <b>normal</b> the dice is fair. On <b>hard</b> it's mean: a third six and a roll that lands you on a bomb come up more often. On{' '}
-          <b>easy</b> it's kind.
+          قبل از اولین تاس، هر بازیکن به نوبت یک جعبهٔ جادو روی یکی از خانه‌های خالی مسیر پنهان می‌کند. خانه‌های آخرِ هر رنگ (خط
+          خانه) مجاز نیستند. کار جعبه پایین‌تر توضیح داده شده است.
         </p>
-        <h3>Points</h3>
+
+        <h3>نوبت‌ها و تاس</h3>
         <ul>
-          <li>🏁 Each piece that reaches the centre: <b>+100</b></li>
-          <li>🏆 The first player to bring all four home: <b>+500</b></li>
-          <li>💥 Knocking out a piece in the first half of its route: <b>+20</b>, further along: <b>+25</b>, in the last 15%: <b>+30</b></li>
-          <li>✈ Flying over a piece in its home column, which only the player opposite can do: <b>+70</b></li>
+          <li>
+            در نوبت خود تاس را بیندازید. عددی که می‌آید روی تاس می‌ماند تا حرکت‌تان را انجام دهید؛ بعد تاس برای نفر بعد خالی
+            می‌شود.
+          </li>
+          <li>
+            اگر با عدد آمده هیچ حرکتی ممکن نباشد، عدد {fa(PASS_HOLD_MS / 1000)} ثانیه روی تاس می‌ماند و بعد نوبت به نفر بعد می‌رسد.
+          </li>
+          <li>
+            <b>۶</b> یک تاس اضافه می‌دهد.
+          </li>
+          <li>هیچ حرکتی خودکار انجام نمی‌شود؛ حتی اگر فقط یک حرکت ممکن باشد، خودتان مهره را حرکت می‌دهید.</li>
         </ul>
-        <p className="muted">Hosts can switch to the classic race (first all home wins) and change other rules when creating a game.</p>
+
+        <h3>حرکت مهره‌ها</h3>
+        <ul>
+          <li>
+            <b>بیرون آمدن از آشیانه:</b> با <b>۶</b> یک مهره از آشیانه به نقطهٔ پرواز (مثلث کنار آشیانه) می‌آید.
+          </li>
+          <li>مهره‌ها در جهت عقربه‌های ساعت دور صفحه حرکت می‌کنند. اگر چند مهره بتوانند حرکت کنند، خودتان یکی را انتخاب می‌کنید.</li>
+          <li>
+            <b>پرش رنگی:</b> اگر حرکت‌تان روی خانه‌ای هم‌رنگ مهرهٔ خودتان تمام شود، تا خانهٔ هم‌رنگ بعدی (۴ خانه جلوتر) می‌پرید.
+          </li>
+          <li>
+            <b>میان‌بُر ✈:</b> اگر روی خانهٔ هواپیمای رنگ خودتان فرود بیایید، از روی خط‌چین به آن طرف صفحه پرواز می‌کنید. اگر
+            مهرهٔ بازیکنِ روبه‌رو در خانهٔ سوم خط خانه‌اش باشد و پرواز از رویش رد شود، آن مهره به آشیانه برمی‌گردد.
+          </li>
+          <li>
+            <b>رسیدن به مرکز:</b> بعد از یک دور کامل، مهره از جلوی فلش وارد خط خانهٔ رنگ خودش می‌شود و به مرکز می‌رود. اگر عدد بیشتر
+            از لازم بیاید، مهره از مرکز برمی‌گردد.
+          </li>
+          <li>مهره‌های خودتان روی هم قرار می‌گیرند و یکدیگر را نمی‌زنند.</li>
+        </ul>
+
+        <h3>زدن مهره 💥</h3>
+        <p>
+          اگر حرکت شما روی مهرهٔ حریف تمام شود، آن مهره به آشیانه برمی‌گردد و شما امتیاز می‌گیرید. هرچه آن مهره مسیر بیشتری رفته
+          باشد، امتیاز بیشتری دارد. رد شدن از روی مهره‌ها چیزی را نمی‌زند.
+        </p>
+        <p>
+          <b>انتقام ⚔️:</b> اگر کسی را بزنید که آخرین بار مهرهٔ شما را زده، امتیاز آن زدن {fa(REVENGE)} برابر می‌شود. هر بار زده شدن
+          فقط یک انتقام دارد.
+        </p>
+
+        <h3>سه تا شش پشت سر هم و بمب 💣</h3>
+        <p>
+          سه تا شش پشت سر هم بدشانسی است: همهٔ مهره‌هایی که هنوز به مرکز نرسیده‌اند به آشیانه برمی‌گردند. در عوض شما یک{' '}
+          <b>بمب</b> روی یکی از خانه‌های خالی مسیر می‌گذارید.
+        </p>
+        <p>
+          اولین مهره‌ای که روی بمب <b>فرود بیاید</b>، حتی مهرهٔ خودتان، به آشیانه برمی‌گردد و بمب از بین می‌رود. رد شدن از روی بمب
+          خطری ندارد. اگر مهرهٔ حریف منفجر شود، صاحب بمب امتیاز زدن مهره را می‌گیرد.
+        </p>
+
+        <h3>جعبهٔ جادو 🎁</h3>
+        <p>
+          اولین مهره‌ای که روی جعبه فرود بیاید، حتی مهرهٔ صاحب جعبه، آن را باز می‌کند. محتوای جعبه {fa(BOX_REVEAL_MS / 1000)} ثانیه
+          نشان داده می‌شود و یکی از این چهار حالت به‌طور تصادفی پیش می‌آید:
+        </p>
+        <ul>
+          <li>
+            <b>بمب:</b> مهره به آشیانه برمی‌گردد (اگر جعبه مال حریف باشد، صاحب جعبه امتیاز زدن می‌گیرد).
+          </li>
+          <li>
+            <b>جلیقهٔ محافظ 🦺:</b> بمب بعدی که رویش بروید بی‌اثر می‌شود.
+          </li>
+          <li>
+            <b>خالی:</b> اتفاقی نمی‌افتد.
+          </li>
+          <li>
+            <b>{fa(POINTS.boxPenalty)} امتیاز منفی.</b>
+          </li>
+        </ul>
+
+        <h3>امتیازها</h3>
+        <table className="howto-points">
+          <tbody>
+            <tr>
+              <td>🏆 اولین نفری که هر چهار مهره را به مرکز برساند</td>
+              <td>{fa(POINTS.firstHome)}</td>
+            </tr>
+            <tr>
+              <td>🏁 هر مهره‌ای که به مرکز برسد</td>
+              <td>{fa(POINTS.home)}</td>
+            </tr>
+            <tr>
+              <td>
+                💥 زدن مهره در نیمهٔ اول مسیرش (خانهٔ {fa(1)} تا {fa(EARLY_UNTIL)})
+              </td>
+              <td>{fa(POINTS.captureEarly)}</td>
+            </tr>
+            <tr>
+              <td>
+                💥 زدن مهره در نیمهٔ دوم مسیرش (خانهٔ {fa(EARLY_UNTIL + 1)} تا {fa(LATE_FROM - 1)})
+              </td>
+              <td>{fa(POINTS.captureMid)}</td>
+            </tr>
+            <tr>
+              <td>
+                💥 زدن مهره در ۱۵٪ آخر مسیرش (خانهٔ {fa(LATE_FROM)} تا {fa(TRACK_LAST)})
+              </td>
+              <td>{fa(POINTS.captureLate)}</td>
+            </tr>
+            <tr>
+              <td>✈ زدن مهره‌ای که در خط خانه‌اش است (فقط با پرواز بازیکن روبه‌رو)</td>
+              <td>{fa(POINTS.captureHomeColumn)}</td>
+            </tr>
+            <tr>
+              <td>⚔️ انتقام</td>
+              <td>×{fa(REVENGE)}</td>
+            </tr>
+            <tr>
+              <td>🎁 جعبهٔ جادوی منفی</td>
+              <td>−{fa(POINTS.boxPenalty)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>پایان بازی</h3>
+        <p>
+          بازی با رسیدن اولین نفر تمام نمی‌شود و ادامه پیدا می‌کند تا جایگاه سوم مشخص شود، یعنی فقط یک نفر باقی بماند. رتبه‌ها بر
+          اساس امتیاز است؛ پس کسی که زیاد مهره می‌زند هم می‌تواند از اولین نفرِ رسیده جلو بزند.
+        </p>
+
+        <h3>درجهٔ سختی</h3>
+        <p>
+          در حالت <b>عادی</b> تاس کاملاً منصفانه است. در حالت <b>سخت</b>، احتمال آمدنِ شش سوم و افتادن روی بمب بیشتر است و در حالت{' '}
+          <b>آسان</b> کمتر.
+        </p>
+
+        <h3>بازی چندنفره روی یک دستگاه</h3>
+        <p>
+          برای بازی چند نفر روی یک تبلت، هر نفر در گوشی خودش به <b>Settings</b> می‌رود و یک کد یک‌بارمصرف می‌گیرد. صاحب تبلت روی
+          صندلی خالی «📱 Add player here» را می‌زند و نام کاربری و کد را وارد می‌کند. امتیاز و بُرد به حساب خود آن نفر ثبت می‌شود.
+        </p>
+
+        <h3>جدول امتیاز کل</h3>
+        <p>
+          امتیاز همهٔ بازی‌ها در جدول کل جمع می‌شود، ولی فقط بازی‌هایی حساب می‌شوند که دست‌کم <b>دو نفر</b> (نه ربات) در آن بازی کرده
+          باشند.
+        </p>
+
+        <p className="muted small">میزبان بازی هنگام ساختن بازی می‌تواند قوانین را در بخش House rules تغییر دهد.</p>
       </div>
     </Modal>
   );

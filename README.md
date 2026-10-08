@@ -96,7 +96,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
    - −10 points
 
    What was inside shows on a card for 3 seconds while the game waits.
-10. The game ends when a player has all four planes in the centre. By default the most points wins (see below); in the classic race, that first player wins.
+10. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
 
 ### Points
 
@@ -104,14 +104,22 @@ By default the game is scored, so knocking pieces out matters as much as racing:
 
 | | Points |
 | --- | --- |
-| A piece reaches the centre | 100 |
-| The first player to bring all four pieces home | 500 |
-| Knock out a piece in the first half of its track (squares 1–25) | 20 |
-| …between halfway and the last 15% (26–42) | 25 |
-| …in the last 15% (43–50) | 30 |
-| Fly over a piece in its home column (only the opposite player's flight can) | 70 |
+| The first player to bring all four pieces home | 100 |
+| A piece reaches the centre | 20 |
+| Knock out a piece in the first half of its track (squares 1–25) | 10 |
+| …between halfway and the last 15% (26–42) | 15 |
+| …in the last 15% (43–50) | 20 |
+| Fly over a piece in its home column (only the opposite player's flight can) | 40 |
+| **Revenge:** knock out whoever last knocked out one of yours | ×1.5 (once per knock-out received) |
+| A magic box that takes points | −10 |
 
-The game still ends when the first player has all four pieces home. Places then go by points, with ties broken by pieces home and then finishing order, so a hunter can beat the first player home. The values live in `shared/scoring.ts`. The scoreboard next to the board replaces the game log.
+The numbers are kept small, with 100 the biggest award. They were balanced with bot games played to third place: knock-outs make up about a third of all points.
+
+The game goes on after the first player finishes, until third place is decided (only one player left). Places go by points, with ties broken by pieces home and then finishing order, so a hunter can beat the first player home.
+
+The values live in `shared/scoring.ts`. The scoreboard next to the board replaces the game log.
+
+The full rules and scoring are also in the game, in Persian, under **📖 آموزش**.
 
 **Difficulty** (per game) sets how mean the dice is:
 
@@ -137,7 +145,7 @@ The weights live in `shared/dice.ts`.
 - Flights (on or off)
 - Flight knock-out (on or off)
 - Extra roll after a capture (on or off)
-- Stop at the first winner, or play on until every place is decided
+- Play on until third place is decided (default), or stop at the first player home
 
 ## Code layout
 

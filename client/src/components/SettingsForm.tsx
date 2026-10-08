@@ -1,5 +1,6 @@
 import type { RoomSettings } from '../../../shared/protocol.ts';
 import type { Rules } from '../../../shared/rules.ts';
+import { POINTS } from '../../../shared/scoring.ts';
 
 export const TURN_OPTIONS = [0, 10, 15, 20, 30, 45, 60, 90];
 
@@ -56,7 +57,10 @@ export function SettingsForm({ value, onChange }: Props) {
         <label className="field">
           <span>How to win</span>
           <select value={rules.winBy} onChange={(e) => setRules({ winBy: e.target.value as Rules['winBy'] })}>
-            <option value="points">Most points — 100 per piece home, 20–70 per knock-out</option>
+            <option value="points">
+              Most points — {POINTS.home} per piece home, {POINTS.captureEarly}–{POINTS.captureHomeColumn} per knock-out, +{POINTS.firstHome} for
+              first home
+            </option>
             <option value="race">First to bring all four pieces home (classic)</option>
           </select>
         </label>
@@ -109,8 +113,8 @@ export function SettingsForm({ value, onChange }: Props) {
           <label className="field">
             <span>The game ends</span>
             <select value={rules.playUntil} onChange={(e) => setRules({ playUntil: e.target.value as Rules['playUntil'] })}>
+              <option value="all">When only one player is left (third place decided)</option>
               <option value="winner">When the first player has all pieces home</option>
-              <option value="all">When everyone has all pieces home</option>
             </select>
           </label>
         </div>

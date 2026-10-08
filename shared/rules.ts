@@ -17,7 +17,7 @@ import {
   trackIndex,
   type Seat,
 } from './board.ts';
-import { POINTS, captureValue } from './scoring.ts';
+import { POINTS, REVENGE, captureValue } from './scoring.ts';
 
 export interface Rules {
   /** Dice values that launch a plane from the hangar to the takeoff spot. */
@@ -48,7 +48,7 @@ export interface Rules {
   flightCapture: boolean;
   /** Capturing an opponent gives another roll. */
   bonusRollOnCapture: boolean;
-  /** Stop when the first player finishes, or play on for the full ranking. */
+  /** Stop when the first player finishes, or play on until only one is left (the full ranking). */
   playUntil: 'winner' | 'all';
   /** Rank by points (pieces home and knock-outs), or by who brought everything home first. */
   winBy: 'points' | 'race';
@@ -66,7 +66,7 @@ export const DEFAULT_RULES: Rules = {
   flights: true,
   flightCapture: true,
   bonusRollOnCapture: false,
-  playUntil: 'winner',
+  playUntil: 'all',
   winBy: 'points',
 };
 
@@ -120,6 +120,8 @@ export interface GameState {
   boxes: MagicBox[];
   /** Protective vests per seat: each one stops a bomb once. */
   vests: number[];
+  /** Who last knocked out one of each seat's pieces, until it takes its revenge. */
+  lastHitBy: (Seat | null)[];
   turnNo: number;
   seq: number;
 }
@@ -139,6 +141,8 @@ export interface Capture {
   atStep: number;
   byFlight: boolean;
   points: number;
+  /** The victim had last knocked out one of the mover's pieces, so this counts REVENGE times. */
+  revenge: boolean;
 }
 
 /** A piece landing on a bomb: it goes back to the hangar and the bomb is used up. */
@@ -153,6 +157,7 @@ export interface BombHit {
   points: number;
   /** A protective vest took the blast: the piece carries on and the vest is used up. */
   saved: boolean;
+  revenge: boolean;
 }
 
 /** A piece opening someone's magic box. */
@@ -167,6 +172,7 @@ export interface BoxHit {
   saved: boolean;
   /** Points for the box's owner when its bomb goes off. */
   points: number;
+  revenge: boolean;
 }
 
 export interface MovePlan {
@@ -256,6 +262,7 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     bombs: [],
     boxes: [],
     vests: SEATS.map(() => 0),
+    lastHitBy: SEATS.map(() => null),
     turnNo: 1,
     seq: 0,
   };
@@ -292,6 +299,12 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     cur = target;
   }
 
+  // A knock-out's points, and whether it's revenge: the victim last knocked out one of the hitter's pieces.
+  const worth = (hitter: Seat, victim: Seat, pos: number) => {
+    const revenge = state.lastHitBy?.[hitter] === victim;
+    return { points: Math.round(captureValue(pos) * (revenge ? REVENGE : 1)), revenge };
+  };
+
   // Positions of everyone else, updated as captures happen along the chain.
   const taken = new Set<string>();
   const captureAt = (pos: number) => {
@@ -303,7 +316,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
         const key = `${other}:${j}`;
         if (taken.has(key) || !isOnTrack(p) || trackIndex(other, p) !== idx) return;
         taken.add(key);
-        plan.captures.push({ seat: other, piece: j, from: p, atStep: plan.path.length - 1, byFlight: false, points: captureValue(p) });
+        plan.captures.push({ seat: other, piece: j, from: p, atStep: plan.path.length - 1, byFlight: false, ...worth(seat, other, p) });
       });
     }
   };
@@ -319,7 +332,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     if (bomb && !plan.bombed) {
       const saved = vests > 0;
       if (saved) vests--;
-      plan.bombed = { owner: bomb.owner, square, pos, atStep, points: saved || bomb.owner === seat ? 0 : captureValue(pos), saved };
+      const hit = saved || bomb.owner === seat ? { points: 0, revenge: false } : worth(bomb.owner, seat, pos);
+      plan.bombed = { owner: bomb.owner, square, pos, atStep, saved, ...hit };
       if (!saved) return true;
     }
     captureAt(pos);
@@ -332,7 +346,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
       if (saved) vests--;
       if (outcome === 'vest') vests++;
       const scores = blast && !saved && box.owner !== seat;
-      plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, points: scores ? captureValue(pos) : 0 };
+      plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, ...(scores ? worth(box.owner, seat, pos) : { points: 0, revenge: false }) };
       if (blast && !saved) return true;
     }
     return false;
@@ -349,7 +363,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
               const key = `${crossed}:${j}`;
               if (p !== FLIGHT_CROSSES || taken.has(key)) return;
               taken.add(key);
-              plan.captures.push({ seat: crossed, piece: j, from: p, atStep: plan.path.length, byFlight: true, points: captureValue(p) });
+              plan.captures.push({ seat: crossed, piece: j, from: p, atStep: plan.path.length, byFlight: true, ...worth(seat, crossed, p) });
             });
           }
         }
@@ -551,6 +565,18 @@ export function applyMove(
   }
   if (plan.to === GOAL) s.stats[seat].home++;
   if (dice === 6) s.streakMoved.push(piece);
+
+  // Revenge settles a score; each new knock-out opens one.
+  s.lastHitBy ??= SEATS.map(() => null);
+  for (const c of plan.captures) {
+    if (c.revenge) s.lastHitBy[seat] = null;
+    s.lastHitBy[c.seat] = seat;
+  }
+  const blast = blastOf(plan);
+  if (blast && blast.owner !== seat) {
+    if ((plan.bombed && !plan.bombed.saved ? plan.bombed : plan.box)?.revenge) s.lastHitBy[blast.owner] = null;
+    s.lastHitBy[seat] = blast.owner;
+  }
 
   const event: MoveEvent = { ...plan, type: 'move', extraRoll: false, seatFinished: false, bonus: 0, gameOver: false };
 

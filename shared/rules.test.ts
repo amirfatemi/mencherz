@@ -25,7 +25,7 @@ import {
 import { MEANNESS, rollWeighted, rollWeights } from './dice.ts';
 import { REACTION_BY_ID, reactionsFor } from './reactions.ts';
 import { BOX_REVEAL_MS, PASS_HOLD_MS, ROLL_MS, blastAt, boxOpenAt, eventDuration } from './timing.ts';
-import { EARLY_UNTIL, LATE_FROM, POINTS, captureValue } from './scoring.ts';
+import { EARLY_UNTIL, LATE_FROM, POINTS, REVENGE, captureValue } from './scoring.ts';
 import {
   DEFAULT_RULES,
   applyBomb,
@@ -464,7 +464,7 @@ describe('three sixes and bombs', () => {
     Object.assign(g, { phase: 'move', dice: 2, movable: [0, 1] });
     const { state, event } = applyMove(g, 0);
     assert.equal(event.to, HANGAR);
-    assert.deepEqual(event.bombed, { owner: 0, square: trackIndex(1, 32), pos: 32, atStep: 1, points: captureValue(32), saved: false });
+    assert.deepEqual(event.bombed, { owner: 0, square: trackIndex(1, 32), pos: 32, atStep: 1, points: captureValue(32), saved: false, revenge: false });
     assert.equal(state.pieces[1][0], HANGAR);
     assert.deepEqual(state.bombs, []);
     assert.equal(state.stats[0].points, captureValue(32));
@@ -658,5 +658,56 @@ describe('bot priorities', () => {
     const g = at(game([0, 2]), 0, [GOAL - 3, 9]);
     Object.assign(g, { phase: 'move', dice: 3, movable: [0, 1] });
     assert.equal(chooseMove(g, 'hard', () => 0), 0);
+  });
+});
+
+describe('revenge and playing on', () => {
+  /** Seat `hitter` knocks out the piece `victim` has at `pos` (their own numbering), with a 2. */
+  function knockOut(g: GameState, hitter: Seat, victim: Seat, pos: number) {
+    at(g, hitter, [sameSquare(victim, pos, hitter) - 2]);
+    at(g, victim, [pos]);
+    Object.assign(g, { turn: hitter, phase: 'move', dice: 2, movable: [0] });
+    return applyMove(g, 0);
+  }
+
+  test('knocking out whoever last knocked you out counts 1.5 times, once', () => {
+    let g = game([0, 2]);
+    const first = knockOut(g, 2, 0, 30);
+    assert.equal(first.event.captures[0].revenge, false);
+    assert.deepEqual(first.state.lastHitBy, [2, null, null, null]);
+
+    g = first.state;
+    const back = knockOut(g, 0, 2, 30);
+    assert.equal(back.event.captures[0].revenge, true);
+    assert.equal(back.event.captures[0].points, Math.round(captureValue(30) * REVENGE));
+    assert.deepEqual(back.state.lastHitBy, [null, null, 0, null], 'settled, and now 2 may take revenge');
+
+    const again = knockOut(back.state, 0, 2, 30);
+    assert.equal(again.event.captures[0].revenge, false, 'one revenge per knock-out received');
+  });
+
+  test('a bomb counts as a knock-out for revenge', () => {
+    const g = at(game([0, 1]), 1, [30]);
+    g.bombs = [{ square: trackIndex(1, 32), owner: 0 }];
+    g.lastHitBy = [1, null, null, null];
+    Object.assign(g, { turn: 1, phase: 'move', dice: 2, movable: [0] });
+    const { event, state } = applyMove(g, 0);
+    assert.equal(event.bombed?.revenge, true);
+    assert.equal(event.bombed?.points, Math.round(captureValue(32) * REVENGE));
+    assert.deepEqual(state.lastHitBy, [null, 0, null, null]);
+  });
+
+  test('by default the game goes on after the first player finishes, until only one is left', () => {
+    let g = at(game([0, 1, 2]), 0, [GOAL, GOAL, GOAL, GOAL - 2]);
+    Object.assign(g, { phase: 'move', dice: 2, movable: [3] });
+    const r = applyMove(g, 3);
+    assert.equal(r.event.seatFinished, true);
+    assert.equal(r.state.phase, 'roll', 'still playing');
+    assert.equal(r.state.turn, 1);
+    g = at(r.state, 1, [GOAL, GOAL, GOAL, GOAL - 2]);
+    Object.assign(g, { phase: 'move', dice: 2, movable: [3] });
+    const second = applyMove(g, 3);
+    assert.equal(second.state.phase, 'over', 'third place is decided');
+    assert.deepEqual(second.state.ranking, [0, 1, 2]);
   });
 });

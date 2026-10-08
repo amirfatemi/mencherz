@@ -85,7 +85,12 @@ let popupIds = 0;
 
 /** When each scoring moment of a move happens, measured from the start of its animation. */
 function scoreMoments(ev: MoveEvent): { at: Point; delay: number; text: string; seat: Seat }[] {
-  const out = ev.captures.map((c) => ({ at: piecePoint(c.seat, c.piece, c.from), delay: captureAt(ev, c), text: `+${c.points}`, seat: ev.seat }));
+  const out = ev.captures.map((c) => ({
+    at: piecePoint(c.seat, c.piece, c.from),
+    delay: captureAt(ev, c),
+    text: c.revenge ? `⚔️ +${c.points}` : `+${c.points}`,
+    seat: ev.seat,
+  }));
   if (ev.to === GOAL) {
     const text = ev.bonus ? `+${POINTS.home} · 🏆 +${ev.bonus}` : `+${POINTS.home}`;
     out.push({ at: piecePoint(ev.seat, ev.piece, GOAL), delay: arrivalAt(ev), text, seat: ev.seat });

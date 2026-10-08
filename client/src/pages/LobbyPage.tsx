@@ -133,8 +133,8 @@ export function LobbyPage({ user, onVisible }: { user: PublicUser; onVisible: ()
               Join
             </button>
           </form>
-          <button className="link" onClick={() => setRules(true)}>
-            How to play
+          <button className="btn secondary big" onClick={() => setRules(true)}>
+            <span aria-hidden>📖</span> آموزش بازی
           </button>
         </div>
       </section>

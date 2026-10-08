@@ -29,6 +29,7 @@ import {
 } from '../../../shared/board.ts';
 import type { SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
+import { POINTS } from '../../../shared/scoring.ts';
 import { planMove, type GameState } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
 import { BOARD_PX, CELL, heading, restHeading, toPx } from '../geometry.ts';
@@ -429,7 +430,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 <g key={`${c.seat}:${c.piece}`}>
                   <circle cx={p.x} cy={p.y} r={CELL * 0.5} fill="none" stroke="#d50000" strokeWidth={4} className="threat" />
                   <text x={p.x} y={p.y - CELL * 0.75} className="preview-points" textAnchor="middle">
-                    +{c.points}
+                    {c.revenge ? '⚔️ ' : ''}+{c.points}
                   </text>
                 </g>
               );
@@ -469,7 +470,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 <>
                   {preview.to === GOAL && (
                     <text x={p.x} y={p.y - CELL * 0.85} className="preview-points" textAnchor="middle">
-                      +100
+                      +{POINTS.home}
                     </text>
                   )}
                   <Piece
