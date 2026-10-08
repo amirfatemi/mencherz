@@ -1,13 +1,15 @@
 import { existsSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import express from 'express';
-import { Server } from 'socket.io';
-import type { ClientToServer, ServerToClient } from '../shared/protocol.ts';
-import { createAuth } from './auth.ts';
-import { openDb } from './db.ts';
-import { createRooms, type SocketData } from './rooms.ts';
+import { WebSocketServer } from 'ws';
+import { WS_PATH } from '../shared/wire.ts';
+import { createGameServer } from './core.ts';
+import { openSqlite } from './sqlite.ts';
+
+// Runs the game server on Node: Express for the built client, the `ws` package for sockets and a
+// SQLite file for storage. The same server runs on Cloudflare via worker/index.ts.
 
 export interface ServerConfig {
   port: number;
@@ -23,17 +25,44 @@ export interface ServerConfig {
   timeScale?: number;
 }
 
+/** Turns a Node request into a fetch Request for the shared API handler. */
+async function toRequest(req: IncomingMessage): Promise<Request> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  const headers = new Headers();
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(', ') : v);
+  }
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
+  return new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
+    method: req.method,
+    headers,
+    body: hasBody ? Buffer.concat(chunks) : undefined,
+  });
+}
+
 export async function startServer(config: ServerConfig) {
-  const db = openDb(config.dbPath);
-  const auth = createAuth(db, { secureCookies: config.secureCookies });
+  const db = openSqlite(config.dbPath);
+  const game = createGameServer({
+    db,
+    secureCookies: config.secureCookies,
+    allowedOrigins: config.allowedOrigins,
+    timeScale: config.timeScale,
+  });
 
   const app = express();
   app.disable('x-powered-by');
   if (config.trustProxy) app.set('trust proxy', 1);
-  app.use(express.json({ limit: '32kb' }));
-  app.get('/api/health', (_req, res) => void res.json({ ok: true }));
-  app.use('/api', auth.router);
-  app.use('/api', (_req, res) => void res.status(404).json({ error: 'Not found' }));
+  app.use('/api', async (req, res) => {
+    const response = await game.api(await toRequest(req), req.ip ?? '');
+    res.status(response.status);
+    response.headers.forEach((value, key) => {
+      if (key !== 'set-cookie') res.setHeader(key, value);
+    });
+    const cookies = response.headers.getSetCookie();
+    if (cookies.length) res.setHeader('set-cookie', cookies);
+    res.end(Buffer.from(await response.arrayBuffer()));
+  });
 
   const clientDir = config.clientDir;
   if (clientDir && existsSync(clientDir)) {
@@ -48,38 +77,31 @@ export async function startServer(config: ServerConfig) {
   }
 
   const httpServer = createServer(app);
-  const io = new Server<ClientToServer, ServerToClient, Record<string, never>, SocketData>(httpServer, {
-    serveClient: false,
-    pingInterval: 20000,
-    pingTimeout: 20000,
-    // Browsers attach the session cookie to cross-site WebSocket handshakes too; only accept our own pages.
-    allowRequest: (req, cb) => {
-      const origin = req.headers.origin;
-      if (!origin) return cb(null, true);
-      try {
-        cb(null, new URL(origin).host === req.headers.host || !!config.allowedOrigins?.includes(origin));
-      } catch {
-        cb(null, false);
-      }
-    },
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+  httpServer.on('upgrade', (req, socket, head) => {
+    if (new URL(req.url ?? '/', 'http://x').pathname !== WS_PATH) return void socket.destroy();
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const callbacks = game.connect(
+        { send: (text) => ws.send(text), close: (code, reason) => ws.close(code, reason) },
+        { cookie: req.headers.cookie, origin: req.headers.origin, host: req.headers.host },
+      );
+      if (!callbacks) return;
+      ws.on('message', (data, isBinary) => {
+        if (!isBinary) callbacks.message(data.toString());
+      });
+      ws.on('close', callbacks.close);
+      ws.on('error', callbacks.close);
+    });
   });
-
-  io.use((socket, next) => {
-    const user = auth.userFromCookieHeader(socket.handshake.headers.cookie);
-    if (!user) return next(new Error('unauthorized'));
-    socket.data.user = user;
-    next();
-  });
-
-  const rooms = createRooms(io, db, auth, { timeScale: config.timeScale ?? 1 });
-  io.on('connection', (socket) => rooms.connect(socket));
 
   await new Promise<void>((resolve) => httpServer.listen(config.port, config.host, resolve));
   const port = (httpServer.address() as AddressInfo).port;
 
   async function close() {
-    rooms.shutdown();
-    await io.close();
+    game.shutdown();
+    for (const ws of wss.clients) ws.terminate();
+    await new Promise<void>((resolve) => wss.close(() => resolve()));
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     db.close();
   }
 

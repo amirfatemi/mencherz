@@ -5,3 +5,7 @@ data/*.db-*
 .env
 *.log
 .DS_Store
+
+# Cloudflare
+.wrangler/
+.dev.vars

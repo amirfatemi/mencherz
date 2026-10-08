@@ -1,5 +1,4 @@
 import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto';
-import express, { type Request, type Response } from 'express';
 import type { LeaderRow, PairCode, PublicUser } from '../shared/protocol.ts';
 import type { Db } from './db.ts';
 import { InputError } from './validate.ts';
@@ -11,7 +10,12 @@ const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const PAIR_CODE_MS = 10 * 60 * 1000;
 const PAIR_CODE_TRIES = 5;
 
-function scryptKey(password: string, salt: Buffer): Promise<Buffer> {
+// Standard encodings that behave the same on Node and on Workers (and match Buffer's output).
+const toBase64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
+const fromBase64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const toHex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+
+function scryptKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
   return new Promise((resolve, reject) =>
     scrypt(password.normalize('NFKC'), salt, 64, SCRYPT, (err, key) => (err ? reject(err) : resolve(key))),
   );
@@ -20,20 +24,20 @@ function scryptKey(password: string, salt: Buffer): Promise<Buffer> {
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
   const key = await scryptKey(password, salt);
-  return `scrypt$${salt.toString('base64')}$${key.toString('base64')}`;
+  return `scrypt$${toBase64(salt)}$${toBase64(key)}`;
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [scheme, salt, key] = stored.split('$');
   if (scheme !== 'scrypt' || !salt || !key) return false;
-  const expected = Buffer.from(key, 'base64');
-  const actual = await scryptKey(password, Buffer.from(salt, 'base64'));
+  const expected = fromBase64(key);
+  const actual = await scryptKey(password, fromBase64(salt));
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
-export function readCookie(header: string | undefined, name = COOKIE): string | null {
+export function readCookie(header: string | null | undefined, name = COOKIE): string | null {
   if (!header) return null;
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
@@ -49,6 +53,14 @@ interface UserRow {
   games_played: number;
   wins: number;
   total_points: number;
+}
+
+const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
+
+/** Lets a timer not hold a Node process open; Workers timers have no such notion. */
+export function unref(timer: unknown) {
+  (timer as { unref?: () => void }).unref?.();
 }
 
 const toPublic = (u: UserRow): PublicUser => ({
@@ -80,7 +92,7 @@ export function createAuth(db: Db, opts: { secureCookies: boolean }) {
   const q = {
     userByName: db.prepare('SELECT * FROM users WHERE username = ?'),
     userById: db.prepare('SELECT * FROM users WHERE id = ?'),
-    insertUser: db.prepare('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)'),
+    insertUser: db.prepare('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?) RETURNING id'),
     insertSession: db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)'),
     sessionUser: db.prepare(
       'SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?',
@@ -108,17 +120,12 @@ export function createAuth(db: Db, opts: { secureCookies: boolean }) {
   const allowPairCode = limiter(10, 10 * 60 * 1000);
   const pairHash = (userId: number, code: string) => sha256(`${userId}:${code}`);
 
-  function startSession(res: Response, userId: number) {
-    const token = randomBytes(32).toString('hex');
-    const expires = Date.now() + SESSION_DAYS * 24 * 3600 * 1000;
-    q.insertSession.run(sha256(token), userId, expires);
-    res.cookie(COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: opts.secureCookies,
-      maxAge: SESSION_DAYS * 24 * 3600 * 1000,
-      path: '/',
-    });
+  /** Opens a session and returns the Set-Cookie header for it. */
+  function startSession(userId: number): string {
+    const token = toHex(randomBytes(32));
+    const maxAge = SESSION_DAYS * 24 * 3600;
+    q.insertSession.run(sha256(token), userId, Date.now() + maxAge * 1000);
+    return `${COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${opts.secureCookies ? '; Secure' : ''}`;
   }
 
   function userFromToken(token: string | null): PublicUser | null {
@@ -127,8 +134,8 @@ export function createAuth(db: Db, opts: { secureCookies: boolean }) {
     return row ? toPublic(row) : null;
   }
 
-  function credentials(req: Request): { username: string; password: string } | string {
-    const { username, password } = (req.body ?? {}) as Record<string, unknown>;
+  function credentials(body: unknown): { username: string; password: string } | string {
+    const { username, password } = (body ?? {}) as Record<string, unknown>;
     if (typeof username !== 'string' || !USERNAME_RE.test(username.trim())) {
       return 'Username must be 3–20 letters, numbers, _ or -';
     }
@@ -138,79 +145,87 @@ export function createAuth(db: Db, opts: { secureCookies: boolean }) {
     return { username: username.trim(), password };
   }
 
-  const router = express.Router();
+  async function readJson(req: Request): Promise<unknown> {
+    const text = await req.text();
+    if (text.length > 32 * 1024) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
 
-  router.post('/register', async (req, res) => {
-    if (!allow(req.ip ?? '')) return void res.status(429).json({ error: 'Too many attempts, try again later' });
-    const c = credentials(req);
-    if (typeof c === 'string') return void res.status(400).json({ error: c });
-    if (q.userByName.get(c.username)) return void res.status(409).json({ error: 'That username is taken' });
+  async function register(req: Request, ip: string): Promise<Response> {
+    if (!allow(ip)) return json({ error: 'Too many attempts, try again later' }, 429);
+    const c = credentials(await readJson(req));
+    if (typeof c === 'string') return json({ error: c }, 400);
+    if (q.userByName.get(c.username)) return json({ error: 'That username is taken' }, 409);
     const hash = await hashPassword(c.password);
     let id: number;
     try {
-      id = Number(q.insertUser.run(c.username, hash, Date.now()).lastInsertRowid);
+      id = Number((q.insertUser.get(c.username, hash, Date.now()) as { id: number }).id);
     } catch {
-      return void res.status(409).json({ error: 'That username is taken' });
+      return json({ error: 'That username is taken' }, 409);
     }
-    startSession(res, id);
-    res.status(201).json(toPublic(q.userById.get(id) as unknown as UserRow));
-  });
-
-  router.post('/login', async (req, res) => {
-    if (!allow(req.ip ?? '')) return void res.status(429).json({ error: 'Too many attempts, try again later' });
-    const c = credentials(req);
-    const row = typeof c === 'string' ? undefined : (q.userByName.get(c.username) as UserRow | undefined);
-    if (typeof c === 'string' || !row || !(await verifyPassword(c.password, row.password_hash))) {
-      return void res.status(401).json({ error: 'Wrong username or password' });
-    }
-    startSession(res, row.id);
-    res.json(toPublic(row));
-  });
-
-  router.post('/logout', (req, res) => {
-    const token = readCookie(req.headers.cookie);
-    if (token) q.deleteSession.run(sha256(token));
-    res.clearCookie(COOKIE, { path: '/' });
-    res.json({ ok: true });
-  });
-
-  /** The signed-in user, or answers 401 and returns null. */
-  function signedIn(req: Request, res: Response): PublicUser | null {
-    const user = userFromToken(readCookie(req.headers.cookie));
-    if (!user) res.status(401).json({ error: 'Not signed in' });
-    return user;
+    return json(toPublic(q.userById.get(id) as UserRow), 201, { 'set-cookie': startSession(id) });
   }
 
-  router.get('/me', (req, res) => {
-    const user = signedIn(req, res);
-    if (user) res.json(user);
-  });
+  async function login(req: Request, ip: string): Promise<Response> {
+    if (!allow(ip)) return json({ error: 'Too many attempts, try again later' }, 429);
+    const c = credentials(await readJson(req));
+    const row = typeof c === 'string' ? undefined : (q.userByName.get(c.username) as UserRow | undefined);
+    if (typeof c === 'string' || !row || !(await verifyPassword(c.password, row.password_hash))) {
+      return json({ error: 'Wrong username or password' }, 401);
+    }
+    return json(toPublic(row), 200, { 'set-cookie': startSession(row.id) });
+  }
 
-  router.get('/leaderboard', (req, res) => {
-    if (!signedIn(req, res)) return;
-    const rows = q.leaderboard.all() as unknown as Pick<UserRow, 'username' | 'total_points' | 'games_played' | 'wins'>[];
-    res.json(rows.map((r): LeaderRow => ({ username: r.username, points: r.total_points, gamesPlayed: r.games_played, wins: r.wins })));
-  });
+  function logout(req: Request): Response {
+    const token = readCookie(req.headers.get('cookie'));
+    if (token) q.deleteSession.run(sha256(token));
+    return json({ ok: true }, 200, { 'set-cookie': `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax` });
+  }
+
+  function leaderboard(): Response {
+    const rows = q.leaderboard.all() as Pick<UserRow, 'username' | 'total_points' | 'games_played' | 'wins'>[];
+    return json(rows.map((r): LeaderRow => ({ username: r.username, points: r.total_points, gamesPlayed: r.games_played, wins: r.wins })));
+  }
 
   // A code the player reads out so someone can seat them at their device. One active code per player.
-  router.post('/pair-code', (req, res) => {
-    const user = signedIn(req, res);
-    if (!user) return;
-    if (!allowPairCode(String(user.id))) return void res.status(429).json({ error: 'Too many codes, try again in a few minutes' });
+  function pairCode(user: PublicUser): Response {
+    if (!allowPairCode(String(user.id))) return json({ error: 'Too many codes, try again in a few minutes' }, 429);
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     const expiresAt = Date.now() + PAIR_CODE_MS;
     q.savePairCode.run(user.id, pairHash(user.id, code), expiresAt);
-    res.json({ code, expiresAt } satisfies PairCode);
-  });
+    return json({ code, expiresAt } satisfies PairCode);
+  }
 
-  setInterval(() => {
+  /** Answers the account endpoints under /api, or returns null for any other path. */
+  async function handle(req: Request, ip: string): Promise<Response | null> {
+    const path = new URL(req.url).pathname.replace(/^\/api/, '');
+    const route = `${req.method} ${path}`;
+    if (route === 'POST /register') return register(req, ip);
+    if (route === 'POST /login') return login(req, ip);
+    if (route === 'POST /logout') return logout(req);
+    if (!['GET /me', 'GET /leaderboard', 'POST /pair-code'].includes(route)) return null;
+    const user = userFromToken(readCookie(req.headers.get('cookie')));
+    if (!user) return json({ error: 'Not signed in' }, 401);
+    if (route === 'GET /me') return json(user);
+    if (route === 'GET /leaderboard') return leaderboard();
+    return pairCode(user);
+  }
+
+  const purge = setInterval(() => {
     q.purgeSessions.run(Date.now());
     q.purgePairCodes.run(Date.now());
-  }, 3600 * 1000).unref();
+  }, 3600 * 1000);
+  unref(purge);
 
   return {
-    router,
-    userFromCookieHeader: (header: string | undefined) => userFromToken(readCookie(header)),
+    handle,
+    json,
+    stop: () => clearInterval(purge),
+    userFromCookieHeader: (header: string | null | undefined) => userFromToken(readCookie(header)),
     recordGame(userId: number, won: boolean, points: number) {
       q.recordGame.run(won ? 1 : 0, Math.max(0, Math.round(points)), userId);
     },

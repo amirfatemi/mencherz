@@ -2,6 +2,12 @@
 
 A browser version of **Aeroplane Chess** (Flying Chess, the game behind *Battle Ludo*), built to be played online with friends. Players sign up with a username and password, create a game, and share an invite link or code. Others join, and empty seats can be filled with computer players.
 
+**Live:** https://mencherz.shahvar.cloud. It runs on Cloudflare Workers with a Durable Object; see [DEPLOY.md](DEPLOY.md).
+
+The same game server runs in two places:
+- on **Node** (below), for local play and tests, and for Docker
+- on **Cloudflare**, in a Durable Object (`worker/index.ts`)
+
 ## Run it
 
 Requires **Node.js 22.18 or newer**. The server runs TypeScript directly with Node's built-in type stripping and stores data in Node's built-in SQLite.
@@ -36,7 +42,14 @@ docker run -p 3000:3000 -v mencherz-data:/data mencherz
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so rate limiting sees real client IPs |
 | `ALLOWED_ORIGINS` | – | Comma-separated extra origins allowed to open a game socket. The server's own host is always allowed. |
 
-Behind a reverse proxy, forward WebSocket upgrades for `/socket.io/` and keep the original `Host` header.
+Behind a reverse proxy, forward WebSocket upgrades for `/ws` and keep the original `Host` header.
+
+Cloudflare, locally and live:
+
+```bash
+npm run cf:dev       # builds, then runs the Worker and its Durable Object on http://localhost:8787
+npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login` or CLOUDFLARE_API_TOKEN)
+```
 
 ## What's in the game
 
@@ -134,11 +147,16 @@ shared/     game logic, used by both server and browser
   reactions.ts reaction GIFs and when they show
   timing.ts   animation lengths (the server waits for them before a bot moves)
   protocol.ts socket events and view types
-server/     Express + Socket.IO
-  app.ts      HTTP/socket setup
+  wire.ts     the WebSocket frames (a small Socket.IO-like protocol: events and acks)
+  socket-client.ts  reconnecting client for it, used by the browser and the tests
+server/     the game server, independent of where it runs
+  core.ts     puts it together: /api requests and /ws connections
+  hub.ts      rooms, broadcasts and acks over plain WebSockets
   auth.ts     sign-up/in, sessions, login rate limit, one-time codes, leaderboard
   rooms.ts    lobby, seats, turn flow, bots, timers, persistence
-  db.ts       SQLite schema
+  db.ts       SQLite schema, behind an interface both runtimes implement
+  app.ts, index.ts, sqlite.ts   the Node runtime: Express for the client, `ws`, node:sqlite
+worker/     the Cloudflare runtime: static assets, plus a Durable Object (GameHub) running server/core.ts on its SQLite storage
 client/     React + SVG (Vite)
   src/components/Board.tsx   board, planes, move preview
   src/useRoomStream.ts       joins a room and plays its updates in order, with animations

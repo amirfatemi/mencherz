@@ -1,16 +1,21 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+// The SQL the server needs, kept to what both node:sqlite (local) and a Durable Object's SQLite
+// storage (Cloudflare) can do: synchronous statements, no PRAGMAs, no explicit transactions.
 
-export type Db = DatabaseSync;
+export type SqlValue = string | number | bigint | null | Uint8Array;
 
-export function openDb(path: string): Db {
-  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-  const db = new DatabaseSync(path);
+export interface Statement {
+  run(...params: SqlValue[]): unknown;
+  get(...params: SqlValue[]): unknown;
+  all(...params: SqlValue[]): unknown[];
+}
+
+export interface Db {
+  exec(sql: string): void;
+  prepare(sql: string): Statement;
+}
+
+export function initSchema(db: Db) {
   db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
-
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -44,13 +49,15 @@ export function openDb(path: string): Db {
     );
   `);
   addColumns(db, 'users', { total_points: 'INTEGER NOT NULL DEFAULT 0' });
-  return db;
 }
 
 /** Adds columns that databases created by older versions lack. */
 function addColumns(db: Db, table: string, columns: Record<string, string>) {
-  const have = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name));
   for (const [name, type] of Object.entries(columns)) {
-    if (!have.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    try {
+      db.prepare(`SELECT ${name} FROM ${table} LIMIT 0`).all();
+    } catch {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    }
   }
 }

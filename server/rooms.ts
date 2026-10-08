@@ -1,5 +1,4 @@
 import { randomInt } from 'node:crypto';
-import type { Server, Socket } from 'socket.io';
 import { chooseBomb, chooseBox, chooseMove, type BotLevel } from '../shared/ai.ts';
 import type { Seat } from '../shared/board.ts';
 import {
@@ -29,7 +28,8 @@ import {
 import { reactionsFor, type ShownReaction } from '../shared/reactions.ts';
 import { RANKED_MIN_PEOPLE } from '../shared/scoring.ts';
 import { eventDuration } from '../shared/timing.ts';
-import { limiter, type Auth } from './auth.ts';
+import { limiter, unref, type Auth } from './auth.ts';
+import type { Hub, HubSocket } from './hub.ts';
 import type { Db } from './db.ts';
 import { upgradeGame } from './migrate.ts';
 import {
@@ -42,8 +42,8 @@ import {
   parseUsername,
 } from './validate.ts';
 
-type IO = Server<ClientToServer, ServerToClient, Record<string, never>, SocketData>;
-type ClientSocket = Socket<ClientToServer, ServerToClient, Record<string, never>, SocketData>;
+export type IO = Hub<ClientToServer, ServerToClient, SocketData>;
+type ClientSocket = HubSocket<ClientToServer, ServerToClient, SocketData>;
 
 export interface SocketData {
   user: PublicUser;
@@ -64,7 +64,7 @@ interface Room {
   updatedAt: number;
   // Runtime only.
   watchers: Map<string, number>;
-  timer: NodeJS.Timeout | null;
+  timer: ReturnType<typeof setTimeout> | null;
   turnDeadline: number | null;
   busyUntil: number;
 }
@@ -213,7 +213,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     };
   }
 
-  let lobbyTimer: NodeJS.Timeout | null = null;
+  let lobbyTimer: ReturnType<typeof setTimeout> | null = null;
   function lobbyChanged() {
     if (lobbyTimer) return;
     lobbyTimer = setTimeout(() => {
@@ -694,7 +694,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       else if (room.status === 'waiting' && now - room.updatedAt > EXPIRE_WAITING_MS) closeRoom(room, 'Expired');
     }
   }, 10 * 60 * 1000);
-  sweep.unref();
+  unref(sweep);
 
   function shutdown() {
     clearInterval(sweep);

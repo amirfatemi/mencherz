@@ -1,12 +1,12 @@
-import { io, type Socket } from 'socket.io-client';
-import type { Ack, ClientToServer, ServerToClient } from '../../shared/protocol.ts';
-
-export type GameSocket = Socket<ServerToClient, ClientToServer>;
+import type { Ack, ClientToServer } from '../../shared/protocol.ts';
+import { GameSocket, type WsLike } from '../../shared/socket-client.ts';
+import { WS_PATH } from '../../shared/wire.ts';
 
 let socket: GameSocket | null = null;
 
 export function getSocket(): GameSocket {
-  socket ??= io({ withCredentials: true });
+  const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${WS_PATH}`;
+  socket ??= new GameSocket(() => new WebSocket(url) as unknown as WsLike);
   return socket;
 }
 
@@ -26,15 +26,13 @@ type Payload<E extends keyof ClientToServer> = Listener<E> extends [infer R, unk
 type Result<E extends keyof ClientToServer> = Listener<E> extends [...unknown[], Ack<infer T>] ? T : never;
 
 /** Emits an event and resolves with the server's ack, or rejects with its error message. */
-export function call<E extends keyof ClientToServer>(event: E, ...payload: Payload<E>): Promise<Result<E>> {
-  return new Promise((resolve, reject) => {
-    const s = getSocket() as unknown as {
-      timeout(ms: number): { emit(ev: string, ...args: unknown[]): void };
-    };
-    s.timeout(10_000).emit(event, ...payload, (err: Error | null, res: Parameters<Ack<Result<E>>>[0]) => {
-      if (err) return reject(new Error('The server did not answer. Check your connection.'));
-      if (res.ok) resolve(res.data);
-      else reject(new Error(res.error));
-    });
-  });
+export async function call<E extends keyof ClientToServer>(event: E, ...payload: Payload<E>): Promise<Result<E>> {
+  let res: Parameters<Ack<Result<E>>>[0];
+  try {
+    res = await getSocket().request(event, payload, 10_000);
+  } catch {
+    throw new Error('The server did not answer. Check your connection.');
+  }
+  if (!res.ok) throw new Error(res.error);
+  return res.data;
 }

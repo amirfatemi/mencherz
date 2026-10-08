@@ -14,7 +14,7 @@ export default defineConfig({
     fs: { allow: [root] },
     proxy: {
       '/api': api,
-      '/socket.io': { target: api, ws: true },
+      '/ws': { target: api, ws: true },
     },
   },
 });

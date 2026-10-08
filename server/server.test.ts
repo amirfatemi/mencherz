@@ -3,13 +3,15 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { io as connect, type Socket } from 'socket.io-client';
+import WebSocket from 'ws';
 import { chooseBomb, chooseBox, chooseMove } from '../shared/ai.ts';
-import type { ClientToServer, LeaderRow, PublicUser, RoomUpdate, RoomView, ServerToClient } from '../shared/protocol.ts';
+import type { LeaderRow, PublicUser, RoomUpdate, RoomView } from '../shared/protocol.ts';
 import { REACTION_BY_ID } from '../shared/reactions.ts';
+import { GameSocket, type WsLike } from '../shared/socket-client.ts';
+import { WS_PATH } from '../shared/wire.ts';
 import { startServer } from './app.ts';
 
-type Client = Socket<ServerToClient, ClientToServer>;
+type Client = GameSocket;
 
 const dir = mkdtempSync(join(tmpdir(), 'mencherz-'));
 const dbPath = join(dir, 'test.db');
@@ -39,8 +41,11 @@ async function signUp(username: string, password = 'secret123') {
   return res.headers.get('set-cookie')!.split(';')[0];
 }
 
-async function socketFor(cookie: string): Promise<Client> {
-  const s: Client = connect(base, { extraHeaders: { cookie }, transports: ['websocket'], reconnection: false });
+/** A game socket signed in with this cookie, as the browser client uses it. */
+async function socketFor(cookie: string, origin?: string): Promise<Client> {
+  const url = `${base.replace(/^http/, 'ws')}${WS_PATH}`;
+  const headers = origin ? { cookie, origin } : { cookie };
+  const s = new GameSocket(() => new WebSocket(url, { headers }) as unknown as WsLike, { reconnect: false });
   await new Promise<void>((resolve, reject) => {
     s.once('connect', resolve);
     s.once('connect_error', reject);
@@ -69,7 +74,7 @@ function autoplay(players: { socket: Client; userId: number }[], code: string, s
       reject(new Error(`game took too long; last: turn=${g?.turn} phase=${g?.phase} dice=${g?.dice} movable=${g?.movable} seats=${JSON.stringify(last?.seats)}`));
     }, 60_000);
     for (const { socket, userId } of players) {
-      socket.on('room:update', ({ room }) => {
+      socket.on('room:update', ({ room }: RoomUpdate) => {
         if (room.code !== code || room.status === 'waiting') return;
         last = room;
         if (room.status !== 'playing' || actions >= stopAfter) {
@@ -289,7 +294,7 @@ describe('local players', () => {
     await call(host, 'room:leave', { code: other });
 
     const reactions: RoomUpdate['reactions'] = [];
-    host.on('room:update', (u) => {
+    host.on('room:update', (u: RoomUpdate) => {
       if (u.room.code === code) reactions.push(...(u.reactions ?? []));
     });
     const done = autoplay([{ socket: host, userId: hostId }], code);
@@ -369,13 +374,6 @@ describe('pause', () => {
 describe('sockets', () => {
   test('rejects sockets opened from another site', async () => {
     const cookie = await signUp('mallory');
-    const s: Client = connect(base, { extraHeaders: { cookie, origin: 'https://evil.example' }, transports: ['websocket'], reconnection: false });
-    await assert.rejects(
-      new Promise<void>((resolve, reject) => {
-        s.once('connect', resolve);
-        s.once('connect_error', reject);
-      }),
-    );
-    s.close();
+    await assert.rejects(socketFor(cookie, 'https://evil.example'), /forbidden/);
   });
 });

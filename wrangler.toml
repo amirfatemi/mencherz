@@ -1,0 +1,45 @@
+# Cloudflare Workers deployment, like the shahvar site: static assets plus a Worker.
+#
+# The built client (dist/client) is served from Cloudflare's edge. Only /api/* and the /ws game
+# socket run the Worker, which hands them to one Durable Object (GameHub) holding all games,
+# accounts and the leaderboard in its SQLite storage. Durable Objects with SQLite storage are
+# available on the Workers Free plan.
+#
+# Local:  npm run cf:dev        (builds, then runs this config locally)
+# Deploy: npm run deploy        (builds, then deploys)
+# CI:     Cloudflare Workers Builds, see DEPLOY.md.
+
+# Must match the Worker name in the Cloudflare dashboard (Workers Builds deploys to this name).
+name = "mencherz"
+main = "worker/index.ts"
+compatibility_date = "2026-10-01"
+# node:crypto (scrypt passwords, random dice, session tokens) and Buffer.
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[assets]
+# Vite's build output (vite.config.ts build.outDir).
+directory = "./dist/client"
+binding = "ASSETS"
+# Only these paths run the Worker; everything else is a static asset.
+run_worker_first = ["/api/*", "/ws"]
+# Client-side routes such as /g/K7Q2X and /settings return index.html.
+not_found_handling = "single-page-application"
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "GameHub"
+
+# Creates the GameHub class with SQLite storage (required on the Free plan). Never edit an applied
+# migration; add a new [[migrations]] entry instead.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameHub"]
+
+[[routes]]
+pattern = "mencherz.shahvar.cloud"
+custom_domain = true
+
+[observability]
+enabled = true
+head_sampling_rate = 1
