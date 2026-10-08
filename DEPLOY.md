@@ -39,7 +39,7 @@ Checked before this doc was written:
 
 ## Option A: connect GitHub (deploy on every push)
 
-This is how the shahvar site deploys. Connecting a repository can only be done in the dashboard.
+**Connected on 2026-10-08:** every push to `main` builds and deploys. This is how the shahvar site deploys too. The steps below are for reference; connecting a repository can only be done in the dashboard.
 
 1. In the Cloudflare dashboard, open **Workers & Pages** → **mencherz** → **Settings** → **Build** → **Connect**. Pick the GitHub repo `amirfatemi/mencherz`.
 
