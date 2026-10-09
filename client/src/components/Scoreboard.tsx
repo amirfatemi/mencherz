@@ -75,7 +75,8 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
             <th aria-label="Place">#</th>
             <th>Player</th>
             <th title="Pieces home">🏁</th>
-            <th title="Knock-outs">💥</th>
+            <th title="Hits made: opponent pieces knocked out">💥</th>
+            <th title="Hits taken: own pieces knocked out">🤕</th>
             <th className="num">Points</th>
           </tr>
         </thead>
@@ -98,6 +99,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
                   {st.home}/{PIECES_PER_SEAT}
                 </td>
                 <td>{st.captures}</td>
+                <td>{st.lost}</td>
                 <td className="num">
                   <span key={st.points} className="points">
                     {st.points}
@@ -113,6 +115,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
           })}
         </tbody>
       </table>
+      <p className="score-key">🏁 pieces home · 💥 hits made · 🤕 hits taken</p>
       <p className="last-move" style={last ? ({ '--seat': COLOR_HEX[last.seat] } as CSSProperties) : undefined}>
         {last ? describe(last, seats) : `${seatName(seats, game.turn)} goes first.`}
       </p>

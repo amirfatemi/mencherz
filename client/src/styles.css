@@ -1344,6 +1344,13 @@ select:focus {
   }
 }
 
+.score-key {
+  margin: 0 0 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: right;
+}
+
 .last-move {
   margin: 6px 0 0;
   padding-left: 10px;

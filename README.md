@@ -100,24 +100,24 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 
 ### Points
 
-By default the game is scored, so knocking pieces out matters as much as racing:
+By default the game is scored, so knocking pieces out pays as well as racing:
 
 | | Points |
 | --- | --- |
 | The first player to bring all four pieces home | 100 |
 | A piece reaches the centre | 20 |
-| Knock out a piece in the first half of its track (squares 1–25) | 10 |
-| …between halfway and the last 15% (26–42) | 15 |
-| …in the last 15% (43–50) | 20 |
-| Fly over a piece in its home column (only the opposite player's flight can) | 40 |
+| Knock out a piece in the first half of its track (squares 1–25) | 5 |
+| …between halfway and the last 15% (26–42) | 7 |
+| …in the last 15% (43–50) | 10 |
+| Fly over a piece in its home column (only the opposite player's flight can) | 20 |
 | **Revenge:** knock out whoever last knocked out one of yours | ×1.5 (once per knock-out received) |
 | A magic box that takes points | −10 |
 
-The numbers are kept small, with 100 the biggest award. They were balanced with bot games played to third place: knock-outs make up about a third of all points.
+The numbers are kept small, with 100 the biggest award. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. At the old values (10/15/20/40) a busy hunter could collect close to the first-home bonus before anyone finished.
 
-The game goes on after the first player finishes, until third place is decided (only one player left). Places go by points, with ties broken by pieces home and then finishing order, so a hunter can beat the first player home.
+The game goes on after the first player finishes, until third place is decided (only one player left). Places go by points, with ties broken by pieces home and then finishing order, so finishing first nearly always decides the winner, and knock-outs settle the places behind.
 
-The values live in `shared/scoring.ts`. The scoreboard next to the board replaces the game log.
+The values live in `shared/scoring.ts`. The scoreboard next to the board replaces the game log. For each player it shows pieces home (🏁), hits made (💥, bombs and magic-box bombs included) and hits taken (🤕).
 
 The full rules and scoring are also in the game, in Persian, under **📖 آموزش**.
 

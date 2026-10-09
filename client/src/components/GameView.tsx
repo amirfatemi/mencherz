@@ -270,7 +270,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                 <span className="results-name">{seatName(view.seats, seat)}</span>
                 {seat === mySeat && <span className="pill accent">You</span>}
                 <span className="results-detail">
-                  🏁 {game.stats[seat].home} · 💥 {game.stats[seat].captures}
+                  🏁 {game.stats[seat].home} · 💥 {game.stats[seat].captures} · 🤕 {game.stats[seat].lost}
                 </span>
                 <span className="results-points">{game.stats[seat].points}</span>
               </li>
