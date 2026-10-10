@@ -189,15 +189,46 @@ describe('captures', () => {
     assert.equal(state.pieces[1][0], HANGAR);
   });
 
-  test('captures along a jump chain', () => {
+  test('a knock-out on your colour stays there instead of jumping', () => {
     const g = at(game(), 0, [TAKEOFF]);
     at(g, 1, [sameSquare(0, 6, 1), sameSquare(0, 10, 1)]);
     const plan = planMove(g, 0, 0, 6)!;
-    assert.equal(plan.captures.length, 2);
+    assert.equal(plan.to, 6);
+    assert.equal(plan.jumped, false);
+    assert.deepEqual(
+      plan.captures.map((c) => [c.from, c.atStep]),
+      [[sameSquare(0, 6, 1), 5]],
+    );
+  });
+
+  test('a jump still knocks out the piece where it lands', () => {
+    const g = at(game(), 0, [TAKEOFF]);
+    at(g, 1, [sameSquare(0, 10, 1)]);
+    const plan = planMove(g, 0, 0, 6)!;
+    assert.equal(plan.to, 10);
     assert.deepEqual(
       plan.captures.map((c) => c.atStep),
-      [5, 6],
+      [6],
     );
+  });
+
+  test('a knock-out on the flight square stays there instead of flying', () => {
+    const g = at(game(), 0, [15]);
+    at(g, 1, [sameSquare(0, FLIGHT_FROM, 1)]);
+    const plan = planMove(g, 0, 0, 3)!;
+    assert.equal(plan.to, FLIGHT_FROM);
+    assert.equal(plan.flew, false);
+    assert.equal(plan.captures.length, 1);
+  });
+
+  test('a knock-out where a flight lands stops the jump after it', () => {
+    const g = at(game(), 0, [15]);
+    at(g, 1, [sameSquare(0, FLIGHT_TO, 1)]);
+    const plan = planMove(g, 0, 0, 3)!;
+    assert.equal(plan.flew, true);
+    assert.equal(plan.jumped, false);
+    assert.equal(plan.to, FLIGHT_TO);
+    assert.equal(plan.captures.length, 1);
   });
 
   test('a flight knocks out the plane on the crossed home square', () => {

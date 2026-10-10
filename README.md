@@ -85,7 +85,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 2. Planes go clockwise around the 52-square track, whose squares are coloured in rotation.
 3. **Colour jump:** landing on your own colour jumps you 4 squares ahead to the next square of your colour.
 4. **Flight:** landing on your colour's ✈ square flies you 12 squares ahead along the dashed line. A plane sitting on the home-column square the flight crosses (the opponent's third home square) is sent back to its hangar. You get at most one jump and one flight per move, in either order (jump → fly, or fly → jump).
-5. **Capture:** ending on an opponent sends it back to its hangar. This is checked at every landing point in a jump/flight chain. Your own planes stack.
+5. **Capture:** ending on an opponent sends it back to its hangar. This is checked at every landing point in a jump/flight chain. A knock-out ends the move on that square: no jump or flight follows it, even from your own colour or your ✈ square. Knocking out the piece on the crossed home square doesn't stop a flight, since the plane flies over it. Your own planes stack.
 6. After a full lap, planes turn at the arrow into their home column. An overshoot bounces back from the centre.
 7. **Three sixes** in a row: every piece not yet in the centre goes back to the hangar.
 8. **Bomb 💣:** after that penalty, the same player drops a bomb on any empty track square (home columns can't be bombed). The next piece to land there goes back to its hangar, whoever it belongs to. Passing over a bomb is safe. The bomb's owner scores as for a knock-out.

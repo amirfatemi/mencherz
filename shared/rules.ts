@@ -40,9 +40,9 @@ export interface Rules {
   magicBoxes: boolean;
   /** Overshooting the goal bounces back, or the move is not allowed. */
   finish: 'bounce' | 'exact';
-  /** Landing on your own colour jumps to the next square of that colour. */
+  /** Landing on your own colour jumps to the next square of that colour, unless the landing knocks a piece out. */
   jumps: boolean;
-  /** Landing on your flight square flies across the board. */
+  /** Landing on your flight square flies across the board, unless the landing knocks a piece out. */
   flights: boolean;
   /** A flight sends back an opponent sitting on the home-column square it crosses. */
   flightCapture: boolean;
@@ -321,11 +321,12 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     }
   };
 
-  // Everything that happens where the piece lands: a bomb, knock-outs, then a magic box. Returns true
-  // when the piece is blown back to the hangar, which ends the move.
+  // Everything that happens where the piece lands: a bomb, knock-outs, then a magic box. A blast sends the
+  // piece back to the hangar ('hangar'); a knock-out keeps it on that square, with no jump or flight after
+  // ('stay'); otherwise the move carries on ('on').
   let vests = state.vests?.[seat] ?? 0;
-  const land = (pos: number): boolean => {
-    if (!isOnTrack(pos)) return false;
+  const land = (pos: number): 'hangar' | 'stay' | 'on' => {
+    if (!isOnTrack(pos)) return 'on';
     const square = trackIndex(seat, pos);
     const atStep = plan.path.length - 1;
     const bomb = state.bombs.find((b) => b.square === square);
@@ -334,8 +335,9 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
       if (saved) vests--;
       const hit = saved || bomb.owner === seat ? { points: 0, revenge: false } : worth(bomb.owner, seat, pos);
       plan.bombed = { owner: bomb.owner, square, pos, atStep, saved, ...hit };
-      if (!saved) return true;
+      if (!saved) return 'hangar';
     }
+    const knocked = plan.captures.length;
     captureAt(pos);
     // Anyone's piece opens a box, its owner's included.
     const box = state.boxes?.find((b) => b.square === square);
@@ -347,13 +349,14 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
       if (outcome === 'vest') vests++;
       const scores = blast && !saved && box.owner !== seat;
       plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, ...(scores ? worth(box.owner, seat, pos) : { points: 0, revenge: false }) };
-      if (blast && !saved) return true;
+      if (blast && !saved) return 'hangar';
     }
-    return false;
+    return plan.captures.length > knocked ? 'stay' : 'on';
   };
 
-  if (land(cur)) return finishPlan(plan, HANGAR);
-  if (isOnTrack(cur)) {
+  let landed = land(cur);
+  if (landed === 'hangar') return finishPlan(plan, HANGAR);
+  if (landed === 'on' && isOnTrack(cur)) {
     for (;;) {
       if (rules.flights && !plan.flew && cur === FLIGHT_FROM) {
         if (rules.flightCapture) {
@@ -370,14 +373,18 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
         cur = FLIGHT_TO;
         plan.flew = true;
         plan.path.push({ pos: cur, kind: 'fly' });
-        if (land(cur)) return finishPlan(plan, HANGAR);
+        landed = land(cur);
+        if (landed === 'hangar') return finishPlan(plan, HANGAR);
+        if (landed === 'stay') break;
         continue;
       }
       if (rules.jumps && !plan.jumped && isOwnColor(cur) && cur < TRACK_LAST) {
         cur += JUMP_DISTANCE;
         plan.jumped = true;
         plan.path.push({ pos: cur, kind: 'jump' });
-        if (land(cur)) return finishPlan(plan, HANGAR);
+        landed = land(cur);
+        if (landed === 'hangar') return finishPlan(plan, HANGAR);
+        if (landed === 'stay') break;
         continue;
       }
       break;

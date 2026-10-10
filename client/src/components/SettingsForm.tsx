@@ -132,7 +132,7 @@ export function SettingsForm({ value, onChange }: Props) {
           disabled={!rules.bonusRollOnSix || rules.threeSixes === 'off' || rules.threeSixes === 'forfeit'}
           onChange={(v) => setRules({ bombs: v })}
         />
-        <Toggle label="Colour jumps" hint="Landing on your colour jumps to the next square of it" checked={rules.jumps} onChange={(v) => setRules({ jumps: v })} />
+        <Toggle label="Colour jumps" hint="Landing on your colour jumps to the next square of it, unless that landing knocks a piece out" checked={rules.jumps} onChange={(v) => setRules({ jumps: v })} />
         <Toggle label="Flight shortcuts" hint="Landing on your ✈ square flies across the board" checked={rules.flights} onChange={(v) => setRules({ flights: v })} />
         <Toggle
           label="Flights knock out planes below"
