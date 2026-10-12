@@ -36,7 +36,7 @@ export interface Rules {
   difficulty: 'easy' | 'normal' | 'hard';
   /**
    * Before the first roll everyone hides a magic box on a track square. Any piece landing on it, its
-   * owner's included, opens it: a bomb, a protective vest, nothing, lost points, or ice, at random.
+   * owner's included, opens it: a bomb, a protective vest, points won or lost, or ice, at random.
    */
   magicBoxes: boolean;
   /** Overshooting the goal bounces back, or the move is not allowed. */
@@ -56,7 +56,7 @@ export interface Rules {
   walls: boolean;
   /**
    * Two power squares, one in each half of the board, that move every few rounds. Landing on one picks a
-   * heaven bridge, a hell bridge or a roll-again card.
+   * heaven bridge, a hell bridge or a magic box to hide.
    */
   powerSquares: boolean;
   /** Each colour's first piece is a king: knocking one out, or knocking out with one, counts KING times. */
@@ -86,7 +86,8 @@ export const DEFAULT_RULES: Rules = {
   winBy: 'points',
 };
 
-export type Phase = 'box' | 'roll' | 'move' | 'bomb' | 'power' | 'bridge' | 'over';
+/** 'place': putting down what was picked on a power square (a bridge or a magic box). */
+export type Phase = 'box' | 'roll' | 'move' | 'bomb' | 'power' | 'place' | 'over';
 
 export interface Bomb {
   /** Absolute track index (0..51), as in TRACK. */
@@ -100,9 +101,12 @@ export interface MagicBox {
   owner: Seat;
 }
 
-/** 'freeze' locks the piece where it opened the box until its owner's next turn is over. */
-export type BoxOutcome = 'bomb' | 'vest' | 'empty' | 'minus' | 'freeze';
-export const BOX_OUTCOMES: readonly BoxOutcome[] = ['bomb', 'vest', 'empty', 'minus', 'freeze'];
+/**
+ * 'plus' and 'minus' give and take points; 'freeze' locks the piece where it opened the box until its
+ * owner's next turn is over.
+ */
+export type BoxOutcome = 'bomb' | 'vest' | 'plus' | 'minus' | 'freeze';
+export const BOX_OUTCOMES: readonly BoxOutcome[] = ['bomb', 'vest', 'plus', 'minus', 'freeze'];
 
 /** Which of each colour's pieces is the king, when kings are on. */
 export const KING_PIECE = 0;
@@ -129,9 +133,9 @@ export interface Bridge {
   owner: Seat;
 }
 
-/** What a player picks on a power square. */
-export type PowerChoice = BridgeKind | 'reroll';
-export const POWER_CHOICES: readonly PowerChoice[] = ['heaven', 'hell', 'reroll'];
+/** What a player picks on a power square: a bridge, or a magic box to hide. Either is then placed on a free square. */
+export type PowerChoice = BridgeKind | 'box';
+export const POWER_CHOICES: readonly PowerChoice[] = ['heaven', 'hell', 'box'];
 /** The power squares move after this many rounds. */
 export const POWER_EVERY_ROUNDS = 5;
 /** Turns in a row without a piece out of the hangar that earn a sad reaction. */
@@ -181,14 +185,10 @@ export interface GameState {
   /** The turn number at which the power squares move next. */
   powerMovesAt: number;
   bridges: Bridge[];
-  /** Roll-again cards each seat holds. */
-  rerolls: number[];
-  /** The six streak from before the last roll, so a roll-again can take that roll back. */
-  preRoll: { sixStreak: number; streakMoved: number[] } | null;
   /** After a power square: whether the same seat rolls again once it's used, or the turn passes. */
   powerThen: 'roll' | 'next' | null;
-  /** The bridge being placed in the 'bridge' phase. */
-  placing: BridgeKind | null;
+  /** What's being put down in the 'place' phase. */
+  placing: PowerChoice | null;
   /** Turns in a row each seat had nothing to move and no piece out of the hangar. */
   stuck: number[];
   turnNo: number;
@@ -284,8 +284,7 @@ export interface MovePlan {
   power?: boolean;
 }
 
-/** 'decide': nothing can move, but the roller holds a roll-again card and may use it or pass. */
-export type RollOutcome = 'move' | 'pass' | 'again' | 'forfeit' | 'penalty' | 'decide';
+export type RollOutcome = 'move' | 'pass' | 'again' | 'forfeit' | 'penalty';
 
 export interface RollEvent {
   type: 'roll';
@@ -297,17 +296,7 @@ export interface RollEvent {
   penalized: { piece: number; from: number }[];
   /** The roller now places a bomb. */
   bomb?: boolean;
-  /** This roll replaced the one before it, with a roll-again card. */
-  reroll?: boolean;
   /** STUCK_TURNS turns in a row lost with nothing out of the hangar. */
-  stuck?: boolean;
-}
-
-/** Passing after a roll that couldn't be played, instead of using a roll-again card. */
-export interface PassEvent {
-  type: 'pass';
-  seat: Seat;
-  dice: number;
   stuck?: boolean;
 }
 
@@ -346,7 +335,7 @@ export interface MoveEvent extends MovePlan {
   gameOver: boolean;
 }
 
-export type GameEvent = RollEvent | MoveEvent | BombEvent | BoxEvent | PassEvent | PowerEvent | BridgeEvent;
+export type GameEvent = RollEvent | MoveEvent | BombEvent | BoxEvent | PowerEvent | BridgeEvent;
 
 /** `rand(n)` gives an integer in [0, n). */
 export type Rand = (n: number) => number;
@@ -397,8 +386,6 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     power: [],
     powerMovesAt: 0,
     bridges: [],
-    rerolls: SEATS.map(() => 0),
-    preRoll: null,
     powerThen: null,
     placing: null,
     stuck: SEATS.map(() => 0),
@@ -411,7 +398,9 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
 
 /** Puts the power squares on new free squares, one in each half of the board, and sets when they move next. */
 function movePower(s: GameState, rand: Rand): void {
-  const free = freeSquares(s);
+  // Not on a flight square: a power square is nobody's colour, and a flight square has to stay one.
+  const flights = new Set(SEATS.map((seat) => trackIndex(seat, FLIGHT_FROM)));
+  const free = freeSquares(s).filter((i) => !flights.has(i));
   const half = TRACK_LEN / 2;
   s.power = [0, 1].flatMap((h) => {
     const options = free.filter((i) => Math.floor(i / half) === h);
@@ -597,7 +586,9 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
         continue;
       }
       const wallInTheWay = [1, 2, 3].some((k) => wallAt(cur + k));
-      if (rules.jumps && !plan.jumped && isOwnColor(cur) && cur < TRACK_LAST && !wallInTheWay) {
+      // A power square is nobody's colour, so nobody jumps from it.
+      const onPower = state.power?.includes(trackIndex(seat, cur));
+      if (rules.jumps && !plan.jumped && isOwnColor(cur) && cur < TRACK_LAST && !wallInTheWay && !onPower) {
         cur += JUMP_DISTANCE;
         plan.jumped = true;
         plan.path.push({ pos: cur, kind: 'jump' });
@@ -619,7 +610,8 @@ function finishPlan(plan: MovePlan, to: number): MovePlan {
   plan.to = to;
   plan.points =
     plan.captures.reduce((sum, c) => sum + c.points, 0) +
-    (to === GOAL ? POINTS.home : 0) -
+    (to === GOAL ? POINTS.home : 0) +
+    (plan.box?.outcome === 'plus' ? POINTS.boxBonus : 0) -
     (plan.box?.outcome === 'minus' ? POINTS.boxPenalty : 0);
   return plan;
 }
@@ -713,7 +705,6 @@ export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRa
   const seat = s.turn;
   s.seq++;
   s.dice = dice;
-  s.preRoll = { sixStreak: state.sixStreak, streakMoved: [...state.streakMoved] };
   const event: RollEvent = { type: 'roll', seat, dice, outcome: 'move', movable: [], penalized: [] };
 
   if (dice === 6) {
@@ -760,50 +751,11 @@ export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRa
   } else if (dice === 6 && s.rules.bonusRollOnSix) {
     event.outcome = 'again';
     s.dice = null;
-  } else if ((s.rerolls?.[seat] ?? 0) > 0) {
-    // The roller may spend a roll-again card on it (applyReroll) or let it go (applyPass).
-    event.outcome = 'decide';
-    s.phase = 'move';
-    s.movable = [];
   } else {
     event.outcome = 'pass';
     if (countStuck(s, seat)) event.stuck = true;
     nextTurn(s, rand);
   }
-  return { state: s, event };
-}
-
-/** The state a roll-again card rolls from: the last roll taken back, with its six streak, and the card used up. */
-export function rerollBase(state: GameState): GameState {
-  if (state.phase !== 'move' || state.dice === null) throw new RuleError('There is no roll to take back');
-  if (!((state.rerolls?.[state.turn] ?? 0) > 0)) throw new RuleError('You have no roll-again card');
-  const s = structuredClone(state);
-  s.rerolls[s.turn]--;
-  if (s.preRoll) {
-    s.sixStreak = s.preRoll.sixStreak;
-    s.streakMoved = s.preRoll.streakMoved;
-  }
-  s.phase = 'roll';
-  s.dice = null;
-  s.movable = [];
-  return s;
-}
-
-/** Throws the last roll away with a roll-again card and rolls `dice` instead, which must be played. */
-export function applyReroll(state: GameState, dice: number, rand: Rand = defaultRand): { state: GameState; event: RollEvent } {
-  const result = applyRoll(rerollBase(state), dice, rand);
-  result.event.reroll = true;
-  return result;
-}
-
-/** Lets an unplayable roll go instead of using a roll-again card on it. */
-export function applyPass(state: GameState, rand: Rand = defaultRand): { state: GameState; event: PassEvent } {
-  if (state.phase !== 'move' || state.dice === null || state.movable.length) throw new RuleError('There is a move to make');
-  const s = structuredClone(state);
-  s.seq++;
-  const event: PassEvent = { type: 'pass', seat: s.turn, dice: state.dice };
-  if (countStuck(s, s.turn)) event.stuck = true;
-  nextTurn(s, rand);
   return { state: s, event };
 }
 
@@ -937,19 +889,15 @@ function resumeAfterPower(s: GameState, rand: Rand): void {
   }
 }
 
-/** Picks a power on a power square: a bridge to place next, or a roll-again card kept for later. */
+/** Picks a power on a power square: a bridge or a magic box, which is placed next. */
 export function applyPower(state: GameState, choice: PowerChoice, rand: Rand = defaultRand): { state: GameState; event: PowerEvent } {
   if (state.phase !== 'power') throw new RuleError('Not time to pick a power');
   if (!POWER_CHOICES.includes(choice)) throw new RuleError('Unknown power');
   const s = structuredClone(state);
   s.seq++;
   const event: PowerEvent = { type: 'power', seat: s.turn, choice };
-  if (choice === 'reroll') {
-    s.rerolls ??= SEATS.map(() => 0);
-    s.rerolls[s.turn]++;
-    resumeAfterPower(s, rand);
-  } else if (freeSquares(s).length) {
-    s.phase = 'bridge';
+  if (freeSquares(s).length) {
+    s.phase = 'place';
     s.placing = choice;
   } else {
     resumeAfterPower(s, rand);
@@ -957,17 +905,27 @@ export function applyPower(state: GameState, choice: PowerChoice, rand: Rand = d
   return { state: s, event };
 }
 
-/** Places the bridge picked on a power square, starting from this absolute track square. */
-export function applyBridge(state: GameState, square: number, rand: Rand = defaultRand): { state: GameState; event: BridgeEvent } {
-  if (state.phase !== 'bridge' || !state.placing) throw new RuleError('Not time to place a bridge');
-  if (!freeSquares(state).includes(square)) throw new RuleError('A bridge can only start on an empty track square');
+/**
+ * Puts down what was picked on a power square on this free absolute track square: a bridge starting
+ * there, or a magic box that opens for whoever lands on it first, its owner too.
+ */
+export function applyPlace(state: GameState, square: number, rand: Rand = defaultRand): { state: GameState; event: BridgeEvent | BoxEvent } {
+  if (state.phase !== 'place' || !state.placing) throw new RuleError('Not time to place that');
+  if (!freeSquares(state).includes(square)) throw new RuleError('That can only go on an empty track square');
   const s = structuredClone(state);
   s.seq++;
   const kind = state.placing;
-  const to = (square + BRIDGE_SPAN[kind] + TRACK_LEN) % TRACK_LEN;
-  s.bridges ??= [];
-  s.bridges.push({ square, to, kind, owner: s.turn });
-  const event: BridgeEvent = { type: 'bridge', seat: s.turn, kind, square, to };
+  let event: BridgeEvent | BoxEvent;
+  if (kind === 'box') {
+    s.boxes ??= [];
+    s.boxes.push({ square, owner: s.turn });
+    event = { type: 'box', seat: s.turn, square };
+  } else {
+    const to = (square + BRIDGE_SPAN[kind] + TRACK_LEN) % TRACK_LEN;
+    s.bridges ??= [];
+    s.bridges.push({ square, to, kind, owner: s.turn });
+    event = { type: 'bridge', seat: s.turn, kind, square, to };
+  }
   resumeAfterPower(s, rand);
   return { state: s, event };
 }

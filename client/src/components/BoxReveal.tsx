@@ -11,7 +11,7 @@ export function BoxRevealCard({ reveal, seats }: { reveal: BoxReveal; seats: Sea
   const who = seatName(seats, seat);
   const owner = seatName(seats, box.owner);
   const blast = box.outcome === 'bomb' && !box.saved;
-  const good = box.outcome === 'vest' || box.outcome === 'empty' || box.saved;
+  const good = box.outcome === 'vest' || box.outcome === 'plus' || box.saved;
   const bad = blast || box.outcome === 'minus' || box.outcome === 'freeze';
   const [icon, title, text] =
     box.outcome === 'bomb'
@@ -20,8 +20,8 @@ export function BoxRevealCard({ reveal, seats }: { reveal: BoxReveal; seats: Sea
         : ['💣', 'A bomb!', `${who}'s piece goes back to the hangar.${box.points ? ` +${box.points} for ${owner}.` : ''}`]
       : box.outcome === 'vest'
         ? ['🦺', 'A protective vest!', `The next bomb ${who} lands on won't hurt.`]
-        : box.outcome === 'empty'
-          ? ['💨', 'Empty!', 'Nothing inside — lucky escape.']
+        : box.outcome === 'plus'
+          ? ['💰', `+${POINTS.boxBonus} points!`, `${who} wins ${POINTS.boxBonus} points.`]
           : box.outcome === 'freeze'
             ? ['🧊', 'Frozen!', `${who}'s piece is stuck here until ${who}'s next turn is over.`]
             : ['💸', `−${POINTS.boxPenalty} points!`, `${who} loses ${POINTS.boxPenalty} points.`];

@@ -52,9 +52,9 @@ function score(state: GameState, plan: MovePlan, careful: boolean): number {
   if (plan.from < HOME_FIRST && plan.to >= HOME_FIRST) s += 6;
   if (plan.path.some((p) => p.kind === 'bounce')) s -= 4;
   if (plan.bombed) s -= plan.bombed.saved ? 3 : 15;
-  // A magic box is a gamble: a 1 in 5 chance each of a bomb, of losing points and of being frozen in place.
-  if (plan.box) s -= value(plan.to) * 0.2 + 2;
-  // A power square gives a bridge or a roll-again card.
+  // A magic box is a gamble: a 1 in 5 chance each of a bomb and of being frozen in place; the points even out.
+  if (plan.box) s -= value(plan.to) * 0.2 + 1;
+  // A power square gives a bridge or a magic box.
   if (plan.power) s += 4;
   // When points decide the winner, knock-outs and pieces home are worth chasing for their own sake.
   if (state.rules.winBy === 'points') s += plan.points * 1.5;
@@ -188,9 +188,9 @@ export function chooseBridge(state: GameState, kind: BridgeKind, level: BotLevel
   return best;
 }
 
-/** Picks a power: the better of the best bridge of each kind, or a roll-again card when neither does much. */
+/** Picks a power: the better of the best bridge of each kind, or a magic box when neither does much. */
 export function choosePower(state: GameState, level: BotLevel, rand: () => number = Math.random): PowerChoice {
-  if (level === 'easy') return (['heaven', 'hell', 'reroll'] as const)[Math.floor(rand() * 3)];
+  if (level === 'easy') return (['heaven', 'hell', 'box'] as const)[Math.floor(rand() * 3)];
   const free = freeSquares(state);
   const best = (kind: BridgeKind) => {
     const values = bridgeValues(state, kind);
@@ -198,43 +198,36 @@ export function choosePower(state: GameState, level: BotLevel, rand: () => numbe
   };
   const heaven = best('heaven');
   const hell = best('hell');
-  // A roll-again card saves about one wasted turn; a bridge's value is in squares, over a turn or two.
-  const reroll = 1.5;
-  if (reroll >= heaven && reroll >= hell) return 'reroll';
+  // A box in front of the others is worth a little whatever it holds; a bridge's value is in squares over a turn or two.
+  const box = 1.5;
+  if (box >= heaven && box >= hell) return 'box';
   return heaven >= hell ? 'heaven' : 'hell';
-}
-
-/** Whether to spend a roll-again card on this roll: always when it can't be played. */
-export function wantsReroll(state: GameState): boolean {
-  return (state.rerolls?.[state.turn] ?? 0) > 0 && state.phase === 'move' && state.movable.length === 0;
 }
 
 /** One thing to do in the current phase. Rolls carry no dice: whoever applies the action rolls. */
 export type BotAction =
-  | { type: 'roll' | 'reroll' | 'pass' }
+  | { type: 'roll' }
   | { type: 'move'; piece: number }
-  | { type: 'bomb' | 'box' | 'bridge'; square: number }
+  | { type: 'bomb' | 'box' | 'place'; square: number }
   | { type: 'power'; choice: PowerChoice };
 
-/**
- * What a bot does next, whatever the phase. `useCards` false is for a player whose time ran out: their turn is
- * played for them, but their roll-again cards are kept.
- */
-export function botAction(state: GameState, level: BotLevel, rand: () => number = Math.random, useCards = true): BotAction | null {
+/** What a bot does next, whatever the phase; also plays the turn of a player whose time ran out. */
+export function botAction(state: GameState, level: BotLevel, rand: () => number = Math.random): BotAction | null {
   switch (state.phase) {
     case 'roll':
       return { type: 'roll' };
     case 'move':
-      if (useCards && wantsReroll(state)) return { type: 'reroll' };
-      return state.movable.length ? { type: 'move', piece: chooseMove(state, level, rand) } : { type: 'pass' };
+      return { type: 'move', piece: chooseMove(state, level, rand) };
     case 'bomb':
       return { type: 'bomb', square: chooseBomb(state, level, rand) };
     case 'box':
       return { type: 'box', square: chooseBox(state, level, rand) };
     case 'power':
       return { type: 'power', choice: choosePower(state, level, rand) };
-    case 'bridge':
-      return state.placing ? { type: 'bridge', square: chooseBridge(state, state.placing, level, rand) } : null;
+    case 'place':
+      // A box from a power square goes where a bomb would: in front of the others' pieces.
+      if (state.placing === 'box') return { type: 'place', square: chooseBomb(state, level, rand) };
+      return state.placing ? { type: 'place', square: chooseBridge(state, state.placing, level, rand) } : null;
     default:
       return null;
   }

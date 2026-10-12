@@ -83,7 +83,7 @@ function playAsBot(s: Client, code: string, g: GameState): Promise<unknown> {
   if (!a) return Promise.resolve();
   if (a.type === 'move') return call(s, 'game:move', { code, piece: a.piece });
   if (a.type === 'power') return call(s, 'game:power', { code, choice: a.choice });
-  if (a.type === 'bomb' || a.type === 'box' || a.type === 'bridge') return call(s, `game:${a.type}`, { code, square: a.square });
+  if (a.type === 'bomb' || a.type === 'box' || a.type === 'place') return call(s, `game:${a.type}`, { code, square: a.square });
   return call(s, `game:${a.type}`, { code });
 }
 

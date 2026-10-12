@@ -22,19 +22,14 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
         return `${who} rolled a third 6 — turn over`;
       case 'penalty':
         return `${who} rolled a third 6 — pieces sent back to the hangar!${ev.bomb ? ' 💣 Bomb time.' : ''}`;
-      case 'decide':
-        return `${who} rolled ${ev.dice} — no move. Roll again with a card, or pass?`;
       default:
-        return `${who} ${ev.reroll ? 'rolled again 🎲 and got' : 'rolled'} ${ev.dice}`;
+        return `${who} rolled ${ev.dice}`;
     }
   }
   if (ev.type === 'bomb') return `${who} dropped a bomb 💣`;
   if (ev.type === 'box') return `${who} hid a magic box 🎁`;
-  if (ev.type === 'pass') return `${who} passed on a ${ev.dice}`;
   if (ev.type === 'power') {
-    return ev.choice === 'reroll'
-      ? `${who} took a roll-again card 🎲`
-      : `${who} picked a ${ev.choice} bridge ${ev.choice === 'heaven' ? '🌈' : '🔥'}`;
+    return ev.choice === 'box' ? `${who} picked a magic box 🎁` : `${who} picked a ${ev.choice} bridge ${ev.choice === 'heaven' ? '🌈' : '🔥'}`;
   }
   if (ev.type === 'bridge') return `${who} built a ${ev.kind} bridge ${ev.kind === 'heaven' ? '🌈 +10' : '🔥 −20'}`;
   if (ev.to === TAKEOFF) return `${who} launched a plane ✈`;
@@ -59,10 +54,10 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     const inside = {
       bomb: ev.box.saved ? 'a bomb, but the vest saved it 🦺' : `a bomb! 💣${ev.box.points ? ` +${ev.box.points} for ${owner}` : ''}`,
       vest: 'a protective vest 🦺',
-      empty: 'nothing',
+      plus: `+${POINTS.boxBonus} points 💰`,
       minus: `−${POINTS.boxPenalty} points`,
       freeze: 'ice 🧊 — that piece sits out a turn',
-    }[ev.box.outcome];
+    }[ev.box.outcome] ?? 'nothing';
     bits.push(`opened ${own ? 'their own' : `${owner}'s`} magic box 🎁: ${inside}`);
   }
   if (ev.bridge) {

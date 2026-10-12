@@ -121,7 +121,7 @@ export function SettingsForm({ value, onChange }: Props) {
         <Toggle label="A 6 gives another roll" checked={rules.bonusRollOnSix} onChange={(v) => setRules({ bonusRollOnSix: v })} />
         <Toggle
           label="Power squares ⚡"
-          hint="Two squares that move every 5 rounds. End a move on one to pick a heaven bridge (+10), a hell bridge (−20) or a roll-again card."
+          hint="Two squares that move every 5 rounds. End a move on one to pick a heaven bridge (+10), a hell bridge (−20) or a magic box to hide."
           checked={rules.powerSquares}
           onChange={(v) => setRules({ powerSquares: v })}
         />
@@ -139,7 +139,7 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Magic boxes 🎁"
-          hint="Before the first roll everyone hides a box. Whoever lands on it, its owner too, gets a bomb, a protective vest, nothing, −10 points, or ice that freezes the piece for a turn."
+          hint="Before the first roll everyone hides a box. Whoever lands on it, its owner too, gets a bomb, a protective vest, +20 or −10 points, or ice that freezes the piece for a turn."
           checked={rules.magicBoxes}
           onChange={(v) => setRules({ magicBoxes: v })}
         />

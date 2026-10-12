@@ -5,6 +5,7 @@ import {
   COLOR_DARK,
   COLOR_HEX,
   COLOR_LIGHT,
+  FLIGHT_CROSSES,
   FLIGHT_FROM,
   FLIGHT_TO,
   GOAL,
@@ -14,12 +15,14 @@ import {
   HANGAR_CENTERS,
   HANGAR_SLOTS,
   HOME,
+  HOME_FIRST,
   SEATS,
   TAKEOFF_SQUARES,
   TRACK,
   TRACK_LAST,
   isOnTrack,
   piecePoint,
+  flightCrossedSeat,
   rotatePoint,
   rotateShape,
   trackColor,
@@ -130,6 +133,11 @@ function Defs() {
         <stop offset="0" stopColor="#d1c4e9" />
         <stop offset="1" stopColor="#9575cd" />
       </linearGradient>
+      <linearGradient id="power-sq" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stopColor="#7e57c2" />
+        <stop offset="0.55" stopColor="#4a2a9e" />
+        <stop offset="1" stopColor="#2b1666" />
+      </linearGradient>
       <radialGradient id="bomb-body" cx="0.35" cy="0.3" r="0.8">
         <stop offset="0" stopColor="#6b6b6b" />
         <stop offset="0.45" stopColor="#2b2b2b" />
@@ -218,11 +226,16 @@ const BoardBase = memo(function BoardBase({ rot, active, turn }: { rot: number; 
         const h1 = R(HOME[s][0].spot);
         const from = R(TRACK[trackIndex(s, FLIGHT_FROM)].spot);
         const to = R(TRACK[trackIndex(s, FLIGHT_TO)].spot);
-        const a = px(from);
-        const b = px(to);
-        const len = Math.hypot(b.x - a.x, b.y - a.y);
-        const ux = (b.x - a.x) / len;
-        const uy = (b.y - a.y) / len;
+        const plane = px(from);
+        const len = Math.hypot(to.x - from.x, to.y - from.y);
+        const ux = (to.x - from.x) / len;
+        const uy = (to.y - from.y) / len;
+        // The line runs straight through the middle of the home square it crosses, where a flight knocks a
+        // piece out, rather than between the two corner spots, which sit a little off that square's centre.
+        const hit = px(R(HOME[flightCrossedSeat(s)][FLIGHT_CROSSES - HOME_FIRST].spot));
+        const along = (p: Point) => (p.x * CELL - hit.x) * ux + (p.y * CELL - hit.y) * uy;
+        const a = { x: hit.x + ux * along(from), y: hit.y + uy * along(from) };
+        const b = { x: hit.x + ux * along(to), y: hit.y + uy * along(to) };
         const trim = CELL * 0.5;
         const fly = heading(from, to);
         const t = px(takeoff);
@@ -245,7 +258,7 @@ const BoardBase = memo(function BoardBase({ rot, active, turn }: { rot: number; 
             {[0.3, 0.5, 0.7].map((f) => (
               <Chevron key={f} at={{ x: (a.x + (b.x - a.x) * f) / CELL, y: (a.y + (b.y - a.y) * f) / CELL }} angle={fly} color={COLOR_DARK[s]} size={4.5} width={2.4} />
             ))}
-            <path d={PLANE_PATH} transform={`translate(${a.x} ${a.y}) rotate(${fly}) scale(${CELL * 0.22})`} fill={COLOR_DARK[s]} />
+            <path d={PLANE_PATH} transform={`translate(${plane.x} ${plane.y}) rotate(${fly}) scale(${CELL * 0.22})`} fill={COLOR_DARK[s]} />
           </g>
         );
       })}
@@ -289,15 +302,35 @@ function BoxIcon({ x, y, owner, ghost }: { x: number; y: number; owner: Seat; gh
   );
 }
 
-/** A square that gives a power to whoever ends a move on it. */
-function PowerIcon({ x, y }: { x: number; y: number }) {
+/** A four-pointed sparkle of radius r. */
+const sparkle = (r: number) => {
+  const k = r * 0.2;
+  return `M0 ${-r}Q${k} ${-k} ${r} 0Q${k} ${k} 0 ${r}Q${-k} ${k} ${-r} 0Q${-k} ${-k} 0 ${-r}Z`;
+};
+
+/**
+ * A power square: repainted in no seat's colour, since nobody jumps from it, with a gold sparkle where the
+ * spot was and the rounds left before it moves.
+ */
+function PowerSquare({ square, rounds }: { square: number; rounds: number }) {
+  const sq = TRACK[square];
+  const c = px(sq.spot);
+  const r = CELL * (sq.shape.kind === 'tri' ? 0.3 : 0.36);
   return (
-    <g className="power-square" transform={`translate(${x} ${y})`} pointerEvents="none">
+    <g className="power-square">
+      <title>{`Power square — moves ${rounds === 1 ? 'after this round' : `in ${rounds} rounds`}`}</title>
       <g className="power-square-body">
-        <circle className="power-ring" r={CELL * 0.38} />
-        <text textAnchor="middle" dominantBaseline="central">
-          ⚡
-        </text>
+        <ShapeEl s={sq.shape} fill="url(#power-sq)" stroke="#ffca28" strokeWidth={2.5} inset={1.2} />
+        <g transform={`translate(${c.x} ${c.y})`}>
+          <path className="power-glow" d={sparkle(r * 1.25)} />
+          <path className="power-star" d={sparkle(r)} />
+          <g className="power-rounds" transform={`translate(${r * 0.95} ${-r * 0.95})`}>
+            <circle r={CELL * 0.17} />
+            <text textAnchor="middle" dy="0.35em" fontSize={CELL * 0.24}>
+              {rounds}
+            </text>
+          </g>
+        </g>
       </g>
     </g>
   );
@@ -438,6 +471,10 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
     return out.sort((a, b) => Number(a.animated) - Number(b.animated) || Number(canMove(a)) - Number(canMove(b)) || a.y - b.y);
   }, [game, anim, rot, movable]);
 
+  // Rounds until the power squares move: they move once the turn number reaches powerMovesAt.
+  const playing = Math.max(1, game.active.filter((s) => !game.ranking.includes(s)).length);
+  const powerRounds = Math.max(1, Math.ceil(((game.powerMovesAt ?? 0) - game.turnNo) / playing));
+
   const labels = SEATS.map((s) => {
     const c = toPx(HANGAR_CENTERS[s], rot);
     const off = CELL * 1.53;
@@ -563,10 +600,9 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           const p = toPx(TRACK[b.square].spot, rot);
           return <BombIcon key={b.square} x={p.x} y={p.y} owner={b.owner} />;
         })}
-        {(game.power ?? []).map((sq) => {
-          const p = toPx(TRACK[sq].spot, rot);
-          return <PowerIcon key={`power${sq}`} x={p.x} y={p.y} />;
-        })}
+        {(game.power ?? []).map((sq) => (
+          <PowerSquare key={`power${sq}`} square={sq} rounds={powerRounds} />
+        ))}
         {(game.bridges ?? []).map((b) => (
           <BridgeArc key={`bridge${b.square}`} from={b.square} kind={b.kind} />
         ))}

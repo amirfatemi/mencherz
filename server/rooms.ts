@@ -18,14 +18,11 @@ import { rollWeighted, rollWeights } from '../shared/dice.ts';
 import {
   applyBomb,
   applyBox,
-  applyBridge,
   applyMove,
-  applyPass,
+  applyPlace,
   applyPower,
-  applyReroll,
   applyRoll,
   createGame,
-  rerollBase,
   RuleError,
   POWER_CHOICES,
   type GameEvent,
@@ -80,7 +77,7 @@ interface Room {
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_EVENTS = 60;
-const BOT_THINK_MS = { roll: 650, move: 550, bomb: 1100, box: 700, power: 900, bridge: 1100 };
+const BOT_THINK_MS = { roll: 650, move: 550, bomb: 1100, box: 700, power: 900, place: 1100 };
 const rand = (n: number) => randomInt(n);
 const OFFLINE_GRACE_MS = 6000;
 const KEEP_FINISHED_MS = 6 * 3600 * 1000;
@@ -342,30 +339,22 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     commit(room, applyRoll(g, rollWeighted(rollWeights(g), rand), rand));
   }
 
-  function reroll(room: Room) {
-    const g = room.game!;
-    // The difficulty's dice weighting looks at the six streak from before the roll being taken back.
-    commit(room, applyReroll(g, rollWeighted(rollWeights(rerollBase(g)), rand), rand));
-  }
-
   function move(room: Room, piece: number) {
     commit(room, applyMove(room.game!, piece, rand));
   }
 
-  /** Plays the turn for a bot, or for a player whose time ran out (`bot` false: they keep their roll-again cards). */
-  function autoAct(room: Room, level: BotLevel, bot: boolean) {
+  /** Plays the turn for a bot, or for a player whose time ran out. */
+  function autoAct(room: Room, level: BotLevel) {
     const g = room.game;
     if (!g || room.status !== 'playing') return;
     try {
-      const a = botAction(g, level, Math.random, bot);
+      const a = botAction(g, level);
       if (!a) return;
       if (a.type === 'roll') roll(room);
-      else if (a.type === 'reroll') reroll(room);
-      else if (a.type === 'pass') commit(room, applyPass(g, rand));
       else if (a.type === 'move') move(room, a.piece);
       else if (a.type === 'bomb') commit(room, applyBomb(g, a.square, rand));
       else if (a.type === 'box') commit(room, applyBox(g, a.square));
-      else if (a.type === 'bridge') commit(room, applyBridge(g, a.square, rand));
+      else if (a.type === 'place') commit(room, applyPlace(g, a.square, rand));
       else if (a.type === 'power') commit(room, applyPower(g, a.choice, rand));
     } catch (err) {
       console.error(`Auto move failed in ${room.code}:`, err);
@@ -386,21 +375,21 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     const seat = room.seats[g.turn];
     const now = Date.now();
     const wait = Math.max(0, room.busyUntil - now) / (opts.timeScale || 1);
-    const later = (ms: number, level: BotLevel, bot: boolean) => {
+    const later = (ms: number, level: BotLevel) => {
       room.timer = setTimeout(() => {
         room.timer = null;
-        autoAct(room, level, bot);
+        autoAct(room, level);
       }, scaled(ms));
     };
 
-    if (seat.kind === 'bot') return later(wait + BOT_THINK_MS[g.phase], seat.botLevel ?? 'normal', true);
+    if (seat.kind === 'bot') return later(wait + BOT_THINK_MS[g.phase], seat.botLevel ?? 'normal');
     // People make every move themselves, even when only one is possible.
 
     let limit = room.settings.turnSeconds * 1000;
     if (!seatOnline(room, seat)) limit = limit ? Math.min(limit, OFFLINE_GRACE_MS) : OFFLINE_GRACE_MS;
     if (!limit) return;
     room.turnDeadline = now + scaled(wait + limit);
-    later(wait + limit, 'normal', false);
+    later(wait + limit, 'normal');
   }
 
   function requireTurn(room: Room, user: PublicUser) {
@@ -696,26 +685,6 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     );
 
     socket.on(
-      'game:reroll',
-      handler((req) => {
-        const room = getRoom(req?.code);
-        requireTurn(room, user);
-        reroll(room);
-        return null;
-      }),
-    );
-
-    socket.on(
-      'game:pass',
-      handler((req) => {
-        const room = getRoom(req?.code);
-        requireTurn(room, user);
-        commit(room, applyPass(room.game!, rand));
-        return null;
-      }),
-    );
-
-    socket.on(
       'game:power',
       handler((req) => {
         const room = getRoom(req?.code);
@@ -728,13 +697,13 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     );
 
     socket.on(
-      'game:bridge',
+      'game:place',
       handler((req) => {
         const room = getRoom(req?.code);
         requireTurn(room, user);
         const square = Number(req?.square);
         if (!Number.isInteger(square)) throw new InputError('Invalid square');
-        commit(room, applyBridge(room.game!, square, rand));
+        commit(room, applyPlace(room.game!, square, rand));
         return null;
       }),
     );

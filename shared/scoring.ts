@@ -15,6 +15,8 @@ export const POINTS = {
   captureHomeColumn: 20,
   /** Lost when a magic box turns out to take points. */
   boxPenalty: 10,
+  /** Won when a magic box turns out to give points. */
+  boxBonus: 20,
   /** For the first player to bring all four pieces home. */
   firstHome: 100,
 } as const;

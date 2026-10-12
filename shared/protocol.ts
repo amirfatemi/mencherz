@@ -158,14 +158,10 @@ export interface ClientToServer {
   'game:bomb': (req: { code: string; square: number }, ack: Ack<null>) => void;
   /** Before the first roll: hide your magic box on this absolute track square. */
   'game:box': (req: { code: string; square: number }, ack: Ack<null>) => void;
-  /** Throw the roll away with a roll-again card and roll again; the new roll must be played. */
-  'game:reroll': (req: { code: string }, ack: Ack<null>) => void;
-  /** Let a roll that can't be played go instead of using a roll-again card. */
-  'game:pass': (req: { code: string }, ack: Ack<null>) => void;
-  /** On a power square: pick a heaven bridge, a hell bridge or a roll-again card. */
+  /** On a power square: pick a heaven bridge, a hell bridge or a magic box. */
   'game:power': (req: { code: string; choice: PowerChoice }, ack: Ack<null>) => void;
-  /** Start the bridge picked on a power square on this absolute track square. */
-  'game:bridge': (req: { code: string; square: number }, ack: Ack<null>) => void;
+  /** Put the bridge or box picked on a power square on this absolute track square. */
+  'game:place': (req: { code: string; square: number }, ack: Ack<null>) => void;
   /** Host only: stop or restart the game clock. */
   'game:pause': (req: { code: string; paused: boolean }, ack: Ack<null>) => void;
 }

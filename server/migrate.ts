@@ -21,10 +21,15 @@ export function upgradeGame(game: GameState): GameState {
   g.power ??= [];
   g.powerMovesAt ??= 0;
   g.bridges ??= [];
-  g.rerolls ??= SEATS.map(() => 0);
-  g.preRoll ??= null;
   g.powerThen ??= null;
   g.placing ??= null;
+  // Roll-again cards were dropped: the phase that placed bridges also places boxes now, and a roll that
+  // waited for a card or a pass is simply rolled again.
+  const old = g as Omit<GameState, 'phase'> & { rerolls?: unknown; preRoll?: unknown; phase: string };
+  delete old.rerolls;
+  delete old.preRoll;
+  if (old.phase === 'bridge') old.phase = 'place';
+  if (g.phase === 'move' && !g.movable.length) Object.assign(g, { phase: 'roll', dice: null });
   g.stuck ??= SEATS.map(() => 0);
   g.standings ??= g.phase === 'over' && g.ranking.length ? standingsOf(g) : [];
   return g;

@@ -76,11 +76,8 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   const placingBomb = myTurn && game.phase === 'bomb' && !busy;
   const hidingBox = myTurn && game.phase === 'box' && !busy;
   const pickingPower = myTurn && game.phase === 'power' && !busy;
-  const placingBridge = myTurn && game.phase === 'bridge' && !busy ? game.placing : null;
-  const cards = game.rerolls?.[game.turn] ?? 0;
-  const canReroll = myTurn && game.phase === 'move' && cards > 0 && !busy;
-  // Nothing can move, but a roll-again card can still save the turn.
-  const deciding = canReroll && game.movable.length === 0;
+  // A bridge or magic box picked on a power square, being put down.
+  const placing = myTurn && game.phase === 'place' && !busy ? game.placing : null;
   const turnName = seatName(view.seats, game.turn);
   const forced = myTurn && game.phase === 'move' && distinctMoves(game).length === 1;
 
@@ -94,9 +91,9 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
     setError(null);
     req.catch((e: Error) => setError(e.message)).finally(() => setPending(false));
   };
-  const act = (event: 'game:roll' | 'game:move' | 'game:bomb' | 'game:box' | 'game:bridge' | 'game:reroll' | 'game:pass', n?: number) =>
+  const act = (event: 'game:roll' | 'game:move' | 'game:bomb' | 'game:box' | 'game:place', n?: number) =>
     send(
-      event === 'game:roll' || event === 'game:reroll' || event === 'game:pass'
+      event === 'game:roll'
         ? call(event, { code: view.code })
         : event === 'game:move'
           ? call('game:move', { code: view.code, piece: n! })
@@ -139,10 +136,12 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
     status = `💣 ${mySeat === game.turn ? 'Drop' : `${you}, drop`} your bomb on any empty square`;
   } else if (myTurn && game.phase === 'power') {
     status = `⚡ Power square! ${mySeat === game.turn ? 'Pick' : `${you}, pick`} a power`;
-  } else if (myTurn && game.phase === 'bridge') {
-    status = `${game.placing === 'heaven' ? '🌈' : '🔥'} ${mySeat === game.turn ? 'Pick' : `${you}, pick`} where your ${game.placing} bridge starts`;
-  } else if (myTurn && game.phase === 'move' && !game.movable.length) {
-    status = `${you} rolled ${game.dice} — no move. Roll again with your card, or pass?`;
+  } else if (myTurn && game.phase === 'place') {
+    const pick = mySeat === game.turn ? 'Pick' : `${you}, pick`;
+    status =
+      game.placing === 'box'
+        ? `🎁 ${pick} where to hide your magic box`
+        : `${game.placing === 'heaven' ? '🌈' : '🔥'} ${pick} where your ${game.placing} bridge starts`;
   } else if (myTurn) {
     const whose = mySeat === game.turn ? 'Your' : `${you}'s`;
     status = game.phase === 'roll' ? `${whose} turn — roll the dice` : forced ? `${you} rolled ${game.dice} — move your piece` : `${you} rolled ${game.dice} — pick a piece`;
@@ -155,8 +154,10 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
           ? 'is placing a bomb 💣'
           : game.phase === 'power'
             ? 'is picking a power ⚡'
-            : game.phase === 'bridge'
-              ? `is building a ${game.placing} bridge ${game.placing === 'heaven' ? '🌈' : '🔥'}`
+            : game.phase === 'place'
+              ? game.placing === 'box'
+                ? 'is hiding a magic box 🎁'
+                : `is building a ${game.placing} bridge ${game.placing === 'heaven' ? '🌈' : '🔥'}`
               : s.kind === 'bot'
             ? 'is thinking'
             : game.phase === 'roll'
@@ -184,10 +185,10 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
             pieceStyle={pieceStyle}
             popups={stream.popups}
             reactions={stream.reactions}
-            targets={placingBomb || hidingBox || placingBridge ? freeSquares(game) : []}
-            targetKind={hidingBox ? 'box' : (placingBridge ?? 'bomb')}
+            targets={placingBomb || hidingBox || placing ? freeSquares(game) : []}
+            targetKind={hidingBox ? 'box' : (placing ?? 'bomb')}
             onMove={(p) => act('game:move', p)}
-            onTarget={(sq) => act(hidingBox ? 'game:box' : placingBridge ? 'game:bridge' : 'game:bomb', sq)}
+            onTarget={(sq) => act(hidingBox ? 'game:box' : placing ? 'game:place' : 'game:bomb', sq)}
           />
           {stream.reveal && <BoxRevealCard key={stream.reveal.key} reveal={stream.reveal} seats={view.seats} />}
           {paused && (
@@ -219,13 +220,13 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
             )}
           </div>
           <div className="dice-row">
-            {game.phase === 'box' ? (
+            {game.phase === 'box' || (game.phase === 'place' && game.placing === 'box') ? (
               <BoxBadge color={COLOR_HEX[game.turn]} />
             ) : game.phase === 'bomb' && !stream.rolling ? (
               <BombBadge color={COLOR_HEX[game.turn]} />
             ) : game.phase === 'power' ? (
               <EmojiBadge icon="⚡" color={COLOR_HEX[game.turn]} label="Power square" />
-            ) : game.phase === 'bridge' ? (
+            ) : game.phase === 'place' ? (
               <EmojiBadge icon={game.placing === 'heaven' ? '🌈' : '🔥'} color={COLOR_HEX[game.turn]} label={`${game.placing} bridge`} />
             ) : (
               <Dice value={stream.rolling ? null : diceValue} rolling={stream.rolling} color={COLOR_HEX[diceSeat]} canRoll={canRoll} onRoll={() => act('game:roll')} />
@@ -243,31 +244,17 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                   <button className="btn danger" onClick={() => pickPower('hell')} title="Whoever lands on its start, you too, falls 20 squares back. Used once.">
                     🔥 Hell bridge · −20
                   </button>
-                  <button className="btn ghost" onClick={() => pickPower('reroll')} title="Later, throw a roll away and roll again. The new roll must be played.">
-                    🎲 Roll-again card
+                  <button className="btn ghost" onClick={() => pickPower('box')} title="Hide a magic box on any empty square. Whoever lands on it first opens it — you too.">
+                    🎁 Magic box
                   </button>
                 </div>
-              ) : placingBridge ? (
+              ) : placing === 'box' ? (
+                <span>{TOUCH ? 'Tap an empty square, then tap it again.' : 'Click any empty square.'} Whoever lands on it first opens it — you too.</span>
+              ) : placing ? (
                 <span>
                   {TOUCH ? 'Tap a square to see where the bridge leads, then tap it again.' : 'Hover a square to see where the bridge leads, then click it.'} It works once, for
                   whoever lands on its start first — you too.
                 </span>
-              ) : deciding ? (
-                <div className="power-choices">
-                  <button className="btn primary" onClick={() => act('game:reroll')}>
-                    🎲 Roll again{cards > 1 ? ` (${cards} cards)` : ''}
-                  </button>
-                  <button className="btn ghost" onClick={() => act('game:pass')}>
-                    Pass
-                  </button>
-                </div>
-              ) : canReroll ? (
-                <div className="power-choices">
-                  <span>{TOUCH ? 'Tap a glowing piece, then tap it again' : 'Click a glowing piece'} — or throw this roll away:</span>
-                  <button className="btn ghost" onClick={() => act('game:reroll')}>
-                    🎲 Roll again{cards > 1 ? ` (${cards} cards)` : ''}
-                  </button>
-                </div>
               ) : forced && !busy ? (
                 <span>Only one move is possible — {TOUCH ? 'tap the glowing piece, then tap it again' : 'click the glowing piece'}.</span>
               ) : hidingBox ? (

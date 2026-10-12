@@ -324,10 +324,6 @@ export function useRoomStream(code: string) {
               }
               continue;
             }
-          } else if (ev.type === 'pass') {
-            commit(u.room);
-            setHeld({ seat: ev.seat, value: ev.dice, wait: false });
-            continue;
           } else if (ev.type === 'power') {
             commit(u.room);
             continue;

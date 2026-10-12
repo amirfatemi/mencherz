@@ -98,17 +98,17 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 9. **Magic box 🎁:** before the first roll, everyone hides one box on a track square, in turn order. Any piece landing on it opens it, the owner's included, and one of these happens at random:
    - a bomb, which sends the piece home and scores for the box's owner
    - a protective vest 🦺, which stops the next bomb that player lands on
-   - nothing
+   - +20 points
    - −10 points
    - ice 🧊, which locks the piece on that square (no jump or flight from it) until its owner's next turn is over. Other pieces can still knock it out.
 
    What was inside shows on a card for 3 seconds while the game waits.
-10. **Walls 🧱:** two or more pieces of one colour on a track square make a wall. Other colours can't pass it, not even with a colour jump (a move that would is not allowed, and a jump that would just doesn't happen). Landing exactly on a wall knocks out every piece in it, each scored. Your own pieces pass your own walls.
+10. **Walls 🧱:** two or more pieces of one colour on a track square make a wall. Other colours can't pass it by stepping or with a colour jump (a move that would is not allowed, and a colour jump that would just doesn't happen). Flights ✈ and bridges go over it. Landing exactly on a wall knocks out every piece in it, each scored. Your own pieces pass your own walls.
 11. **Kings 👑:** each colour's first piece wears a crown. Knocking out a king, or knocking out with your king, counts ×1.5; a king knocking out a king, ×2.25.
-12. **Power squares ⚡:** two track squares, one in each half of the board, move to random free squares every 5 rounds. Ending a move on one lets you pick:
+12. **Power squares ⚡:** two track squares, one in each half of the board, move to random free squares every 5 rounds (never a flight square). They're painted purple with a gold sparkle: nobody's colour, so nobody jumps from them. A number on each shows the rounds left before they move. Ending a move on one lets you pick:
     - **Heaven bridge 🌈:** you pick a free start square; the bridge leads 10 squares ahead. The first piece to land on its start, yours included, is carried there, and the bridge is gone. It does nothing for a piece whose route turns home before its end.
     - **Hell bridge 🔥:** the same, but 20 squares back (or to the piece's takeoff spot, if it hasn't come that far).
-    - **Roll-again card 🎲:** kept for later. After any roll you may throw it away and roll again, and must then play the new roll. With a card, a roll that can't be played waits for you to use it or pass.
+    - **Magic box 🎁:** hide a new magic box on any free square. Whoever lands on it first opens it, you included.
 
     A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on power squares.
 13. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
@@ -129,6 +129,7 @@ By default the game is scored, so knocking pieces out pays as well as racing:
 | **Double kill:** a piece's second knock-out since it left the hangar | ×1.5 |
 | **Triple kill** and later: its third knock-out and each one after | ×2 |
 | **King:** knock out a king, or knock out with your king | ×1.5 each |
+| A magic box that gives points | +20 |
 | A magic box that takes points | −10 |
 
 Bonuses multiply, and a single knock-out is capped at 100.

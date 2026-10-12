@@ -132,7 +132,7 @@ export function reactionsFor(ev: GameEvent, pick: (group: ReactionGroup) => stri
   // A third six is bad luck: sad as soon as the dice stops.
   if (ev.type === 'roll' && (ev.outcome === 'penalty' || ev.outcome === 'forfeit')) show(ev.seat, 'sad', ROLL_MS);
   // So is a third lost turn in a row with everything still in the hangar.
-  if ((ev.type === 'roll' || ev.type === 'pass') && ev.stuck) show(ev.seat, 'sad', ev.type === 'roll' ? ROLL_MS : 0);
+  if (ev.type === 'roll' && ev.stuck) show(ev.seat, 'sad', ROLL_MS);
   if (ev.type !== 'move') return out;
   // An opened magic box always gets a reaction, good or bad, as it opens.
   const box = ev.box;

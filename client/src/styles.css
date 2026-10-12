@@ -1003,17 +1003,29 @@ select:focus {
   stroke-dasharray: 7 3;
 }
 
-.power-square .power-ring {
-  fill: rgba(255, 214, 0, 0.35);
-  stroke: #ff9800;
-  stroke-width: 2.5;
+.power-star {
+  fill: #ffd54f;
+  stroke: #fff8e1;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.power-rounds circle {
+  fill: #fff;
+  stroke: #4a2a9e;
+  stroke-width: 2;
+}
+
+.power-rounds text {
+  fill: #4a2a9e;
+  font-weight: 700;
+}
+
+.power-glow {
+  fill: rgba(255, 213, 79, 0.45);
   transform-box: fill-box;
   transform-origin: center;
   animation: power-pulse 1.4s ease-in-out infinite alternate;
-}
-
-.power-square text {
-  font-size: 20px;
 }
 
 .power-square-body {
@@ -1074,7 +1086,7 @@ select:focus {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .power-square .power-ring,
+  .power-glow,
   .bridge-arc {
     animation: none;
   }

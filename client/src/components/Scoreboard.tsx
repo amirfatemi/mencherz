@@ -17,8 +17,8 @@ interface Props {
   spectators: number;
 }
 
-/** Small marks after a name: computer, played at someone's device, away, wearing a vest, holding roll-again cards. */
-function Marks({ s, vests, cards, userId }: { s: SeatView; vests: number; cards: number; userId: number }) {
+/** Small marks after a name: computer, played at someone's device, away, wearing a vest. */
+function Marks({ s, vests, userId }: { s: SeatView; vests: number; userId: number }) {
   return (
     <>
       {s.kind === 'bot' && (
@@ -39,11 +39,6 @@ function Marks({ s, vests, cards, userId }: { s: SeatView; vests: number; cards:
       {vests > 0 && (
         <span className="mark" title="A protective vest stops the next bomb">
           🦺{vests > 1 ? `×${vests}` : ''}
-        </span>
-      )}
-      {cards > 0 && (
-        <span className="mark" title="Roll-again card: throw a roll away and roll again">
-          🎲{cards > 1 ? `×${cards}` : ''}
         </span>
       )}
     </>
@@ -98,7 +93,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
                 <td className="who">
                   <span className="swatch" />
                   <span className="who-name">{seatName(seats, seat)}</span>
-                  <Marks s={seats[seat]} vests={game.vests?.[seat] ?? 0} cards={game.rerolls?.[seat] ?? 0} userId={userId} />
+                  <Marks s={seats[seat]} vests={game.vests?.[seat] ?? 0} userId={userId} />
                 </td>
                 <td>
                   {st.home}/{PIECES_PER_SEAT}
@@ -160,7 +155,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
           )}
           <li>No single knock-out is worth more than {POINTS.firstHome}</li>
           <li>
-            🎁 A magic box that takes points: <b>−{POINTS.boxPenalty}</b>
+            🎁 A magic box with points: <b>+{POINTS.boxBonus}</b> or <b>−{POINTS.boxPenalty}</b>
           </li>
         </ul>
       </details>

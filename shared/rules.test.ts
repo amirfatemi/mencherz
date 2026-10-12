@@ -30,14 +30,11 @@ import {
   DEFAULT_RULES,
   applyBomb,
   applyBox,
-  applyBridge,
   applyMove,
-  applyPass,
+  applyPlace,
   applyPower,
-  applyReroll,
   applyRoll,
   distinctMoves,
-  rerollBase,
   freeSquares,
   createGame,
   planMove,
@@ -75,18 +72,14 @@ function botStep(g: GameState, level: BotLevel) {
   switch (a.type) {
     case 'roll':
       return applyRoll(g, rollWeighted(rollWeights(g), randInt), randInt);
-    case 'reroll':
-      return applyReroll(g, rollWeighted(rollWeights(rerollBase(g)), randInt), randInt);
-    case 'pass':
-      return applyPass(g, randInt);
     case 'move':
       return applyMove(g, a.piece, randInt);
     case 'bomb':
       return applyBomb(g, a.square, randInt);
     case 'box':
       return applyBox(g, a.square);
-    case 'bridge':
-      return applyBridge(g, a.square, randInt);
+    case 'place':
+      return applyPlace(g, a.square, randInt);
     case 'power':
       return applyPower(g, a.choice, randInt);
   }
@@ -588,7 +581,7 @@ describe('three sixes and bombs', () => {
       }
       assert.equal(g.phase, 'over');
     }
-    for (const phase of ['box', 'roll', 'move', 'power', 'bridge']) assert.ok(seen.has(phase), `reached the ${phase} phase`);
+    for (const phase of ['box', 'roll', 'move', 'power', 'place']) assert.ok(seen.has(phase), `reached the ${phase} phase`);
   });
 });
 
@@ -647,11 +640,12 @@ describe('magic boxes', () => {
     assert.equal(r.state.stats[1].points, 0, 'no points for a bomb the vest stopped');
   });
 
-  test('an empty box does nothing; a points box takes 10', () => {
-    const empty = onBox('empty');
-    assert.equal(empty.state.pieces[0][0], 32);
-    assert.equal(empty.state.stats[0].points, 0);
-    assert.deepEqual(empty.state.boxes, [], 'opened boxes are gone');
+  test('a points box gives 20 or takes 10, and the piece stays put', () => {
+    const plus = onBox('plus');
+    assert.equal(plus.state.pieces[0][0], 32);
+    assert.equal(plus.event.points, POINTS.boxBonus);
+    assert.equal(plus.state.stats[0].points, POINTS.boxBonus);
+    assert.deepEqual(plus.state.boxes, [], 'opened boxes are gone');
     const minus = onBox('minus');
     assert.equal(minus.event.points, -POINTS.boxPenalty);
     assert.equal(minus.state.stats[0].points, -POINTS.boxPenalty);
@@ -726,13 +720,13 @@ describe('magic boxes', () => {
   });
 
   test('an opened box holds the move for its reveal and always gets a GIF', () => {
-    const empty = onBox('empty').event;
-    assert.equal(eventDuration(empty), boxOpenAt(empty) + BOX_REVEAL_MS);
+    const plus = onBox('plus').event;
+    assert.equal(eventDuration(plus), boxOpenAt(plus) + BOX_REVEAL_MS);
     const bomb = onBox('bomb').event;
     assert.equal(blastAt(bomb), boxOpenAt(bomb) + BOX_REVEAL_MS, 'the bomb goes off after the reveal');
     const mood = (outcome: BoxOutcome) => reactionsFor(onBox(outcome).event, (group) => REACTIONS.find((r) => r.group === group)!.id).map((r) => [r.seat, REACTION_BY_ID.get(r.id)!.group]);
     assert.deepEqual(mood('vest'), [[0, 'happy']]);
-    assert.deepEqual(mood('empty'), [[0, 'happy']]);
+    assert.deepEqual(mood('plus'), [[0, 'happy']]);
     assert.deepEqual(mood('minus'), [[0, 'sad']]);
     assert.deepEqual(mood('freeze'), [
       [0, 'sad'],
@@ -960,6 +954,21 @@ describe('power squares and bridges', () => {
     assert.ok(!freeSquares(g).some((sq) => g.power.includes(sq)));
   });
 
+  test('they are nobody\'s colour: no colour jump from them, and never on a flight square', () => {
+    const g = at(powered(), 0, [3]);
+    assert.ok(isOwnColor(6));
+    g.power = [trackIndex(0, 6)];
+    const plan = planMove(g, 0, 0, 3)!;
+    assert.equal(plan.jumped, false);
+    assert.equal(plan.to, 6);
+    assert.equal(plan.power, true);
+    const flights = SEATS.map((seat) => trackIndex(seat, FLIGHT_FROM));
+    for (let n = 0; n < 30; n++) {
+      const fresh = createGame([0, 1, 2, 3], { ...DEFAULT_RULES, magicBoxes: false }, 0);
+      assert.ok(!fresh.power.some((sq) => flights.includes(sq)));
+    }
+  });
+
   test('they move every five rounds', () => {
     let g = powered();
     const first = [...g.power];
@@ -982,20 +991,31 @@ describe('power squares and bridges', () => {
     const { state, event } = onPower();
     assert.equal(event.power, true);
     assert.equal(state.phase, 'power');
-    const card = applyPower(state, 'reroll');
-    assert.deepEqual(card.state.rerolls, [1, 0, 0, 0]);
-    assert.equal(card.state.turn, 1, 'a 2: the turn passes');
-    const six = applyPower(onPower(6).state, 'reroll').state;
+    const box = applyPower(state, 'box').state;
+    assert.equal(box.phase, 'place');
+    const placed = applyPlace(box, trackIndex(1, 8));
+    assert.deepEqual(placed.event, { type: 'box', seat: 0, square: trackIndex(1, 8) });
+    assert.deepEqual(placed.state.boxes, [{ square: trackIndex(1, 8), owner: 0 }]);
+    assert.equal(placed.state.turn, 1, 'a 2: the turn passes');
+    const six = applyPlace(applyPower(onPower(6).state, 'box').state, trackIndex(1, 8)).state;
     assert.equal(six.turn, 0, 'a 6: roll again');
     assert.equal(six.phase, 'roll');
   });
 
+  test('a box from a power square opens like any other, for its owner too', () => {
+    const g = applyPlace(applyPower(onPower().state, 'box').state, trackIndex(0, 8)).state;
+    Object.assign(g, { turn: 0, phase: 'move', dice: 3, movable: [0] });
+    const r = applyMove(g, 0, () => BOX_OUTCOMES.indexOf('plus'));
+    assert.equal(r.event.box?.owner, 0);
+    assert.equal(r.event.points, POINTS.boxBonus);
+  });
+
   test('a heaven bridge carries whoever lands on it 10 squares ahead, once', () => {
     let g = applyPower(onPower().state, 'heaven').state;
-    assert.equal(g.phase, 'bridge');
+    assert.equal(g.phase, 'place');
     const square = trackIndex(1, 12);
     assert.ok(freeSquares(g).includes(square));
-    g = applyBridge(g, square).state;
+    g = applyPlace(g, square).state;
     assert.deepEqual(g.bridges, [{ square, to: trackIndex(1, 22), kind: 'heaven', owner: 0 }]);
     assert.equal(g.turn, 1);
     at(g, 1, [9]);
@@ -1027,39 +1047,7 @@ describe('power squares and bridges', () => {
   });
 });
 
-describe('roll-again cards', () => {
-  test('a card throws the roll away, and the new roll must be played', () => {
-    const g = at(game([0, 1]), 0, [10]);
-    g.rerolls[0] = 1;
-    const first = applyRoll(g, 3).state;
-    const again = applyReroll(first, 5);
-    assert.equal(again.event.reroll, true);
-    assert.equal(again.state.dice, 5);
-    assert.equal(again.state.rerolls[0], 0);
-    assert.throws(() => applyReroll(again.state, 4), /no roll-again card/);
-  });
-
-  test('with a card, a roll that cannot be played waits: use it, or pass', () => {
-    const g = game([0, 1]);
-    g.rerolls[0] = 1;
-    const r = applyRoll(g, 3);
-    assert.equal(r.event.outcome, 'decide');
-    assert.equal(r.state.turn, 0);
-    const passed = applyPass(r.state);
-    assert.equal(passed.state.turn, 1);
-    assert.equal(passed.state.rerolls[0], 1, 'the card is kept');
-    assert.deepEqual(applyReroll(r.state, 6).state.movable, [0, 1, 2, 3]);
-  });
-
-  test('a card also takes back the six streak of the roll it throws away', () => {
-    const g = at(game([0, 1]), 0, [10]);
-    g.rerolls[0] = 1;
-    g.sixStreak = 1;
-    const six = applyRoll(g, 6).state;
-    assert.equal(six.sixStreak, 2);
-    assert.equal(applyReroll(six, 6).state.sixStreak, 2, 'still the second six, not a third');
-  });
-
+describe('unplayable rolls', () => {
   test('without a bot, an unplayable roll is not held', () => {
     const { event } = applyRoll(game([0, 1]), 3);
     assert.equal(eventDuration(event), ROLL_MS + PASS_HOLD_MS);
