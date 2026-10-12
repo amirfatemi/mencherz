@@ -48,6 +48,8 @@ interface Props {
   size: number;
   count?: number;
   movable?: boolean;
+  /** Locked in place by a magic box's ice. */
+  frozen?: boolean;
   ghost?: boolean;
   onClick?: () => void;
   onHover?: (on: boolean) => void;
@@ -102,6 +104,7 @@ export const Piece = memo(function Piece({
   size,
   count = 1,
   movable,
+  frozen,
   ghost,
   onClick,
   onHover,
@@ -138,9 +141,19 @@ export const Piece = memo(function Piece({
           ry={size * 0.3 * (1 - lift * 0.3)}
         />
       )}
+      {frozen && <ellipse className="piece-ice" cy={size * 0.45} rx={size * 1.05} ry={size * 0.5} />}
       <g transform={`translate(0 ${-rise}) rotate(${pawn ? 0 : spin}) scale(${size * grow})`}>
         {pawn ? <Pawn seat={seat} ghost={ghost} /> : <Plane seat={seat} angle={angle} ghost={ghost} />}
       </g>
+      {frozen && (
+        <g transform={`translate(${-size * 0.85} ${-size * (pawn ? 1.15 : 0.85)})`} className="piece-frozen">
+          <title>Frozen: can't move until its owner's next turn is over</title>
+          <circle r={size * 0.6} />
+          <text textAnchor="middle" dy="0.35em" fontSize={size * 0.78}>
+            ❄
+          </text>
+        </g>
+      )}
       {count > 1 && (
         <g transform={`translate(${size * 0.85} ${-size * (pawn ? 1.15 : 0.85) - rise})`} className="piece-count">
           <circle r={size * 0.5} fill="#fff" stroke={COLOR_DARK[seat]} strokeWidth={2} />

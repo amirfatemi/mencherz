@@ -1,5 +1,5 @@
 import { GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, type Seat } from '../shared/board.ts';
-import { DEFAULT_RULES, legalPieces, standingsOf, type GameState } from '../shared/rules.ts';
+import { DEFAULT_RULES, legalPieces, noneFrozen, standingsOf, type GameState } from '../shared/rules.ts';
 import { POINTS } from '../shared/scoring.ts';
 
 /** Brings a saved game up to date: board numbering first, then fields added since it was saved. */
@@ -15,6 +15,7 @@ export function upgradeGame(game: GameState): GameState {
   g.boxes ??= [];
   g.vests ??= SEATS.map(() => 0);
   g.lastHitBy ??= SEATS.map(() => null);
+  g.frozen ??= noneFrozen();
   g.standings ??= g.phase === 'over' && g.ranking.length ? standingsOf(g) : [];
   return g;
 }

@@ -109,9 +109,9 @@ export function reactionsFor(ev: GameEvent, rand: (n: number) => number): ShownR
   // An opened magic box always gets a reaction, good or bad, as it opens.
   const box = ev.box;
   if (box?.outcome) {
-    const bad = (box.outcome === 'bomb' && !box.saved) || box.outcome === 'minus';
-    show(ev.seat, bad ? 'sad' : 'happy', boxOpenAt(ev));
-    if (box.outcome === 'bomb' && !box.saved) show(box.owner, 'happy', boxOpenAt(ev));
+    const hurts = (box.outcome === 'bomb' && !box.saved) || box.outcome === 'freeze';
+    show(ev.seat, hurts || box.outcome === 'minus' ? 'sad' : 'happy', boxOpenAt(ev));
+    if (hurts) show(box.owner, 'happy', boxOpenAt(ev));
   }
   const blast = blastOf(ev);
   if (blast && blast.pos >= HURT_FROM) {

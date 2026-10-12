@@ -12,6 +12,7 @@ export function BoxRevealCard({ reveal, seats }: { reveal: BoxReveal; seats: Sea
   const owner = seatName(seats, box.owner);
   const blast = box.outcome === 'bomb' && !box.saved;
   const good = box.outcome === 'vest' || box.outcome === 'empty' || box.saved;
+  const bad = blast || box.outcome === 'minus' || box.outcome === 'freeze';
   const [icon, title, text] =
     box.outcome === 'bomb'
       ? box.saved
@@ -21,10 +22,12 @@ export function BoxRevealCard({ reveal, seats }: { reveal: BoxReveal; seats: Sea
         ? ['🦺', 'A protective vest!', `The next bomb ${who} lands on won't hurt.`]
         : box.outcome === 'empty'
           ? ['💨', 'Empty!', 'Nothing inside — lucky escape.']
-          : ['💸', `−${POINTS.boxPenalty} points!`, `${who} loses ${POINTS.boxPenalty} points.`];
+          : box.outcome === 'freeze'
+            ? ['🧊', 'Frozen!', `${who}'s piece is stuck here until ${who}'s next turn is over.`]
+            : ['💸', `−${POINTS.boxPenalty} points!`, `${who} loses ${POINTS.boxPenalty} points.`];
   return (
     <div className="box-reveal" aria-live="polite">
-      <div className={`box-reveal-card ${blast || box.outcome === 'minus' ? 'bad' : good ? 'good' : ''}`} style={{ '--seat': COLOR_HEX[seat] } as CSSProperties}>
+      <div className={`box-reveal-card ${bad ? 'bad' : good ? 'good' : ''}`} style={{ '--seat': COLOR_HEX[seat] } as CSSProperties}>
         <div className="box-reveal-head">
           🎁 {who} opened {box.owner === seat ? 'their own' : `${owner}'s`} magic box
         </div>

@@ -43,8 +43,8 @@ function score(state: GameState, plan: MovePlan, careful: boolean): number {
   if (plan.from < HOME_FIRST && plan.to >= HOME_FIRST) s += 6;
   if (plan.path.some((p) => p.kind === 'bounce')) s -= 4;
   if (plan.bombed) s -= plan.bombed.saved ? 3 : 15;
-  // A magic box is a gamble: a 1 in 4 chance of a bomb, and of losing points.
-  if (plan.box) s -= value(plan.to) * 0.25 + 1;
+  // A magic box is a gamble: a 1 in 5 chance each of a bomb, of losing points and of being frozen in place.
+  if (plan.box) s -= value(plan.to) * 0.2 + 2;
   // When points decide the winner, knock-outs and pieces home are worth chasing for their own sake.
   if (state.rules.winBy === 'points') s += plan.points * 1.5;
   if (careful) {

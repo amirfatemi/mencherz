@@ -94,6 +94,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
    - a protective vest 🦺, which stops the next bomb that player lands on
    - nothing
    - −10 points
+   - ice 🧊, which locks the piece on that square (no jump or flight from it) until its owner's next turn is over. Other pieces can still knock it out.
 
    What was inside shows on a card for 3 seconds while the game waits.
 10. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.

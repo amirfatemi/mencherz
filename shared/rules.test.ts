@@ -35,6 +35,8 @@ import {
   freeSquares,
   createGame,
   planMove,
+  BOX_OUTCOMES,
+  type BoxOutcome,
   type GameState,
   type Rules,
 } from './rules.ts';
@@ -562,7 +564,7 @@ describe('three sixes and bombs', () => {
 });
 
 describe('magic boxes', () => {
-  const pick = (outcome: string) => () => ['bomb', 'vest', 'empty', 'minus'].indexOf(outcome);
+  const pick = (outcome: BoxOutcome) => () => BOX_OUTCOMES.indexOf(outcome);
 
   test('everyone hides a box in turn order before the first roll', () => {
     let g = createGame([0, 1, 3], DEFAULT_RULES, 1);
@@ -585,7 +587,7 @@ describe('magic boxes', () => {
     assert.throws(() => applyBox(g, 20), /Not time/);
   });
 
-  function onBox(outcome: string) {
+  function onBox(outcome: BoxOutcome) {
     const g = at(game([0, 1]), 0, [30, 5]);
     g.boxes = [{ square: trackIndex(0, 32), owner: 1 }];
     Object.assign(g, { phase: 'move', dice: 2, movable: [0, 1] });
@@ -626,6 +628,48 @@ describe('magic boxes', () => {
     assert.equal(minus.state.stats[0].points, -POINTS.boxPenalty);
   });
 
+  test('ice freezes the piece on the box, with no jump, until its next turn is over', () => {
+    const g = at(game([0, 1]), 0, [30, 5]);
+    assert.ok(isOwnColor(34));
+    g.boxes = [{ square: trackIndex(0, 34), owner: 1 }];
+    Object.assign(g, { phase: 'move', dice: 4, movable: [0, 1] });
+    const r = applyMove(g, 0, pick('freeze'));
+    assert.equal(r.event.box?.outcome, 'freeze');
+    assert.equal(r.event.jumped, false, 'stuck on the box, no colour jump');
+    assert.equal(r.state.pieces[0][0], 34);
+    let s = applyRoll(r.state, 3).state;
+    assert.equal(s.turn, 0, 'seat 1 had nothing to move');
+    const frozenTurn = applyRoll(s, 2);
+    assert.deepEqual(frozenTurn.event.movable, [1], 'the frozen piece sits out its next turn');
+    assert.equal(planMove(frozenTurn.state, 0, 0, 2), null);
+    s = applyMove(frozenTurn.state, 1).state;
+    s = applyRoll(s, 3).state;
+    assert.deepEqual(applyRoll(s, 2).event.movable, [0, 1], 'free again after that turn');
+  });
+
+  test('ice lasts through a bonus roll on a 6 as well', () => {
+    const g = at(game([0, 1]), 0, [26, 5]);
+    g.boxes = [{ square: trackIndex(0, 32), owner: 1 }];
+    Object.assign(g, { phase: 'move', dice: 6, movable: [0, 1] });
+    const r = applyMove(g, 0, pick('freeze'));
+    assert.equal(r.state.turn, 0, 'a 6 rolls again');
+    assert.deepEqual(applyRoll(r.state, 1).event.movable, [1]);
+  });
+
+  test('a frozen piece can still be knocked out, which frees it', () => {
+    const { state } = onBox('freeze');
+    assert.equal(state.frozen[0][0], 1);
+    at(state, 1, [sameSquare(0, 29, 1)]);
+    Object.assign(state, { phase: 'move', dice: 3, movable: [0] });
+    const r = applyMove(state, 0);
+    assert.deepEqual(
+      r.event.captures.map((c) => [c.seat, c.piece]),
+      [[0, 0]],
+    );
+    assert.equal(r.state.pieces[0][0], HANGAR);
+    assert.equal(r.state.frozen[0][0], 0);
+  });
+
   test('a box opens for its owner too, with no points for blowing yourself up; passing over is safe', () => {
     const g = at(game([0, 1]), 0, [30, 5]);
     g.boxes = [
@@ -657,10 +701,14 @@ describe('magic boxes', () => {
     assert.equal(eventDuration(empty), boxOpenAt(empty) + BOX_REVEAL_MS);
     const bomb = onBox('bomb').event;
     assert.equal(blastAt(bomb), boxOpenAt(bomb) + BOX_REVEAL_MS, 'the bomb goes off after the reveal');
-    const mood = (outcome: string) => reactionsFor(onBox(outcome).event, () => 0).map((r) => [r.seat, REACTION_BY_ID.get(r.id)!.group]);
+    const mood = (outcome: BoxOutcome) => reactionsFor(onBox(outcome).event, () => 0).map((r) => [r.seat, REACTION_BY_ID.get(r.id)!.group]);
     assert.deepEqual(mood('vest'), [[0, 'happy']]);
     assert.deepEqual(mood('empty'), [[0, 'happy']]);
     assert.deepEqual(mood('minus'), [[0, 'sad']]);
+    assert.deepEqual(mood('freeze'), [
+      [0, 'sad'],
+      [1, 'happy'],
+    ]);
     assert.deepEqual(mood('bomb'), [
       [0, 'sad'],
       [1, 'happy'],

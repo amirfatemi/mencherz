@@ -49,6 +49,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
       vest: 'a protective vest 🦺',
       empty: 'nothing',
       minus: `−${POINTS.boxPenalty} points`,
+      freeze: 'ice 🧊 — that piece sits out a turn',
     }[ev.box.outcome];
     bits.push(`opened ${own ? 'their own' : `${owner}'s`} magic box 🎁: ${inside}`);
   }

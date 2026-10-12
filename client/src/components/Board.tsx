@@ -516,6 +516,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 size={PIECE_SIZE}
                 count={it.pieces.length}
                 movable={canMove}
+                frozen={!it.animated && it.pieces.some((p) => (game.frozen?.[it.seat]?.[p] ?? 0) > 0)}
                 onClick={canMove ? () => (TOUCH && hovered !== mover ? setHover(mover) : onMove(mover)) : undefined}
                 onHover={canMove && !TOUCH ? (on) => setHover(on ? mover : null) : undefined}
                 label={canMove ? `Move piece ${mover + 1}${it.pieces.length > 1 ? ` (${it.pieces.length} here)` : ''}` : undefined}

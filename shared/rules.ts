@@ -35,7 +35,7 @@ export interface Rules {
   difficulty: 'easy' | 'normal' | 'hard';
   /**
    * Before the first roll everyone hides a magic box on a track square. Any piece landing on it, its
-   * owner's included, opens it: a bomb, a protective vest, nothing, or lost points, at random.
+   * owner's included, opens it: a bomb, a protective vest, nothing, lost points, or ice, at random.
    */
   magicBoxes: boolean;
   /** Overshooting the goal bounces back, or the move is not allowed. */
@@ -84,8 +84,12 @@ export interface MagicBox {
   owner: Seat;
 }
 
-export type BoxOutcome = 'bomb' | 'vest' | 'empty' | 'minus';
-export const BOX_OUTCOMES: readonly BoxOutcome[] = ['bomb', 'vest', 'empty', 'minus'];
+/** 'freeze' locks the piece where it opened the box until its owner's next turn is over. */
+export type BoxOutcome = 'bomb' | 'vest' | 'empty' | 'minus' | 'freeze';
+export const BOX_OUTCOMES: readonly BoxOutcome[] = ['bomb', 'vest', 'empty', 'minus', 'freeze'];
+
+/** What a box's ice sets a piece's `frozen` count to: the rest of this turn, then the owner's whole next turn. */
+const FROZEN_TURNS = 2;
 
 export interface SeatStats {
   points: number;
@@ -122,6 +126,8 @@ export interface GameState {
   vests: number[];
   /** Who last knocked out one of each seat's pieces, until it takes its revenge. */
   lastHitBy: (Seat | null)[];
+  /** frozen[seat][piece]: how many more of that seat's turns the piece can't move (0 = free). Each turn's end takes one off. */
+  frozen: number[][];
   turnNo: number;
   seq: number;
 }
@@ -241,6 +247,10 @@ export function canLaunch(rules: Rules, dice: number): boolean {
   }
 }
 
+export function noneFrozen(): number[][] {
+  return SEATS.map(() => Array.from({ length: PIECES_PER_SEAT }, () => 0));
+}
+
 export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTurn?: Seat): GameState {
   if (active.length < 2) throw new RuleError('At least two players are needed');
   const order = SEATS.filter((s) => active.includes(s));
@@ -263,6 +273,7 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     boxes: [],
     vests: SEATS.map(() => 0),
     lastHitBy: SEATS.map(() => null),
+    frozen: noneFrozen(),
     turnNo: 1,
     seq: 0,
   };
@@ -275,7 +286,7 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
 export function planMove(state: GameState, seat: Seat, piece: number, dice: number, openBox?: () => BoxOutcome): MovePlan | null {
   const { rules } = state;
   const from = state.pieces[seat][piece];
-  if (from === GOAL) return null;
+  if (from === GOAL || state.frozen?.[seat]?.[piece]) return null;
 
   const plan: MovePlan = { seat, piece, dice, from, to: from, path: [], captures: [], jumped: false, flew: false, points: 0 };
 
@@ -322,8 +333,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
   };
 
   // Everything that happens where the piece lands: a bomb, knock-outs, then a magic box. A blast sends the
-  // piece back to the hangar ('hangar'); a knock-out keeps it on that square, with no jump or flight after
-  // ('stay'); otherwise the move carries on ('on').
+  // piece back to the hangar ('hangar'); a knock-out or a box's ice keeps it on that square, with no jump or
+  // flight after ('stay'); otherwise the move carries on ('on').
   let vests = state.vests?.[seat] ?? 0;
   const land = (pos: number): 'hangar' | 'stay' | 'on' => {
     if (!isOnTrack(pos)) return 'on';
@@ -350,6 +361,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
       const scores = blast && !saved && box.owner !== seat;
       plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, ...(scores ? worth(box.owner, seat, pos) : { points: 0, revenge: false }) };
       if (blast && !saved) return 'hangar';
+      if (outcome === 'freeze') return 'stay';
     }
     return plan.captures.length > knocked ? 'stay' : 'on';
   };
@@ -445,6 +457,8 @@ export function seatFinished(state: GameState, seat: Seat): boolean {
 }
 
 function nextTurn(s: GameState): void {
+  s.frozen ??= noneFrozen();
+  s.frozen[s.turn] = s.frozen[s.turn].map((n) => Math.max(0, n - 1));
   s.sixStreak = 0;
   s.streakMoved = [];
   s.dice = null;
@@ -487,6 +501,7 @@ export function applyRoll(state: GameState, dice: number): { state: GameState; e
         const from = s.pieces[seat][j];
         if (from === GOAL || from === HANGAR) continue;
         s.pieces[seat][j] = HANGAR;
+        if (s.frozen) s.frozen[seat][j] = 0;
         event.penalized.push({ piece: j, from });
       }
       event.outcome = 'penalty';
@@ -538,9 +553,11 @@ export function applyMove(
 
   const s = structuredClone(state);
   s.seq++;
+  s.frozen ??= noneFrozen();
   s.pieces[seat][piece] = plan.to;
   for (const c of plan.captures) {
     s.pieces[c.seat][c.piece] = HANGAR;
+    s.frozen[c.seat][c.piece] = 0;
     s.stats[c.seat].lost++;
   }
   s.stats[seat].captures += plan.captures.length;
@@ -561,6 +578,7 @@ export function applyMove(
     const { owner, square, points, saved, outcome } = plan.box;
     s.boxes = s.boxes.filter((b) => b.square !== square);
     if (outcome === 'vest') s.vests[seat]++;
+    if (outcome === 'freeze') s.frozen[seat][piece] = FROZEN_TURNS;
     if (outcome === 'bomb' && saved) s.vests[seat]--;
     if (outcome === 'bomb' && !saved) {
       s.stats[seat].lost++;

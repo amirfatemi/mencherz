@@ -991,6 +991,23 @@ select:focus {
   fill: rgba(0, 0, 0, 0.2);
 }
 
+.piece-ice {
+  fill: rgba(150, 210, 255, 0.7);
+  stroke: #4a9fdc;
+  stroke-width: 3;
+}
+
+.piece-frozen circle {
+  fill: #e6f5ff;
+  stroke: #4a9fdc;
+  stroke-width: 2;
+}
+
+.piece-frozen text {
+  fill: #1f78c1;
+  font-weight: 700;
+}
+
 .piece-count text {
   font-family: var(--font);
   font-weight: 700;
