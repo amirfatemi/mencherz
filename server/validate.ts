@@ -29,6 +29,9 @@ export function parseRules(input: unknown): Rules {
     flights: bool(r.flights, d.flights),
     flightCapture: bool(r.flightCapture, d.flightCapture),
     bonusRollOnCapture: bool(r.bonusRollOnCapture, d.bonusRollOnCapture),
+    walls: bool(r.walls, d.walls),
+    powerSquares: bool(r.powerSquares, d.powerSquares),
+    kings: bool(r.kings, d.kings),
     playUntil: oneOf(r.playUntil, ['winner', 'all'], d.playUntil),
     winBy: oneOf(r.winBy, ['points', 'race'], d.winBy),
   };

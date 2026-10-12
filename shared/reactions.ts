@@ -1,13 +1,15 @@
 import { GOAL, type Seat } from './board.ts';
-import { blastOf, type GameEvent } from './rules.ts';
+import { blastOf, type GameEvent, type Rand } from './rules.ts';
 import { EARLY_UNTIL } from './scoring.ts';
 import { ROLL_MS, arrivalAt, blastAt, boxOpenAt, captureAt } from './timing.ts';
 
 // Reactions are short GIFs shown over a player's hangar after a big moment, picked at random:
 //   happy — one of your pieces reaches the centre, or you knock out (or bomb) a piece past the middle of its route,
 //           or a magic box gives you something good (a vest, or nothing bad)
+//           or a piece of yours makes a kill streak (a double kill or more)
 //   sad   — your piece is knocked out or bombed after it passed the middle of its route, a box was bad news,
-//           or you rolled three sixes
+//           you rolled three sixes, or you lost three turns in a row with nothing out of the hangar
+// Each game draws them like cards, so no GIF comes back until its whole group has been shown.
 
 export type ReactionGroup = 'happy' | 'sad';
 
@@ -97,14 +99,40 @@ export interface ShownReaction {
   at: number;
 }
 
-/** Which reactions an event sets off, one per seat at most. `rand(n)` gives an integer in [0, n). */
-export function reactionsFor(ev: GameEvent, rand: (n: number) => number): ShownReaction[] {
+/** What's left to draw of each group in one game, and the last GIF drawn from it. Saved with the game. */
+export type ReactionDeck = Partial<Record<ReactionGroup, { left: string[]; last?: string }>>;
+
+/**
+ * Draws the next GIF of a group from a game's deck, updating the deck. A group is shuffled afresh only once
+ * every GIF in it has been shown, and never starts over with the one just shown.
+ */
+export function drawReaction(deck: ReactionDeck, group: ReactionGroup, rand: Rand): string {
+  const pile = deck[group] ?? { left: [] };
+  let left = pile.left.filter((id) => REACTION_BY_ID.get(id)?.group === group);
+  if (!left.length) {
+    left = [...POOLS[group]];
+    for (let i = left.length - 1; i > 0; i--) {
+      const j = rand(i + 1);
+      [left[i], left[j]] = [left[j], left[i]];
+    }
+    // Drawn from the end: don't open the new round with the one that closed the last.
+    if (left.length > 1 && left.at(-1) === pile.last) [left[0], left[left.length - 1]] = [left[left.length - 1], left[0]];
+  }
+  const id = left.pop()!;
+  deck[group] = { left, last: id };
+  return id;
+}
+
+/** Which reactions an event sets off, one per seat at most. `pick` chooses the GIF for a group. */
+export function reactionsFor(ev: GameEvent, pick: (group: ReactionGroup) => string): ShownReaction[] {
   const out: ShownReaction[] = [];
   const show = (seat: Seat, group: ReactionGroup, at: number) => {
-    if (!out.some((r) => r.seat === seat)) out.push({ seat, id: POOLS[group][rand(POOLS[group].length)], at });
+    if (!out.some((r) => r.seat === seat)) out.push({ seat, id: pick(group), at });
   };
   // A third six is bad luck: sad as soon as the dice stops.
   if (ev.type === 'roll' && (ev.outcome === 'penalty' || ev.outcome === 'forfeit')) show(ev.seat, 'sad', ROLL_MS);
+  // So is a third lost turn in a row with everything still in the hangar.
+  if ((ev.type === 'roll' || ev.type === 'pass') && ev.stuck) show(ev.seat, 'sad', ev.type === 'roll' ? ROLL_MS : 0);
   if (ev.type !== 'move') return out;
   // An opened magic box always gets a reaction, good or bad, as it opens.
   const box = ev.box;
@@ -124,6 +152,8 @@ export function reactionsFor(ev: GameEvent, rand: (n: number) => number): ShownR
     show(ev.seat, 'happy', captureAt(ev, late[0]));
     for (const c of late) show(c.seat, 'sad', captureAt(ev, c));
   }
+  const spree = ev.captures.find((c) => (c.streak ?? 1) >= 2);
+  if (spree) show(ev.seat, 'happy', captureAt(ev, spree));
   if (ev.to === GOAL) show(ev.seat, 'happy', arrivalAt(ev));
   return out;
 }

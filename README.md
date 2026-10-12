@@ -73,7 +73,13 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
   - Pieces are glossy pawns or airplanes; switch with the toggle under the player list. Two or more pieces of one colour on a square show as one piece with a count.
   - On touch screens, the first tap on a piece shows its move and the second tap makes it.
 - **Playing on one device:** in the waiting room, any seated player can tap **📱 Add player here** on an open seat and enter another player's username and one-time code. That player gets the code from **Settings → Play on someone else's device** on their own phone. It has 6 digits, works once, expires after 10 minutes and is burnt after 5 wrong tries. The seat is then played from the adding player's device, while the points, games and wins go on the seated player's own record.
-- **Reaction GIFs:** a random GIF pops up over a player's hangar for 5 seconds. Happy ones show when your piece gets home, or when you knock out or bomb a piece past the middle of its route. Sad ones show when that happens to your piece. Opening a magic box always shows one: happy for a vest or an empty box, sad for a bomb or lost points. The GIFs are Giphy links in `shared/reactions.ts`, and each game can turn them off.
+- **Reaction GIFs:** a GIF pops up over a player's hangar for 8 seconds.
+  - Happy ones show when your piece gets home, when you knock out or bomb a piece past the middle of its route, or on a double kill or more.
+  - Sad ones show when that happens to your piece, after three sixes, and after three turns in a row with nothing out of the hangar.
+  - Opening a magic box always shows one: happy for a vest or an empty box, sad for a bomb, ice or lost points.
+  - Each game deals them like a shuffled deck: no GIF comes back until every GIF of its group has been shown, and a new round never opens with the one that closed the last.
+  - The GIFs are Giphy links in `shared/reactions.ts`, and each game can turn them off.
+- **A roll that can't be played** stays on the dice until the next roll. In a game with a computer player, the next player waits 5 seconds first, so everyone sees it before a bot rolls over it; among people the next player can roll straight away.
 - **Turn timer:** off, or 10–90 s. When time runs out, the move is made for the player. The host can **pause** the game, which stops the clock and all turns, bots included, and resume it later.
 - **Absent players:** a player who closes the tab has their turns played for them, so the others can carry on. A game where no human is present pauses.
 - **Auto-save:** every change is written to SQLite, and games survive a server restart. Leaving mid-game hands your seat to a computer player.
@@ -97,7 +103,15 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
    - ice 🧊, which locks the piece on that square (no jump or flight from it) until its owner's next turn is over. Other pieces can still knock it out.
 
    What was inside shows on a card for 3 seconds while the game waits.
-10. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
+10. **Walls 🧱:** two or more pieces of one colour on a track square make a wall. Other colours can't pass it, not even with a colour jump (a move that would is not allowed, and a jump that would just doesn't happen). Landing exactly on a wall knocks out every piece in it, each scored. Your own pieces pass your own walls.
+11. **Kings 👑:** each colour's first piece wears a crown. Knocking out a king, or knocking out with your king, counts ×1.5; a king knocking out a king, ×2.25.
+12. **Power squares ⚡:** two track squares, one in each half of the board, move to random free squares every 5 rounds. Ending a move on one lets you pick:
+    - **Heaven bridge 🌈:** you pick a free start square; the bridge leads 10 squares ahead. The first piece to land on its start, yours included, is carried there, and the bridge is gone. It does nothing for a piece whose route turns home before its end.
+    - **Hell bridge 🔥:** the same, but 20 squares back (or to the piece's takeoff spot, if it hasn't come that far).
+    - **Roll-again card 🎲:** kept for later. After any roll you may throw it away and roll again, and must then play the new roll. With a card, a roll that can't be played waits for you to use it or pass.
+
+    A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on power squares.
+13. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
 
 ### Points
 
@@ -112,7 +126,12 @@ By default the game is scored, so knocking pieces out pays as well as racing:
 | …in the last 15% (43–50) | 10 |
 | Fly over a piece in its home column (only the opposite player's flight can) | 20 |
 | **Revenge:** knock out whoever last knocked out one of yours | ×1.5 (once per knock-out received) |
+| **Double kill:** a piece's second knock-out since it left the hangar | ×1.5 |
+| **Triple kill** and later: its third knock-out and each one after | ×2 |
+| **King:** knock out a king, or knock out with your king | ×1.5 each |
 | A magic box that takes points | −10 |
+
+Bonuses multiply, and a single knock-out is capped at 100.
 
 The numbers are kept small, with 100 the biggest award. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. At the old values (10/15/20/40) a busy hunter could collect close to the first-home bonus before anyone finished.
 
@@ -140,6 +159,9 @@ The weights live in `shared/dice.ts`.
 - Three sixes: all pieces go back / the planes moved on the sixes go back / the turn just ends / nothing happens
 - Bombs after a three-sixes penalty (on or off)
 - Magic boxes (on or off)
+- Power squares (on or off)
+- Walls (on or off)
+- Kings (on or off)
 - Reaction GIFs (on or off)
 - Home: bounce back on overshoot / exact roll needed
 - Colour jumps (on or off)

@@ -3,7 +3,7 @@ import { GOAL, HANGAR_SLOTS, TRACK_CELLS, piecePoint, type Point, type Seat } fr
 import type { RoomUpdate, RoomView } from '../../shared/protocol.ts';
 import { REACTION_MS } from '../../shared/reactions.ts';
 import { blastOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind } from '../../shared/rules.ts';
-import { POINTS } from '../../shared/scoring.ts';
+import { POINTS, killStreakName } from '../../shared/scoring.ts';
 import {
   BOMB_MS,
   BOX_REVEAL_MS,
@@ -34,6 +34,8 @@ export interface Popup extends Point {
   id: number;
   text: string;
   seat: Seat;
+  /** A kill streak: shown larger. */
+  big?: boolean;
 }
 
 /** A magic box being opened: who opened it and what was inside. */
@@ -84,13 +86,30 @@ const POPUP_MS = 1400;
 let popupIds = 0;
 
 /** When each scoring moment of a move happens, measured from the start of its animation. */
-function scoreMoments(ev: MoveEvent): { at: Point; delay: number; text: string; seat: Seat }[] {
-  const out = ev.captures.map((c) => ({
-    at: piecePoint(c.seat, c.piece, c.from),
-    delay: captureAt(ev, c),
-    text: c.revenge ? `⚔️ +${c.points}` : `+${c.points}`,
-    seat: ev.seat,
-  }));
+interface ScoreMoment {
+  at: Point;
+  delay: number;
+  text: string;
+  seat: Seat;
+  big?: boolean;
+}
+
+function scoreMoments(ev: MoveEvent): ScoreMoment[] {
+  const out = ev.captures.map((c): ScoreMoment => {
+    const spree = killStreakName(c.streak ?? 1);
+    const marks = `${c.king || c.byKing ? '👑 ' : ''}${c.revenge ? '⚔️ ' : ''}`;
+    return {
+      at: piecePoint(c.seat, c.piece, c.from),
+      delay: captureAt(ev, c),
+      text: spree ? `${spree}! ${marks}+${c.points}` : `${marks}+${c.points}`,
+      seat: ev.seat,
+      big: !!spree,
+    };
+  });
+  if (ev.bridge) {
+    const text = ev.bridge.kind === 'heaven' ? '🌈 +10' : `🔥 ${ev.bridge.to - ev.bridge.from}`;
+    out.push({ at: TRACK_CELLS[ev.bridge.square], delay: stepEnd(ev, ev.bridge.atStep - 1), text, seat: ev.seat, big: false });
+  }
   if (ev.to === GOAL) {
     const text = ev.bonus ? `+${POINTS.home} · 🏆 +${ev.bonus}` : `+${POINTS.home}`;
     out.push({ at: piecePoint(ev.seat, ev.piece, GOAL), delay: arrivalAt(ev), text, seat: ev.seat });
@@ -164,6 +183,7 @@ const HOP: Record<SegKind, { lift: number; grow: number }> = {
   launch: { lift: 0.6, grow: 0.15 },
   jump: { lift: 0.85, grow: 0.3 },
   fly: { lift: 1, grow: 0.7 },
+  bridge: { lift: 1, grow: 0.55 },
   capture: { lift: 1, grow: -0.3 },
 };
 
@@ -218,8 +238,11 @@ export function useRoomStream(code: string) {
   const [popups, setPopups] = useState<Popup[]>([]);
   const [reactions, setReactions] = useState<ActiveReaction[]>([]);
   const [reveal, setReveal] = useState<BoxReveal | null>(null);
-  /** A roll that couldn't be played, kept on the dice for a while before the next player goes. */
-  const [held, setHeld] = useState<{ seat: Seat; value: number } | null>(null);
+  /**
+   * A roll that couldn't be played, left on the dice until the next roll. With a computer in the game the
+   * next player also waits a few seconds (`wait`), so people see it before a bot rolls over it.
+   */
+  const [held, setHeld] = useState<{ seat: Seat; value: number; wait: boolean } | null>(null);
 
   const queue = useRef<RoomUpdate[]>([]);
   const running = useRef(false);
@@ -269,7 +292,11 @@ export function useRoomStream(code: string) {
         const behind = queue.current.length;
         const skip = document.hidden || behind > 6;
         const speed = behind > 2 ? 3 : 1;
-        if (ev?.type === 'roll') setLastRoll({ seat: ev.seat, value: ev.dice });
+        if (ev?.type === 'roll') {
+          setLastRoll({ seat: ev.seat, value: ev.dice });
+          setHeld(null);
+        }
+        const wait = u.room.seats.some((s) => s.kind === 'bot');
         if (ev && current.current?.game && !skip) {
           setAnimating(true);
           // Reactions can come with any event (a move, or a roll of three sixes), timed from its start.
@@ -288,21 +315,30 @@ export function useRoomStream(code: string) {
             setRolling(false);
             if (ev.penalized.length) await play(penaltyTimeline(ev), speed);
             if (ev.outcome === 'pass') {
-              // Show the turn moving on, but keep the number up and the next player waiting.
+              // Show the turn moving on, but keep the number up (and, with a bot about, the next player waiting).
               commit(u.room);
-              setHeld({ seat: ev.seat, value: ev.dice });
-              await sleep(PASS_HOLD_MS / speed);
-              setHeld(null);
+              setHeld({ seat: ev.seat, value: ev.dice, wait });
+              if (wait) {
+                await sleep(PASS_HOLD_MS / speed);
+                setHeld((h) => (h ? { ...h, wait: false } : h));
+              }
               continue;
             }
-          } else if (ev.type === 'bomb' || ev.type === 'box') {
+          } else if (ev.type === 'pass') {
+            commit(u.room);
+            setHeld({ seat: ev.seat, value: ev.dice, wait: false });
+            continue;
+          } else if (ev.type === 'power') {
+            commit(u.room);
+            continue;
+          } else if (ev.type === 'bomb' || ev.type === 'box' || ev.type === 'bridge') {
             // The bomb or box drops in (CSS) once the new state is shown.
             commit(u.room);
             await sleep(BOMB_MS / speed);
             continue;
           } else {
             for (const m of scoreMoments(ev)) {
-              const popup: Popup = { ...m.at, id: ++popupIds, text: m.text, seat: m.seat };
+              const popup: Popup = { ...m.at, id: ++popupIds, text: m.text, seat: m.seat, big: m.big };
               setTimeout(() => {
                 if (!alive.current) return;
                 setPopups((list) => [...list, popup]);
@@ -326,7 +362,7 @@ export function useRoomStream(code: string) {
       running.current = false;
       setAnimating(false);
       setRolling(false);
-      setHeld(null);
+      setHeld((h) => (h?.wait ? null : h));
     }
   }, [commit, play]);
 
@@ -338,6 +374,7 @@ export function useRoomStream(code: string) {
         .then((room) => {
           queue.current = [];
           current.current = null;
+          setHeld(null);
           commit(room);
           const last = room.events.at(-1);
           if (last?.type === 'roll') setLastRoll({ seat: last.seat, value: last.dice });

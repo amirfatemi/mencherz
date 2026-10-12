@@ -1,7 +1,7 @@
 import type { BotLevel } from './ai.ts';
 import type { Seat } from './board.ts';
 import type { ShownReaction } from './reactions.ts';
-import type { GameEvent, GameState, Rules } from './rules.ts';
+import type { GameEvent, GameState, PowerChoice, Rules } from './rules.ts';
 
 export type SeatKind = 'open' | 'closed' | 'human' | 'bot';
 
@@ -124,7 +124,15 @@ export interface LeaderRow {
   points: number;
   gamesPlayed: number;
   wins: number;
+  /** Opponent pieces knocked out, over all counted games. */
+  captures: number;
+  /** Own pieces knocked out, over all counted games. */
+  lost: number;
 }
+
+/** What the leaderboard can be ordered by. */
+export const LEADER_SORTS = ['points', 'wins', 'games', 'captures', 'lost'] as const;
+export type LeaderSort = (typeof LEADER_SORTS)[number];
 
 export interface PairCode {
   code: string;
@@ -150,6 +158,14 @@ export interface ClientToServer {
   'game:bomb': (req: { code: string; square: number }, ack: Ack<null>) => void;
   /** Before the first roll: hide your magic box on this absolute track square. */
   'game:box': (req: { code: string; square: number }, ack: Ack<null>) => void;
+  /** Throw the roll away with a roll-again card and roll again; the new roll must be played. */
+  'game:reroll': (req: { code: string }, ack: Ack<null>) => void;
+  /** Let a roll that can't be played go instead of using a roll-again card. */
+  'game:pass': (req: { code: string }, ack: Ack<null>) => void;
+  /** On a power square: pick a heaven bridge, a hell bridge or a roll-again card. */
+  'game:power': (req: { code: string; choice: PowerChoice }, ack: Ack<null>) => void;
+  /** Start the bridge picked on a power square on this absolute track square. */
+  'game:bridge': (req: { code: string; square: number }, ack: Ack<null>) => void;
   /** Host only: stop or restart the game clock. */
   'game:pause': (req: { code: string; paused: boolean }, ack: Ack<null>) => void;
 }

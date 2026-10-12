@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { chooseBomb, chooseBox, chooseMove, type BotLevel } from '../shared/ai.ts';
+import { botAction, type BotLevel } from '../shared/ai.ts';
 import type { Seat } from '../shared/board.ts';
 import {
   peopleIn,
@@ -18,14 +18,21 @@ import { rollWeighted, rollWeights } from '../shared/dice.ts';
 import {
   applyBomb,
   applyBox,
+  applyBridge,
   applyMove,
+  applyPass,
+  applyPower,
+  applyReroll,
   applyRoll,
   createGame,
+  rerollBase,
   RuleError,
+  POWER_CHOICES,
   type GameEvent,
   type GameState,
+  type PowerChoice,
 } from '../shared/rules.ts';
-import { reactionsFor, type ShownReaction } from '../shared/reactions.ts';
+import { drawReaction, reactionsFor, type ReactionDeck, type ShownReaction } from '../shared/reactions.ts';
 import { RANKED_MIN_PEOPLE } from '../shared/scoring.ts';
 import { eventDuration } from '../shared/timing.ts';
 import { limiter, unref, type Auth } from './auth.ts';
@@ -60,6 +67,8 @@ interface Room {
   events: GameEvent[];
   statsRecorded: boolean;
   paused: boolean;
+  /** The reaction GIFs still to come this game, so none repeats before the rest have shown. */
+  gifDeck: ReactionDeck;
   createdAt: number;
   updatedAt: number;
   // Runtime only.
@@ -71,7 +80,8 @@ interface Room {
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_EVENTS = 60;
-const BOT_THINK_MS = { roll: 650, move: 550, bomb: 1100, box: 700 };
+const BOT_THINK_MS = { roll: 650, move: 550, bomb: 1100, box: 700, power: 900, bridge: 1100 };
+const rand = (n: number) => randomInt(n);
 const OFFLINE_GRACE_MS = 6000;
 const KEEP_FINISHED_MS = 6 * 3600 * 1000;
 const EXPIRE_WAITING_MS = 48 * 3600 * 1000;
@@ -113,6 +123,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       events: room.events,
       statsRecorded: room.statsRecorded,
       paused: room.paused,
+      gifDeck: room.gifDeck,
     };
     q.save.run(room.code, room.status, JSON.stringify(data), room.createdAt, room.updatedAt);
   }
@@ -138,6 +149,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
           events: d.events ?? [],
           statsRecorded: !!d.statsRecorded,
           paused: !!d.paused,
+          gifDeck: d.gifDeck ?? {},
           createdAt: row.created_at,
           updatedAt: row.updated_at,
           watchers: new Map(),
@@ -276,7 +288,8 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     const active = room.seats.flatMap((s, i) => (occupied(s) ? [i as Seat] : []));
     if (active.length < 2) throw new InputError('At least two players are needed to start');
     room.seats = room.seats.map((s) => (s.kind === 'open' ? { kind: 'closed' } : s));
-    room.game = createGame(active, room.settings.rules, active[randomInt(active.length)]);
+    room.game = createGame(active, room.settings.rules, active[randomInt(active.length)], rand);
+    room.gifDeck = {};
     room.status = 'playing';
     room.events = [];
     room.busyUntil = Date.now() + scaled(600);
@@ -292,7 +305,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     room.game = result.state;
     room.events.push(result.event);
     if (room.events.length > MAX_EVENTS) room.events.splice(0, room.events.length - MAX_EVENTS);
-    room.busyUntil = Date.now() + scaled(eventDuration(result.event));
+    room.busyUntil = Date.now() + scaled(eventDuration(result.event, holdsPasses(room)));
     room.updatedAt = Date.now();
     if (result.state.phase === 'over') finish(room);
     save(room);
@@ -301,9 +314,12 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     if (room.status !== 'playing' || prevTurn !== result.state.turn) lobbyChanged();
   }
 
+  /** With a computer playing, an unplayable roll stays up a while; among people the next one just rolls. */
+  const holdsPasses = (room: Room) => room.seats.some((s) => s.kind === 'bot');
+
   function reactionsOf(room: Room, event: GameEvent): ShownReaction[] | undefined {
     if (!room.settings.gifs) return undefined;
-    const list = reactionsFor(event, (n) => randomInt(n));
+    const list = reactionsFor(event, (group) => drawReaction(room.gifDeck, group, rand));
     return list.length ? list : undefined;
   }
 
@@ -315,28 +331,42 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     const winner = room.game.standings[0] ?? room.game.ranking[0];
     room.seats.forEach((s, i) => {
       if (s.kind === 'human' && s.userId !== undefined && !s.left) {
-        auth.recordGame(s.userId, i === winner, room.game!.stats[i]?.points ?? 0);
+        const st = room.game!.stats[i];
+        auth.recordGame(s.userId, i === winner, { points: st?.points ?? 0, captures: st?.captures ?? 0, lost: st?.lost ?? 0 });
       }
     });
   }
 
   function roll(room: Room) {
     const g = room.game!;
-    commit(room, applyRoll(g, rollWeighted(rollWeights(g), (n) => randomInt(n))));
+    commit(room, applyRoll(g, rollWeighted(rollWeights(g), rand), rand));
+  }
+
+  function reroll(room: Room) {
+    const g = room.game!;
+    // The difficulty's dice weighting looks at the six streak from before the roll being taken back.
+    commit(room, applyReroll(g, rollWeighted(rollWeights(rerollBase(g)), rand), rand));
   }
 
   function move(room: Room, piece: number) {
-    commit(room, applyMove(room.game!, piece, (n) => randomInt(n)));
+    commit(room, applyMove(room.game!, piece, rand));
   }
 
-  function autoAct(room: Room, level: BotLevel) {
+  /** Plays the turn for a bot, or for a player whose time ran out (`bot` false: they keep their roll-again cards). */
+  function autoAct(room: Room, level: BotLevel, bot: boolean) {
     const g = room.game;
     if (!g || room.status !== 'playing') return;
     try {
-      if (g.phase === 'roll') roll(room);
-      else if (g.phase === 'move') move(room, chooseMove(g, level));
-      else if (g.phase === 'bomb') commit(room, applyBomb(g, chooseBomb(g, level)));
-      else if (g.phase === 'box') commit(room, applyBox(g, chooseBox(g, level)));
+      const a = botAction(g, level, Math.random, bot);
+      if (!a) return;
+      if (a.type === 'roll') roll(room);
+      else if (a.type === 'reroll') reroll(room);
+      else if (a.type === 'pass') commit(room, applyPass(g, rand));
+      else if (a.type === 'move') move(room, a.piece);
+      else if (a.type === 'bomb') commit(room, applyBomb(g, a.square, rand));
+      else if (a.type === 'box') commit(room, applyBox(g, a.square));
+      else if (a.type === 'bridge') commit(room, applyBridge(g, a.square, rand));
+      else if (a.type === 'power') commit(room, applyPower(g, a.choice, rand));
     } catch (err) {
       console.error(`Auto move failed in ${room.code}:`, err);
     }
@@ -356,21 +386,21 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     const seat = room.seats[g.turn];
     const now = Date.now();
     const wait = Math.max(0, room.busyUntil - now) / (opts.timeScale || 1);
-    const later = (ms: number, level: BotLevel) => {
+    const later = (ms: number, level: BotLevel, bot: boolean) => {
       room.timer = setTimeout(() => {
         room.timer = null;
-        autoAct(room, level);
+        autoAct(room, level, bot);
       }, scaled(ms));
     };
 
-    if (seat.kind === 'bot') return later(wait + BOT_THINK_MS[g.phase], seat.botLevel ?? 'normal');
+    if (seat.kind === 'bot') return later(wait + BOT_THINK_MS[g.phase], seat.botLevel ?? 'normal', true);
     // People make every move themselves, even when only one is possible.
 
     let limit = room.settings.turnSeconds * 1000;
     if (!seatOnline(room, seat)) limit = limit ? Math.min(limit, OFFLINE_GRACE_MS) : OFFLINE_GRACE_MS;
     if (!limit) return;
     room.turnDeadline = now + scaled(wait + limit);
-    later(wait + limit, 'normal');
+    later(wait + limit, 'normal', false);
   }
 
   function requireTurn(room: Room, user: PublicUser) {
@@ -487,6 +517,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
           events: [],
           statsRecorded: false,
           paused: false,
+          gifDeck: {},
           createdAt: now,
           updatedAt: now,
           watchers: new Map(),
@@ -647,7 +678,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         requireTurn(room, user);
         const square = Number(req?.square);
         if (!Number.isInteger(square)) throw new InputError('Invalid square');
-        commit(room, applyBomb(room.game!, square));
+        commit(room, applyBomb(room.game!, square, rand));
         return null;
       }),
     );
@@ -660,6 +691,50 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         const square = Number(req?.square);
         if (!Number.isInteger(square)) throw new InputError('Invalid square');
         commit(room, applyBox(room.game!, square));
+        return null;
+      }),
+    );
+
+    socket.on(
+      'game:reroll',
+      handler((req) => {
+        const room = getRoom(req?.code);
+        requireTurn(room, user);
+        reroll(room);
+        return null;
+      }),
+    );
+
+    socket.on(
+      'game:pass',
+      handler((req) => {
+        const room = getRoom(req?.code);
+        requireTurn(room, user);
+        commit(room, applyPass(room.game!, rand));
+        return null;
+      }),
+    );
+
+    socket.on(
+      'game:power',
+      handler((req) => {
+        const room = getRoom(req?.code);
+        requireTurn(room, user);
+        const choice = req?.choice as PowerChoice;
+        if (!POWER_CHOICES.includes(choice)) throw new InputError('Unknown power');
+        commit(room, applyPower(room.game!, choice, rand));
+        return null;
+      }),
+    );
+
+    socket.on(
+      'game:bridge',
+      handler((req) => {
+        const room = getRoom(req?.code);
+        requireTurn(room, user);
+        const square = Number(req?.square);
+        if (!Number.isInteger(square)) throw new InputError('Invalid square');
+        commit(room, applyBridge(room.game!, square, rand));
         return null;
       }),
     );

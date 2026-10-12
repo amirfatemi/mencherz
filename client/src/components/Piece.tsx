@@ -50,6 +50,10 @@ interface Props {
   movable?: boolean;
   /** Locked in place by a magic box's ice. */
   frozen?: boolean;
+  /** The colour's king (or a stack holding it): wears a crown. */
+  king?: boolean;
+  /** Two or more of a colour on a track square: a wall others can't pass. */
+  wall?: boolean;
   ghost?: boolean;
   onClick?: () => void;
   onHover?: (on: boolean) => void;
@@ -91,6 +95,18 @@ function Plane({ seat, angle, ghost }: { seat: Seat; angle: number; ghost?: bool
   );
 }
 
+/** A small gold crown, its base at `y` (piece units, upright). */
+function Crown({ y }: { y: number }) {
+  return (
+    <path
+      className="piece-crown"
+      d={`M-.34 ${y}L-.4 ${y - 0.4}L-.17 ${y - 0.2}L0 ${y - 0.48}L.17 ${y - 0.2}L.4 ${y - 0.4}L.34 ${y}Z`}
+      strokeWidth={0.06}
+      strokeLinejoin="round"
+    />
+  );
+}
+
 export const Piece = memo(function Piece({
   id,
   seat,
@@ -105,6 +121,8 @@ export const Piece = memo(function Piece({
   count = 1,
   movable,
   frozen,
+  king,
+  wall,
   ghost,
   onClick,
   onHover,
@@ -141,9 +159,11 @@ export const Piece = memo(function Piece({
           ry={size * 0.3 * (1 - lift * 0.3)}
         />
       )}
+      {wall && <ellipse className="piece-wall" cy={size * 0.45} rx={size * 1.12} ry={size * 0.55} />}
       {frozen && <ellipse className="piece-ice" cy={size * 0.45} rx={size * 1.05} ry={size * 0.5} />}
       <g transform={`translate(0 ${-rise}) rotate(${pawn ? 0 : spin}) scale(${size * grow})`}>
         {pawn ? <Pawn seat={seat} ghost={ghost} /> : <Plane seat={seat} angle={angle} ghost={ghost} />}
+        {king && !ghost && <Crown y={pawn ? -1.1 : -0.85} />}
       </g>
       {frozen && (
         <g transform={`translate(${-size * 0.85} ${-size * (pawn ? 1.15 : 0.85)})`} className="piece-frozen">

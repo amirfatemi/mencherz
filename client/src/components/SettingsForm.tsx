@@ -120,6 +120,24 @@ export function SettingsForm({ value, onChange }: Props) {
         </div>
         <Toggle label="A 6 gives another roll" checked={rules.bonusRollOnSix} onChange={(v) => setRules({ bonusRollOnSix: v })} />
         <Toggle
+          label="Power squares ⚡"
+          hint="Two squares that move every 5 rounds. End a move on one to pick a heaven bridge (+10), a hell bridge (−20) or a roll-again card."
+          checked={rules.powerSquares}
+          onChange={(v) => setRules({ powerSquares: v })}
+        />
+        <Toggle
+          label="Walls 🧱"
+          hint="Two pieces of a colour on one square block the others, jumps included. Landing on a wall knocks out both."
+          checked={rules.walls}
+          onChange={(v) => setRules({ walls: v })}
+        />
+        <Toggle
+          label="Kings 👑"
+          hint="Each colour's first piece is a king: knocking one out, or knocking out with one, counts 1.5 times."
+          checked={rules.kings}
+          onChange={(v) => setRules({ kings: v })}
+        />
+        <Toggle
           label="Magic boxes 🎁"
           hint="Before the first roll everyone hides a box. Whoever lands on it, its owner too, gets a bomb, a protective vest, nothing, −10 points, or ice that freezes the piece for a turn."
           checked={rules.magicBoxes}

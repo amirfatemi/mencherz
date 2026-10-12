@@ -138,3 +138,12 @@ export function BoxBadge({ color }: { color: string }) {
     </div>
   );
 }
+
+/** Shown instead of the dice while a power is picked or a bridge placed. */
+export function EmojiBadge({ icon, color, label }: { icon: string; color: string; label: string }) {
+  return (
+    <div className="dice badge-emoji" style={{ '--dice-color': color } as CSSProperties} role="img" aria-label={label}>
+      {icon}
+    </div>
+  );
+}

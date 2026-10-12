@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import WebSocket from 'ws';
-import { chooseBomb, chooseBox, chooseMove } from '../shared/ai.ts';
+import { botAction } from '../shared/ai.ts';
 import type { AdminUserRow, Captcha, LeaderRow, PublicUser, RoomUpdate, RoomView } from '../shared/protocol.ts';
+import type { GameState } from '../shared/rules.ts';
 import { REACTION_BY_ID } from '../shared/reactions.ts';
 import { GameSocket, type WsLike } from '../shared/socket-client.ts';
 import { WS_PATH } from '../shared/wire.ts';
@@ -76,6 +77,16 @@ function call<T>(s: Client, event: string, payload?: unknown): Promise<T> {
   });
 }
 
+/** Sends what a bot would do in this phase, as the player whose turn it is. */
+function playAsBot(s: Client, code: string, g: GameState): Promise<unknown> {
+  const a = botAction(g, 'normal');
+  if (!a) return Promise.resolve();
+  if (a.type === 'move') return call(s, 'game:move', { code, piece: a.piece });
+  if (a.type === 'power') return call(s, 'game:power', { code, choice: a.choice });
+  if (a.type === 'bomb' || a.type === 'box' || a.type === 'bridge') return call(s, `game:${a.type}`, { code, square: a.square });
+  return call(s, `game:${a.type}`, { code });
+}
+
 /** Plays the human seats on these sockets until the game ends or `stopAfter` actions. */
 function autoplay(players: { socket: Client; userId: number }[], code: string, stopAfter = Infinity) {
   let actions = 0;
@@ -98,14 +109,7 @@ function autoplay(players: { socket: Client; userId: number }[], code: string, s
         const seat = room.seats[g.turn];
         if (seat.kind !== 'human' || (seat.userId !== userId && seat.controllerId !== userId)) return;
         actions++;
-        const act =
-          g.phase === 'roll'
-            ? call(socket, 'game:roll', { code })
-            : g.phase === 'bomb'
-              ? call(socket, 'game:bomb', { code, square: chooseBomb(g, 'normal') })
-              : g.phase === 'box'
-                ? call(socket, 'game:box', { code, square: chooseBox(g, 'normal') })
-                : call(socket, 'game:move', { code, piece: chooseMove(g, 'normal') });
+        const act = playAsBot(socket, code, g);
         // Races with the single-move autoplay are expected; anything else is a bug.
         act.catch((err) => {
           if (!/not time|not your turn|cannot move/i.test(err.message)) reject(err);
@@ -239,13 +243,7 @@ describe('online game', () => {
     const turnUser = restored.seats[g.turn].userId;
     const starter = turnUser === aliceId ? alice : turnUser === bobId ? bob : null;
     if (starter) {
-      await (g.phase === 'roll'
-        ? call(starter, 'game:roll', { code })
-        : g.phase === 'bomb'
-          ? call(starter, 'game:bomb', { code, square: chooseBomb(g, 'normal') })
-          : g.phase === 'box'
-            ? call(starter, 'game:box', { code, square: chooseBox(g, 'normal') })
-            : call(starter, 'game:move', { code, piece: chooseMove(g, 'normal') }));
+      await playAsBot(starter, code, g);
     }
     const final = await done;
     assert.equal(final.status, 'finished');
@@ -354,6 +352,17 @@ describe('local players', () => {
     assert.equal(board.find((r) => r.username === 'kid')?.points, g.stats[1].points);
     assert.equal(board.find((r) => r.username === 'tablet')?.points, g.stats[0].points);
     assert.ok(board.every((r, i) => i === 0 || board[i - 1].points >= r.points), 'sorted by points');
+    const kidRow = board.find((r) => r.username === 'kid')!;
+    assert.deepEqual([kidRow.captures, kidRow.lost], [g.stats[1].captures, g.stats[1].lost], 'hits made and taken add up');
+    for (const [sort, value] of [
+      ['lost', (r: LeaderRow) => r.lost],
+      ['wins', (r: LeaderRow) => r.wins],
+      ['games', (r: LeaderRow) => r.gamesPlayed],
+      ['captures', (r: LeaderRow) => r.captures],
+    ] as const) {
+      const sorted = await getJson<LeaderRow[]>(`/leaderboard?sort=${sort}`, kidCookie);
+      assert.ok(sorted.every((r, i) => i === 0 || value(sorted[i - 1]) >= value(r)), `sorted by ${sort}`);
+    }
 
     host.disconnect();
     kid.disconnect();

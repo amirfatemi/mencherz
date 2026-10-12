@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { LeaderRow, LobbyData, PublicUser, RoomSummary } from '../../../shared/protocol.ts';
+import { LEADER_SORTS, type LeaderRow, type LeaderSort, type LobbyData, type PublicUser, type RoomSummary } from '../../../shared/protocol.ts';
 import { api } from '../api.ts';
 import { CreateGameDialog, type CreateMode } from '../components/CreateGameDialog.tsx';
 import { HowToPlay } from '../components/HowToPlay.tsx';
@@ -41,11 +41,31 @@ function RoomRow({ room }: { room: RoomSummary }) {
   );
 }
 
-function Leaderboard({ rows, me }: { rows: LeaderRow[] | null; me: string }) {
+const SORT_COLUMNS: { sort: LeaderSort; label: string; title: string; value: (r: LeaderRow) => number }[] = [
+  { sort: 'points', label: '⭐ Points', title: 'Total points', value: (r) => r.points },
+  { sort: 'games', label: 'Games', title: 'Games played', value: (r) => r.gamesPlayed },
+  { sort: 'wins', label: 'Wins', title: 'Games won', value: (r) => r.wins },
+  { sort: 'captures', label: '💥', title: 'Hits made: opponent pieces knocked out, in all games', value: (r) => r.captures },
+  { sort: 'lost', label: '🤕', title: 'Hits taken: own pieces knocked out, in all games', value: (r) => r.lost },
+];
+
+function savedSort(): LeaderSort {
+  try {
+    const s = localStorage.getItem('mz.leaderSort') as LeaderSort | null;
+    return s && LEADER_SORTS.includes(s) ? s : 'points';
+  } catch {
+    return 'points';
+  }
+}
+
+function Leaderboard({ rows, me, sort, onSort }: { rows: LeaderRow[] | null; me: string; sort: LeaderSort; onSort: (s: LeaderSort) => void }) {
   return (
     <section className="card leaderboard">
       <h2>🏆 Leaderboard</h2>
-      <p className="muted small">Games with at least two people count. Games against computers alone don't.</p>
+      <p className="muted small">
+        Totals over every game with at least two people (games against computers alone don't count). 💥 hits made · 🤕 hits taken. Tap a
+        column to sort by it.
+      </p>
       {!rows ? (
         <p className="muted">Loading…</p>
       ) : rows.length === 0 ? (
@@ -56,9 +76,14 @@ function Leaderboard({ rows, me }: { rows: LeaderRow[] | null; me: string }) {
             <tr>
               <th aria-label="Place">#</th>
               <th>Player</th>
-              <th className="num">⭐ Points</th>
-              <th className="num">Games</th>
-              <th className="num">Wins</th>
+              {SORT_COLUMNS.map((c) => (
+                <th key={c.sort} className="num" aria-sort={sort === c.sort ? 'descending' : 'none'}>
+                  <button className={`sort-head${sort === c.sort ? ' on' : ''}`} onClick={() => onSort(c.sort)} title={`${c.title} — sort by this`}>
+                    {c.label}
+                    {sort === c.sort ? ' ▾' : ''}
+                  </button>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -66,9 +91,11 @@ function Leaderboard({ rows, me }: { rows: LeaderRow[] | null; me: string }) {
               <tr key={r.username} className={r.username === me ? 'me' : ''}>
                 <td className="place">{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td>
                 <td className="who">{r.username}</td>
-                <td className="num points">{r.points.toLocaleString()}</td>
-                <td className="num">{r.gamesPlayed}</td>
-                <td className="num">{r.wins}</td>
+                {SORT_COLUMNS.map((c) => (
+                  <td key={c.sort} className={`num${sort === c.sort ? ' points' : ''}`}>
+                    {c.value(r).toLocaleString()}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -81,16 +108,25 @@ function Leaderboard({ rows, me }: { rows: LeaderRow[] | null; me: string }) {
 export function LobbyPage({ user, onVisible }: { user: PublicUser; onVisible: () => void }) {
   const [data, setData] = useState<LobbyData | null>(null);
   const [leaders, setLeaders] = useState<LeaderRow[] | null>(null);
+  const [sort, setSort] = useState<LeaderSort>(savedSort);
   const [dialog, setDialog] = useState<CreateMode | null>(null);
   const [code, setCode] = useState('');
   const [rules, setRules] = useState(false);
 
   const load = useCallback(() => {
     call('lobby:list').then(setData).catch(() => {});
-    api<LeaderRow[]>('/leaderboard')
+    api<LeaderRow[]>(`/leaderboard?sort=${sort}`)
       .then(setLeaders)
       .catch(() => {});
-  }, []);
+  }, [sort]);
+  const sortBy = (s: LeaderSort) => {
+    setSort(s);
+    try {
+      localStorage.setItem('mz.leaderSort', s);
+    } catch {
+      /* private mode */
+    }
+  };
 
   useEffect(() => {
     onVisible();
@@ -181,7 +217,7 @@ export function LobbyPage({ user, onVisible }: { user: PublicUser; onVisible: ()
         </section>
       </div>
 
-      <Leaderboard rows={leaders} me={user.username} />
+      <Leaderboard rows={leaders} me={user.username} sort={sort} onSort={sortBy} />
 
       {dialog && <CreateGameDialog mode={dialog} user={user} onClose={() => setDialog(null)} />}
       {rules && <HowToPlay onClose={() => setRules(false)} />}

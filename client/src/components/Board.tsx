@@ -18,6 +18,7 @@ import {
   TAKEOFF_SQUARES,
   TRACK,
   TRACK_LAST,
+  isOnTrack,
   piecePoint,
   rotatePoint,
   rotateShape,
@@ -30,7 +31,7 @@ import {
 import type { SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
-import { planMove, type GameState } from '../../../shared/rules.ts';
+import { BRIDGE_SPAN, KING_PIECE, isKing, planMove, type BridgeKind, type GameState } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
 import { BOARD_PX, CELL, heading, restHeading, toPx } from '../geometry.ts';
 import type { ActiveReaction, AnimFrame, Popup } from '../useRoomStream.ts';
@@ -137,6 +138,11 @@ function Defs() {
       <filter id="piece-shadow" x="-50%" y="-50%" width="200%" height="200%">
         <feDropShadow dx="0" dy="1.5" stdDeviation="1.2" floodOpacity="0.32" />
       </filter>
+      {(['heaven', 'hell'] as const).map((kind) => (
+        <marker key={kind} id={`bridge-end-${kind}`} viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">
+          <path d="M0 0L10 5L0 10Z" fill={kind === 'heaven' ? '#00acc1' : '#d84315'} />
+        </marker>
+      ))}
       <PieceDefs />
     </defs>
   );
@@ -283,6 +289,40 @@ function BoxIcon({ x, y, owner, ghost }: { x: number; y: number; owner: Seat; gh
   );
 }
 
+/** A square that gives a power to whoever ends a move on it. */
+function PowerIcon({ x, y }: { x: number; y: number }) {
+  return (
+    <g className="power-square" transform={`translate(${x} ${y})`} pointerEvents="none">
+      <g className="power-square-body">
+        <circle className="power-ring" r={CELL * 0.38} />
+        <text textAnchor="middle" dominantBaseline="central">
+          ⚡
+        </text>
+      </g>
+    </g>
+  );
+}
+
+/**
+ * A bridge: an arrow along the track from its start square to where it leads. It follows the track rather
+ * than crossing the board, so it never looks like a flight over the home columns, which knocks pieces out.
+ */
+function BridgeArc({ from, kind, ghost }: { from: number; kind: BridgeKind; ghost?: boolean }) {
+  const span = BRIDGE_SPAN[kind];
+  const squares = Array.from({ length: Math.abs(span) + 1 }, (_, k) => (from + Math.sign(span) * k + TRACK.length) % TRACK.length);
+  const pts = squares.map((sq) => toPx(TRACK[sq].spot, 0));
+  const a = pts[0];
+  return (
+    <g className={`bridge ${kind}${ghost ? ' ghost' : ''}`} pointerEvents="none">
+      <path className="bridge-arc" d={`M${pts.map((p) => `${p.x} ${p.y}`).join('L')}`} strokeLinejoin="round" markerEnd={`url(#bridge-end-${kind})`} />
+      <circle className="bridge-start" cx={a.x} cy={a.y} r={CELL * 0.32} />
+      <text x={a.x} y={a.y} textAnchor="middle" dominantBaseline="central">
+        {kind === 'heaven' ? '🌈' : '🔥'}
+      </text>
+    </g>
+  );
+}
+
 interface BoardProps {
   game: GameState;
   seats: SeatView[];
@@ -292,9 +332,9 @@ interface BoardProps {
   pieceStyle: PieceStyle;
   popups: Popup[];
   reactions: ActiveReaction[];
-  /** Squares the viewer may drop a bomb or hide a magic box on right now. */
+  /** Squares the viewer may drop a bomb, hide a magic box or start a bridge on right now. */
   targets: number[];
-  targetKind: 'bomb' | 'box';
+  targetKind: 'bomb' | 'box' | BridgeKind;
   onMove: (piece: number) => void;
   onTarget: (square: number) => void;
 }
@@ -313,6 +353,9 @@ interface Item {
 }
 
 const pct = (v: number) => `${(v / BOARD_SIZE) * 100}%`;
+
+const TARGET_LABEL = { bomb: 'Drop the bomb', box: 'Hide the magic box', heaven: 'Start the heaven bridge', hell: 'Start the hell bridge' };
+const TARGET_COLOR = { bomb: '#d50000', box: '#7c4dff', heaven: '#00acc1', hell: '#d84315' };
 
 /** Reaction GIFs sit on top of the board over their seat's hangar, as large as fits without cropping. */
 function ReactionLayer({ reactions, rot }: { reactions: ActiveReaction[]; rot: number }) {
@@ -358,9 +401,11 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
   );
 
   // Planes of one colour on one square are drawn as a single piece with a count, so one leaving never shifts the other.
+  // A king stands beside them instead, so either can be picked to move.
   const items = useMemo(() => {
     const out: Item[] = [];
     const groups = new Map<string, Item>();
+    const kingOn = (seat: Seat, pos: number) => !!game.rules.kings && pos !== HANGAR && pos !== GOAL && game.pieces[seat][KING_PIECE] === pos;
     for (const seat of game.active) {
       game.pieces[seat].forEach((pos, piece) => {
         const o = anim?.pieces.get(`${seat}:${piece}`);
@@ -375,11 +420,15 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           out.push({ ...base, key: `${seat}:hangar:${piece}`, pieces: [piece] });
           return;
         }
-        const gk = `${seat}:at:${pos}`;
+        const king = isKing(game, piece);
+        const gk = `${seat}:at:${pos}${king ? ':king' : ''}`;
         const g = groups.get(gk);
         if (g) g.pieces.push(piece);
         else {
-          const item = { ...base, key: gk, pieces: [piece] };
+          // Side by side when the king shares the square with others of its colour.
+          const shared = kingOn(seat, pos) && game.pieces[seat].some((q, j) => j !== KING_PIECE && q === pos);
+          const shift = shared ? CELL * 0.2 * (king ? -1 : 1) : 0;
+          const item = { ...base, x: base.x + shift, y: base.y + shift * 0.4, key: gk, pieces: [piece] };
           groups.set(gk, item);
           out.push(item);
         }
@@ -444,6 +493,24 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                   </text>
                 );
               })()}
+            {preview.bridge &&
+              (() => {
+                const b = toPx(TRACK[preview.bridge.square].spot, rot);
+                return (
+                  <text x={b.x} y={b.y - CELL * 0.8} className={`preview-points${preview.bridge.kind === 'hell' ? ' danger' : ''}`} textAnchor="middle">
+                    {preview.bridge.kind === 'heaven' ? '🌈 +10' : `🔥 ${preview.bridge.to - preview.bridge.from}`}
+                  </text>
+                );
+              })()}
+            {preview.power &&
+              (() => {
+                const p = toPx(piecePoint(preview.seat, preview.piece, preview.to), rot);
+                return (
+                  <text x={p.x} y={p.y + CELL * 1.05} className="preview-points" textAnchor="middle">
+                    ⚡ power
+                  </text>
+                );
+              })()}
             {preview.bombed?.saved &&
               (() => {
                 const b = toPx(TRACK[preview.bombed.square].spot, rot);
@@ -496,11 +563,20 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           const p = toPx(TRACK[b.square].spot, rot);
           return <BombIcon key={b.square} x={p.x} y={p.y} owner={b.owner} />;
         })}
+        {(game.power ?? []).map((sq) => {
+          const p = toPx(TRACK[sq].spot, rot);
+          return <PowerIcon key={`power${sq}`} x={p.x} y={p.y} />;
+        })}
+        {(game.bridges ?? []).map((b) => (
+          <BridgeArc key={`bridge${b.square}`} from={b.square} kind={b.kind} />
+        ))}
 
         <g filter="url(#piece-shadow)">
           {items.map((it) => {
             const mover = !it.animated && it.seat === game.turn ? it.pieces.find((p) => movable.includes(p)) : undefined;
             const canMove = mover !== undefined;
+            const at = game.pieces[it.seat][it.pieces[0]];
+            const wall = !it.animated && !!game.rules.walls && isOnTrack(at) && game.pieces[it.seat].filter((q) => q === at).length > 1;
             return (
               <Piece
                 key={it.key}
@@ -517,6 +593,8 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 count={it.pieces.length}
                 movable={canMove}
                 frozen={!it.animated && it.pieces.some((p) => (game.frozen?.[it.seat]?.[p] ?? 0) > 0)}
+                king={!!game.rules.kings && it.pieces.includes(KING_PIECE)}
+                wall={wall}
                 onClick={canMove ? () => (TOUCH && hovered !== mover ? setHover(mover) : onMove(mover)) : undefined}
                 onHover={canMove && !TOUCH ? (on) => setHover(on ? mover : null) : undefined}
                 label={canMove ? `Move piece ${mover + 1}${it.pieces.length > 1 ? ` (${it.pieces.length} here)` : ''}` : undefined}
@@ -535,12 +613,12 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 onPointerEnter={TOUCH ? undefined : () => setBombHover(sq)}
                 onPointerLeave={TOUCH ? undefined : () => setBombHover((h) => (h === sq ? null : h))}
                 role="button"
-                aria-label={`${targetKind === 'box' ? 'Hide the magic box' : 'Drop the bomb'} on square ${sq + 1}`}
+                aria-label={`${TARGET_LABEL[targetKind]} on square ${sq + 1}`}
               >
                 <ShapeEl
                   s={rotateShape(TRACK[sq].shape, rot)}
                   fill="rgba(255,255,255,0.01)"
-                  stroke={targetKind === 'box' ? '#7c4dff' : '#d50000'}
+                  stroke={TARGET_COLOR[targetKind]}
                   strokeWidth={2}
                   inset={2.5}
                   rx={6}
@@ -550,6 +628,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             {bombHover !== null &&
               (() => {
                 const p = toPx(TRACK[bombHover].spot, rot);
+                if (targetKind === 'heaven' || targetKind === 'hell') return <BridgeArc from={bombHover} kind={targetKind} ghost />;
                 return targetKind === 'box' ? (
                   <BoxIcon x={p.x} y={p.y} owner={game.turn} ghost />
                 ) : (
@@ -562,7 +641,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
         {popups.map((pop) => {
           const p = toPx(pop, rot);
           return (
-            <text key={pop.id} x={p.x} y={p.y - CELL * 0.4} className="score-pop" textAnchor="middle" fill={COLOR_HEX[pop.seat]} pointerEvents="none">
+            <text key={pop.id} x={p.x} y={p.y - CELL * 0.4} className={`score-pop${pop.big ? ' big' : ''}`} textAnchor="middle" fill={COLOR_HEX[pop.seat]} pointerEvents="none">
               {pop.text}
             </text>
           );

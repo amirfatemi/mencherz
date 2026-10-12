@@ -1,5 +1,14 @@
 import { GOAL, HANGAR, HOME_FIRST, TAKEOFF, TRACK_LAST, isOnTrack, trackIndex, type Seat } from './board.ts';
-import { distinctMoves, freeSquares, planMove, type GameState, type MovePlan } from './rules.ts';
+import {
+  bridgeTarget,
+  distinctMoves,
+  freeSquares,
+  planMove,
+  type BridgeKind,
+  type GameState,
+  type MovePlan,
+  type PowerChoice,
+} from './rules.ts';
 
 export type BotLevel = 'easy' | 'normal' | 'hard';
 export const BOT_LEVELS: readonly BotLevel[] = ['easy', 'normal', 'hard'];
@@ -45,6 +54,8 @@ function score(state: GameState, plan: MovePlan, careful: boolean): number {
   if (plan.bombed) s -= plan.bombed.saved ? 3 : 15;
   // A magic box is a gamble: a 1 in 5 chance each of a bomb, of losing points and of being frozen in place.
   if (plan.box) s -= value(plan.to) * 0.2 + 2;
+  // A power square gives a bridge or a roll-again card.
+  if (plan.power) s += 4;
   // When points decide the winner, knock-outs and pieces home are worth chasing for their own sake.
   if (state.rules.winBy === 'points') s += plan.points * 1.5;
   if (careful) {
@@ -134,4 +145,97 @@ export function chooseMove(state: GameState, level: BotLevel, rand: () => number
     }
   }
   return best;
+}
+
+/**
+ * How good a bridge starting on each free square would be for the player placing it: for every piece that
+ * might land there soon, its gain or loss (positive for the placer's own pieces, negative for opponents'),
+ * weighted by the chance of landing there with the next roll or the one after.
+ */
+function bridgeValues(state: GameState, kind: BridgeKind): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const seat of state.active) {
+    if (state.ranking.includes(seat)) continue;
+    const sign = seat === state.turn ? 1 : -1;
+    for (const p of state.pieces[seat]) {
+      if (p < TAKEOFF || p >= TRACK_LAST) continue;
+      for (let d = 1; d <= 12 && p + d <= TRACK_LAST; d++) {
+        const to = bridgeTarget(kind, p + d);
+        if (to === null) continue;
+        const chance = d <= 6 ? 1 / 6 : 1 / 36;
+        const sq = trackIndex(seat, p + d);
+        out.set(sq, (out.get(sq) ?? 0) + sign * chance * (to - (p + d)));
+      }
+    }
+  }
+  return out;
+}
+
+/** Picks where a bridge starts: where it most helps the placer, or most hurts the others. */
+export function chooseBridge(state: GameState, kind: BridgeKind, level: BotLevel, rand: () => number = Math.random): number {
+  const options = freeSquares(state);
+  if (level === 'easy' && rand() < 0.6) return options[Math.floor(rand() * options.length)];
+  const values = bridgeValues(state, kind);
+  let best = options[0];
+  let bestScore = -Infinity;
+  for (const sq of options) {
+    const sc = (values.get(sq) ?? 0) + rand() * 0.05;
+    if (sc > bestScore) {
+      bestScore = sc;
+      best = sq;
+    }
+  }
+  return best;
+}
+
+/** Picks a power: the better of the best bridge of each kind, or a roll-again card when neither does much. */
+export function choosePower(state: GameState, level: BotLevel, rand: () => number = Math.random): PowerChoice {
+  if (level === 'easy') return (['heaven', 'hell', 'reroll'] as const)[Math.floor(rand() * 3)];
+  const free = freeSquares(state);
+  const best = (kind: BridgeKind) => {
+    const values = bridgeValues(state, kind);
+    return Math.max(0, ...free.map((sq) => values.get(sq) ?? 0));
+  };
+  const heaven = best('heaven');
+  const hell = best('hell');
+  // A roll-again card saves about one wasted turn; a bridge's value is in squares, over a turn or two.
+  const reroll = 1.5;
+  if (reroll >= heaven && reroll >= hell) return 'reroll';
+  return heaven >= hell ? 'heaven' : 'hell';
+}
+
+/** Whether to spend a roll-again card on this roll: always when it can't be played. */
+export function wantsReroll(state: GameState): boolean {
+  return (state.rerolls?.[state.turn] ?? 0) > 0 && state.phase === 'move' && state.movable.length === 0;
+}
+
+/** One thing to do in the current phase. Rolls carry no dice: whoever applies the action rolls. */
+export type BotAction =
+  | { type: 'roll' | 'reroll' | 'pass' }
+  | { type: 'move'; piece: number }
+  | { type: 'bomb' | 'box' | 'bridge'; square: number }
+  | { type: 'power'; choice: PowerChoice };
+
+/**
+ * What a bot does next, whatever the phase. `useCards` false is for a player whose time ran out: their turn is
+ * played for them, but their roll-again cards are kept.
+ */
+export function botAction(state: GameState, level: BotLevel, rand: () => number = Math.random, useCards = true): BotAction | null {
+  switch (state.phase) {
+    case 'roll':
+      return { type: 'roll' };
+    case 'move':
+      if (useCards && wantsReroll(state)) return { type: 'reroll' };
+      return state.movable.length ? { type: 'move', piece: chooseMove(state, level, rand) } : { type: 'pass' };
+    case 'bomb':
+      return { type: 'bomb', square: chooseBomb(state, level, rand) };
+    case 'box':
+      return { type: 'box', square: chooseBox(state, level, rand) };
+    case 'power':
+      return { type: 'power', choice: choosePower(state, level, rand) };
+    case 'bridge':
+      return state.placing ? { type: 'bridge', square: chooseBridge(state, state.placing, level, rand) } : null;
+    default:
+      return null;
+  }
 }

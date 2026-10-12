@@ -8,6 +8,7 @@ export const STEP_MS: Record<StepKind, number> = {
   bounce: 200,
   jump: 400,
   fly: 850,
+  bridge: 950,
 };
 export const ROLL_MS = 750;
 export const CAPTURE_MS = 700;
@@ -15,15 +16,22 @@ export const CAPTURE_MS = 700;
 export const BOMB_MS = 700;
 /** How long an opened magic box shows what was inside; the piece waits on the box meanwhile. */
 export const BOX_REVEAL_MS = 3000;
-/** A roll that can't be played stays on the dice this long before the next player goes. */
+/**
+ * A roll that can't be played stays on the dice this long before the next player goes, in games with a
+ * computer player, which would otherwise roll before anyone saw it. Among people the next one just rolls.
+ */
 export const PASS_HOLD_MS = 5000;
+/** Picking a power on a power square. */
+export const POWER_MS = 300;
 
-export function eventDuration(event: GameEvent | null | undefined): number {
+/** How long an event plays. `holdPasses`: whether an unplayable roll is held for PASS_HOLD_MS (games with a bot). */
+export function eventDuration(event: GameEvent | null | undefined, holdPasses = true): number {
   if (!event) return 0;
   if (event.type === 'roll') {
-    return ROLL_MS + (event.penalized.length ? CAPTURE_MS : 0) + (event.outcome === 'pass' ? PASS_HOLD_MS : 0);
+    return ROLL_MS + (event.penalized.length ? CAPTURE_MS : 0) + (event.outcome === 'pass' && holdPasses ? PASS_HOLD_MS : 0);
   }
-  if (event.type === 'bomb' || event.type === 'box') return BOMB_MS;
+  if (event.type === 'bomb' || event.type === 'box' || event.type === 'bridge') return BOMB_MS;
+  if (event.type === 'pass' || event.type === 'power') return POWER_MS;
   let ms = settledAt(event);
   // Knocked-out pieces, or the mover itself after a bomb, fly back to the hangar.
   if (event.captures.length || event.to === HANGAR) ms += CAPTURE_MS;

@@ -22,6 +22,22 @@ export const POINTS = {
 /** Knocking out the player who last knocked out one of yours is worth this much more, once per knock-out received. */
 export const REVENGE = 1.5;
 
+/** A king knocked out, or a king knocking out, counts this much more; both together count it twice over. */
+export const KING = 1.5;
+
+/**
+ * A piece's second knock-out since it left the hangar (a double kill) counts 1.5 times, its third and any
+ * after that twice. Stacks with revenge.
+ */
+export function killStreakBonus(streak: number): number {
+  return streak >= 3 ? 2 : streak === 2 ? 1.5 : 1;
+}
+
+/** What a kill streak is called, from a piece's second knock-out on. */
+export function killStreakName(streak: number): string | null {
+  return streak < 2 ? null : (['Double kill', 'Triple kill', 'Quadra kill'][streak - 2] ?? 'Rampage');
+}
+
 /** A game counts on the leaderboard only with at least this many people in it, so games against computers alone don't. */
 export const RANKED_MIN_PEOPLE = 2;
 

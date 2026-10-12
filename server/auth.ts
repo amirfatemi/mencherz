@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto';
-import type { AdminUserRow, Captcha, LeaderRow, PairCode, PublicUser } from '../shared/protocol.ts';
+import { LEADER_SORTS, type AdminUserRow, type Captcha, type LeaderRow, type LeaderSort, type PairCode, type PublicUser } from '../shared/protocol.ts';
 import type { Db } from './db.ts';
 import { InputError } from './validate.ts';
 
@@ -54,8 +54,19 @@ interface UserRow {
   games_played: number;
   wins: number;
   total_points: number;
+  total_captures: number;
+  total_lost: number;
   created_at: number;
 }
+
+// Each order breaks ties by points, then wins, then fewer games.
+const LEADER_ORDER: Record<LeaderSort, string> = {
+  points: 'total_points DESC, wins DESC, games_played ASC',
+  wins: 'wins DESC, total_points DESC, games_played ASC',
+  games: 'games_played DESC, total_points DESC, wins DESC',
+  captures: 'total_captures DESC, total_points DESC, wins DESC',
+  lost: 'total_lost DESC, total_points DESC, wins DESC',
+};
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
@@ -106,13 +117,20 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     ),
     deleteSession: db.prepare('DELETE FROM sessions WHERE token_hash = ?'),
     purgeSessions: db.prepare('DELETE FROM sessions WHERE expires_at <= ?'),
-    recordGame: db.prepare(
-      'UPDATE users SET games_played = games_played + 1, wins = wins + ?, total_points = total_points + ? WHERE id = ?',
-    ),
-    leaderboard: db.prepare(`
-      SELECT username, total_points, games_played, wins FROM users WHERE games_played > 0
-      ORDER BY total_points DESC, wins DESC, games_played ASC, username LIMIT 50
+    recordGame: db.prepare(`
+      UPDATE users SET games_played = games_played + 1, wins = wins + ?, total_points = total_points + ?,
+        total_captures = total_captures + ?, total_lost = total_lost + ?
+      WHERE id = ?
     `),
+    leaderboard: Object.fromEntries(
+      LEADER_SORTS.map((sort) => [
+        sort,
+        db.prepare(`
+          SELECT username, total_points, games_played, wins, total_captures, total_lost FROM users WHERE games_played > 0
+          ORDER BY ${LEADER_ORDER[sort]}, username LIMIT 50
+        `),
+      ]),
+    ) as Record<LeaderSort, ReturnType<Db['prepare']>>,
     savePairCode: db.prepare(`
       INSERT INTO pair_codes (user_id, code_hash, expires_at, attempts) VALUES (?, ?, ?, 0)
       ON CONFLICT(user_id) DO UPDATE SET code_hash = excluded.code_hash, expires_at = excluded.expires_at, attempts = 0
@@ -221,9 +239,22 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     return json({ ok: true }, 200, { 'set-cookie': `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax` });
   }
 
-  function leaderboard(): Response {
-    const rows = q.leaderboard.all() as Pick<UserRow, 'username' | 'total_points' | 'games_played' | 'wins'>[];
-    return json(rows.map((r): LeaderRow => ({ username: r.username, points: r.total_points, gamesPlayed: r.games_played, wins: r.wins })));
+  function leaderboard(req: Request): Response {
+    const asked = new URL(req.url).searchParams.get('sort') as LeaderSort | null;
+    const sort = asked && LEADER_SORTS.includes(asked) ? asked : 'points';
+    const rows = q.leaderboard[sort].all() as Pick<UserRow, 'username' | 'total_points' | 'games_played' | 'wins' | 'total_captures' | 'total_lost'>[];
+    return json(
+      rows.map(
+        (r): LeaderRow => ({
+          username: r.username,
+          points: r.total_points,
+          gamesPlayed: r.games_played,
+          wins: r.wins,
+          captures: r.total_captures,
+          lost: r.total_lost,
+        }),
+      ),
+    );
   }
 
   // A code the player reads out so someone can seat them at their device. One active code per player.
@@ -277,7 +308,7 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     const user = userFromToken(readCookie(req.headers.get('cookie')));
     if (!user) return json({ error: 'Not signed in' }, 401);
     if (route === 'GET /me') return json(user);
-    if (route === 'GET /leaderboard') return leaderboard();
+    if (route === 'GET /leaderboard') return leaderboard(req);
     if (route === 'POST /pair-code') return pairCode(user);
     if (!user.isAdmin) return json({ error: 'Admins only' }, 403);
     if (route === 'GET /admin/users') return adminUsers();
@@ -295,8 +326,8 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     json,
     stop: () => clearInterval(purge),
     userFromCookieHeader: (header: string | null | undefined) => userFromToken(readCookie(header)),
-    recordGame(userId: number, won: boolean, points: number) {
-      q.recordGame.run(won ? 1 : 0, Math.max(0, Math.round(points)), userId);
+    recordGame(userId: number, won: boolean, stats: { points: number; captures: number; lost: number }) {
+      q.recordGame.run(won ? 1 : 0, Math.max(0, Math.round(stats.points)), stats.captures, stats.lost, userId);
     },
     /** Checks a player's one-time code and uses it up. Too many wrong guesses burn the code. */
     consumePairCode(username: string, code: string): PublicUser {

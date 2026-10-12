@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { chooseBomb, chooseBox, chooseMove, type BotLevel } from './ai.ts';
+import { botAction, chooseBomb, chooseBox, chooseMove, type BotLevel } from './ai.ts';
 import {
   FLIGHT_CROSSES,
   FLIGHT_FROM,
@@ -23,18 +23,25 @@ import {
   type Seat,
 } from './board.ts';
 import { MEANNESS, rollWeighted, rollWeights } from './dice.ts';
-import { REACTION_BY_ID, reactionsFor } from './reactions.ts';
+import { REACTIONS, REACTION_BY_ID, reactionsFor } from './reactions.ts';
 import { BOX_REVEAL_MS, PASS_HOLD_MS, ROLL_MS, blastAt, boxOpenAt, eventDuration } from './timing.ts';
-import { EARLY_UNTIL, LATE_FROM, POINTS, REVENGE, captureValue } from './scoring.ts';
+import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, captureValue, killStreakBonus } from './scoring.ts';
 import {
   DEFAULT_RULES,
   applyBomb,
   applyBox,
+  applyBridge,
   applyMove,
+  applyPass,
+  applyPower,
+  applyReroll,
   applyRoll,
+  distinctMoves,
+  rerollBase,
   freeSquares,
   createGame,
   planMove,
+  wallSquares,
   BOX_OUTCOMES,
   type BoxOutcome,
   type GameState,
@@ -42,8 +49,10 @@ import {
 } from './rules.ts';
 
 // Magic boxes are off unless a test turns them on, so games start straight at the first roll.
+// Power squares are off too, so no move stops on one by chance, and so are kings, so piece 0 scores like
+// any other; tests for those turn them on.
 function game(seats: Seat[] = [0, 1, 2, 3], rules: Partial<Rules> = {}): GameState {
-  return createGame(seats, { ...DEFAULT_RULES, magicBoxes: false, ...rules });
+  return createGame(seats, { ...DEFAULT_RULES, magicBoxes: false, powerSquares: false, kings: false, ...rules });
 }
 
 function at(g: GameState, seat: Seat, positions: number[]): GameState {
@@ -56,6 +65,31 @@ function sameSquare(ofSeat: Seat, pos: number, seat: Seat): number {
   const idx = trackIndex(ofSeat, pos);
   for (let p = 1; p <= TRACK_LAST; p++) if (trackIndex(seat, p) === idx) return p;
   throw new Error(`seat ${seat} never visits that square`);
+}
+
+const randInt = (n: number) => Math.floor(Math.random() * n);
+
+/** Plays whatever the game is waiting for, as a bot would, with a weighted dice. */
+function botStep(g: GameState, level: BotLevel) {
+  const a = botAction(g, level)!;
+  switch (a.type) {
+    case 'roll':
+      return applyRoll(g, rollWeighted(rollWeights(g), randInt), randInt);
+    case 'reroll':
+      return applyReroll(g, rollWeighted(rollWeights(rerollBase(g)), randInt), randInt);
+    case 'pass':
+      return applyPass(g, randInt);
+    case 'move':
+      return applyMove(g, a.piece, randInt);
+    case 'bomb':
+      return applyBomb(g, a.square, randInt);
+    case 'box':
+      return applyBox(g, a.square);
+    case 'bridge':
+      return applyBridge(g, a.square, randInt);
+    case 'power':
+      return applyPower(g, a.choice, randInt);
+  }
 }
 
 const inside = (p: { x: number; y: number }, sq: (typeof TRACK)[number]) =>
@@ -497,7 +531,7 @@ describe('three sixes and bombs', () => {
     Object.assign(g, { phase: 'move', dice: 2, movable: [0, 1] });
     const { state, event } = applyMove(g, 0);
     assert.equal(event.to, HANGAR);
-    assert.deepEqual(event.bombed, { owner: 0, square: trackIndex(1, 32), pos: 32, atStep: 1, points: captureValue(32), saved: false, revenge: false });
+    assert.deepEqual(event.bombed, { owner: 0, square: trackIndex(1, 32), pos: 32, atStep: 1, points: captureValue(32), saved: false, revenge: false, king: false });
     assert.equal(state.pieces[1][0], HANGAR);
     assert.deepEqual(state.bombs, []);
     assert.equal(state.stats[0].points, captureValue(32));
@@ -544,22 +578,17 @@ describe('three sixes and bombs', () => {
     assert.ok(ahead.includes(sq), `bomb at ${sq} should be in front of the piece`);
   });
 
-  test('bot games with bombs on hard still finish', () => {
-    for (let n = 0; n < 5; n++) {
+  test('bot games with every rule on, bombs on hard, still finish', () => {
+    const seen = new Set<string>();
+    for (let n = 0; n < 8; n++) {
       let g = createGame([0, 1, 2, 3], { ...DEFAULT_RULES, difficulty: 'hard' });
-      let bombsPlaced = 0;
       for (let i = 0; i < 20000 && g.phase !== 'over'; i++) {
-        if (g.phase === 'roll') g = applyRoll(g, rollWeighted(rollWeights(g), (k) => Math.floor(Math.random() * k))).state;
-        else if (g.phase === 'box') g = applyBox(g, chooseBox(g, 'normal')).state;
-        else if (g.phase === 'move') g = applyMove(g, chooseMove(g, 'normal')).state;
-        else {
-          g = applyBomb(g, chooseBomb(g, 'normal')).state;
-          bombsPlaced++;
-        }
+        seen.add(g.phase);
+        g = botStep(g, 'normal').state;
       }
       assert.equal(g.phase, 'over');
-      assert.ok(bombsPlaced >= 0);
     }
+    for (const phase of ['box', 'roll', 'move', 'power', 'bridge']) assert.ok(seen.has(phase), `reached the ${phase} phase`);
   });
 });
 
@@ -567,7 +596,7 @@ describe('magic boxes', () => {
   const pick = (outcome: BoxOutcome) => () => BOX_OUTCOMES.indexOf(outcome);
 
   test('everyone hides a box in turn order before the first roll', () => {
-    let g = createGame([0, 1, 3], DEFAULT_RULES, 1);
+    let g = createGame([0, 1, 3], { ...DEFAULT_RULES, powerSquares: false }, 1);
     assert.equal(g.phase, 'box');
     assert.equal(g.turn, 1);
     assert.throws(() => applyRoll(g, 6), /Not time to roll/);
@@ -701,7 +730,7 @@ describe('magic boxes', () => {
     assert.equal(eventDuration(empty), boxOpenAt(empty) + BOX_REVEAL_MS);
     const bomb = onBox('bomb').event;
     assert.equal(blastAt(bomb), boxOpenAt(bomb) + BOX_REVEAL_MS, 'the bomb goes off after the reveal');
-    const mood = (outcome: BoxOutcome) => reactionsFor(onBox(outcome).event, () => 0).map((r) => [r.seat, REACTION_BY_ID.get(r.id)!.group]);
+    const mood = (outcome: BoxOutcome) => reactionsFor(onBox(outcome).event, (group) => REACTIONS.find((r) => r.group === group)!.id).map((r) => [r.seat, REACTION_BY_ID.get(r.id)!.group]);
     assert.deepEqual(mood('vest'), [[0, 'happy']]);
     assert.deepEqual(mood('empty'), [[0, 'happy']]);
     assert.deepEqual(mood('minus'), [[0, 'sad']]);
@@ -716,7 +745,7 @@ describe('magic boxes', () => {
   });
 
   test('bots hide boxes where opponents will pass', () => {
-    const g = createGame([0, 2], DEFAULT_RULES, 0);
+    const g = createGame([0, 2], { ...DEFAULT_RULES, powerSquares: false }, 0);
     const sq = chooseBox(g, 'hard', () => 0);
     const early = Array.from({ length: 12 }, (_, i) => trackIndex(2, i + 1));
     assert.ok(early.includes(sq), `box at ${sq} should be on the opponent's first stretch`);
@@ -788,5 +817,252 @@ describe('revenge and playing on', () => {
     const second = applyMove(g, 3);
     assert.equal(second.state.phase, 'over', 'third place is decided');
     assert.deepEqual(second.state.ranking, [0, 1, 2]);
+  });
+});
+
+describe('walls', () => {
+  // Seat 0's piece at 1; seat 1 has two pieces on seat 0's square 4.
+  function walled() {
+    const g = at(game([0, 1]), 0, [1]);
+    const wall = sameSquare(0, 4, 1);
+    at(g, 1, [wall, wall]);
+    return g;
+  }
+
+  test('two pieces of one colour on a square make a wall', () => {
+    assert.deepEqual(wallSquares(walled()), [trackIndex(0, 4)]);
+  });
+
+  test('other colours cannot pass a wall', () => {
+    const g = walled();
+    assert.equal(planMove(g, 0, 0, 5), null);
+    assert.equal(planMove(g, 0, 0, 2)?.to, 3, 'stopping short is fine');
+  });
+
+  test('a colour jump cannot leap over a wall either', () => {
+    const plan = planMove(walled(), 0, 0, 1)!;
+    assert.ok(isOwnColor(2));
+    assert.equal(plan.jumped, false);
+    assert.equal(plan.to, 2);
+  });
+
+  test('landing on a wall knocks out both pieces, and scores both, the second as a double kill', () => {
+    const g = walled();
+    const plan = planMove(g, 0, 0, 3)!;
+    const v = g.pieces[1][0];
+    assert.deepEqual(
+      plan.captures.map((c) => [c.seat, c.streak, c.points]),
+      [
+        [1, 1, captureValue(v)],
+        [1, 2, Math.round(captureValue(v) * killStreakBonus(2))],
+      ],
+    );
+  });
+
+  test('your own wall does not block you, and walls can be switched off', () => {
+    const own = at(game([0, 1]), 0, [1, 4, 4]);
+    assert.equal(planMove(own, 0, 0, 5)?.to, 10, 'passes, then jumps from 6');
+    const off = walled();
+    off.rules.walls = false;
+    assert.equal(planMove(off, 0, 0, 5)?.to, 10, 'passes, then jumps from 6');
+  });
+});
+
+describe('kill streaks', () => {
+  function hit(kills: number) {
+    const g = at(game([0, 1]), 0, [20]);
+    g.kills[0][0] = kills;
+    at(g, 1, [sameSquare(0, 22, 1)]);
+    Object.assign(g, { phase: 'move', dice: 2, movable: [0] });
+    return { g, v: g.pieces[1][0], ...applyMove(g, 0) };
+  }
+
+  test("a piece's second knock-out counts 1.5 times, its third and later twice", () => {
+    for (const [before, times] of [
+      [0, 1],
+      [1, 1.5],
+      [2, 2],
+      [5, 2],
+    ]) {
+      const { event, v } = hit(before);
+      assert.equal(event.captures[0].streak, before + 1);
+      assert.equal(event.captures[0].points, Math.round(captureValue(v) * times));
+    }
+  });
+
+  test('the streak counts on, and ends for a piece that is knocked out', () => {
+    const { state, g } = hit(1);
+    assert.equal(state.kills[0][0], 2);
+    g.kills[1][0] = 3;
+    assert.equal(applyMove(g, 0).state.kills[1][0], 0);
+  });
+});
+
+describe('kings', () => {
+  const crowned = () => game([0, 1], { kings: true });
+  function knock(hitter: number, victim: number) {
+    const g = crowned();
+    g.pieces[0] = [HANGAR, HANGAR, HANGAR, HANGAR];
+    g.pieces[0][hitter] = 20;
+    g.pieces[1][victim] = sameSquare(0, 22, 1);
+    return { v: g.pieces[1][victim], plan: planMove(g, 0, hitter, 2)! };
+  }
+
+  test('knocking out a king, or with one, counts 1.5 times; a king knocking out a king, 2.25 times', () => {
+    for (const [hitter, victim, times] of [
+      [1, 1, 1],
+      [1, 0, KING],
+      [0, 1, KING],
+      [0, 0, KING * KING],
+    ]) {
+      const { v, plan } = knock(hitter, victim);
+      assert.equal(plan.captures[0].points, Math.round(captureValue(v) * times), `piece ${hitter} hits piece ${victim}`);
+      assert.equal(plan.captures[0].king, victim === 0);
+      assert.equal(plan.captures[0].byKing, hitter === 0);
+    }
+  });
+
+  test('a king sharing a square with its pieces is a move of its own', () => {
+    const g = at(crowned(), 0, [20, 20, 20]);
+    Object.assign(g, { phase: 'move', dice: 3, movable: [0, 1, 2] });
+    assert.deepEqual(distinctMoves(g), [0, 1]);
+    g.rules.kings = false;
+    assert.deepEqual(distinctMoves(g), [0]);
+  });
+
+  test("a bomb's owner gets the king's bonus too", () => {
+    const g = at(crowned(), 1, [30]);
+    g.bombs = [{ square: trackIndex(1, 32), owner: 0 }];
+    const plan = planMove(g, 1, 0, 2)!;
+    assert.equal(plan.bombed?.king, true);
+    assert.equal(plan.bombed?.points, Math.round(captureValue(32) * KING));
+  });
+
+  test('no knock-out is worth more than the biggest award', () => {
+    const g = at(crowned(), 0, [15]);
+    at(g, 2, [FLIGHT_CROSSES]);
+    g.active = [0, 1, 2];
+    g.lastHitBy[0] = 2;
+    g.kills[0][0] = 2;
+    const c = planMove(g, 0, 0, 3)!.captures[0];
+    assert.ok(captureValue(FLIGHT_CROSSES) * REVENGE * KING * KING * killStreakBonus(3) > POINTS.firstHome);
+    assert.equal(c.points, POINTS.firstHome);
+  });
+});
+
+describe('power squares and bridges', () => {
+  const powered = (rand: (n: number) => number = () => 0) => createGame([0, 1], { ...DEFAULT_RULES, magicBoxes: false, kings: false }, 0, rand);
+
+  test('there is one in each half of the board, and nothing else can go on them', () => {
+    const g = powered();
+    assert.equal(g.power.length, 2);
+    assert.ok(g.power[0] < 26 && g.power[1] >= 26);
+    assert.ok(!freeSquares(g).some((sq) => g.power.includes(sq)));
+  });
+
+  test('they move every five rounds', () => {
+    let g = powered();
+    const first = [...g.power];
+    const last = (n: number) => n - 1;
+    for (let turn = 1; turn < 10; turn++) g = applyRoll(g, 3, last).state;
+    assert.deepEqual(g.power, first, 'not yet after nine turns of two players');
+    g = applyRoll(g, 3, last).state;
+    assert.notDeepEqual(g.power, first);
+    assert.ok(g.power[0] < 26 && g.power[1] >= 26, 'still one in each half');
+  });
+
+  function onPower(dice = 2) {
+    const g = at(powered(), 0, [3]);
+    g.power = [trackIndex(0, 3 + dice), trackIndex(0, 45)];
+    Object.assign(g, { phase: 'move', dice, movable: [0] });
+    return applyMove(g, 0);
+  }
+
+  test('ending a move on one asks for a power; the turn then carries on', () => {
+    const { state, event } = onPower();
+    assert.equal(event.power, true);
+    assert.equal(state.phase, 'power');
+    const card = applyPower(state, 'reroll');
+    assert.deepEqual(card.state.rerolls, [1, 0, 0, 0]);
+    assert.equal(card.state.turn, 1, 'a 2: the turn passes');
+    const six = applyPower(onPower(6).state, 'reroll').state;
+    assert.equal(six.turn, 0, 'a 6: roll again');
+    assert.equal(six.phase, 'roll');
+  });
+
+  test('a heaven bridge carries whoever lands on it 10 squares ahead, once', () => {
+    let g = applyPower(onPower().state, 'heaven').state;
+    assert.equal(g.phase, 'bridge');
+    const square = trackIndex(1, 12);
+    assert.ok(freeSquares(g).includes(square));
+    g = applyBridge(g, square).state;
+    assert.deepEqual(g.bridges, [{ square, to: trackIndex(1, 22), kind: 'heaven', owner: 0 }]);
+    assert.equal(g.turn, 1);
+    at(g, 1, [9]);
+    Object.assign(g, { phase: 'move', dice: 3, movable: [0] });
+    const r = applyMove(g, 0);
+    assert.equal(r.event.bridge?.kind, 'heaven');
+    assert.equal(r.event.path.at(-1)?.kind, 'bridge');
+    assert.equal(r.state.pieces[1][0], 22);
+    assert.deepEqual(r.state.bridges, [], 'used up');
+  });
+
+  test('a hell bridge sends back 20, or to the takeoff spot', () => {
+    const g = at(powered(), 1, [27, 12]);
+    g.bridges = [
+      { square: trackIndex(1, 30), to: trackIndex(1, 10), kind: 'hell', owner: 0 },
+      { square: trackIndex(1, 14), to: trackIndex(1, 46), kind: 'hell', owner: 0 },
+    ];
+    assert.equal(planMove(g, 1, 0, 3)!.to, 10);
+    assert.equal(planMove(g, 1, 1, 2)!.to, TAKEOFF, 'not back past its start');
+  });
+
+  test('a heaven bridge does nothing for a piece about to turn home', () => {
+    const g = at(powered(), 0, [44]);
+    g.bridges = [{ square: trackIndex(0, 46), to: trackIndex(0, 56 % 52), kind: 'heaven', owner: 1 }];
+    g.power = [];
+    const plan = planMove(g, 0, 0, 2)!;
+    assert.equal(plan.bridge, undefined);
+    assert.equal(plan.to, 50, 'it jumps from its colour as usual');
+  });
+});
+
+describe('roll-again cards', () => {
+  test('a card throws the roll away, and the new roll must be played', () => {
+    const g = at(game([0, 1]), 0, [10]);
+    g.rerolls[0] = 1;
+    const first = applyRoll(g, 3).state;
+    const again = applyReroll(first, 5);
+    assert.equal(again.event.reroll, true);
+    assert.equal(again.state.dice, 5);
+    assert.equal(again.state.rerolls[0], 0);
+    assert.throws(() => applyReroll(again.state, 4), /no roll-again card/);
+  });
+
+  test('with a card, a roll that cannot be played waits: use it, or pass', () => {
+    const g = game([0, 1]);
+    g.rerolls[0] = 1;
+    const r = applyRoll(g, 3);
+    assert.equal(r.event.outcome, 'decide');
+    assert.equal(r.state.turn, 0);
+    const passed = applyPass(r.state);
+    assert.equal(passed.state.turn, 1);
+    assert.equal(passed.state.rerolls[0], 1, 'the card is kept');
+    assert.deepEqual(applyReroll(r.state, 6).state.movable, [0, 1, 2, 3]);
+  });
+
+  test('a card also takes back the six streak of the roll it throws away', () => {
+    const g = at(game([0, 1]), 0, [10]);
+    g.rerolls[0] = 1;
+    g.sixStreak = 1;
+    const six = applyRoll(g, 6).state;
+    assert.equal(six.sixStreak, 2);
+    assert.equal(applyReroll(six, 6).state.sixStreak, 2, 'still the second six, not a third');
+  });
+
+  test('without a bot, an unplayable roll is not held', () => {
+    const { event } = applyRoll(game([0, 1]), 3);
+    assert.equal(eventDuration(event), ROLL_MS + PASS_HOLD_MS);
+    assert.equal(eventDuration(event, false), ROLL_MS);
   });
 });

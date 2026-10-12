@@ -9,6 +9,7 @@ import {
   PIECES_PER_SEAT,
   SEATS,
   TAKEOFF,
+  TRACK_FIRST,
   TRACK_LAST,
   TRACK_LEN,
   flightCrossedSeat,
@@ -17,7 +18,7 @@ import {
   trackIndex,
   type Seat,
 } from './board.ts';
-import { POINTS, REVENGE, captureValue } from './scoring.ts';
+import { KING, POINTS, REVENGE, captureValue, killStreakBonus } from './scoring.ts';
 
 export interface Rules {
   /** Dice values that launch a plane from the hangar to the takeoff spot. */
@@ -48,6 +49,18 @@ export interface Rules {
   flightCapture: boolean;
   /** Capturing an opponent gives another roll. */
   bonusRollOnCapture: boolean;
+  /**
+   * Two or more pieces of one colour on a track square make a wall: other colours can't pass it, not even
+   * with a colour jump. Landing on it knocks out every piece there.
+   */
+  walls: boolean;
+  /**
+   * Two power squares, one in each half of the board, that move every few rounds. Landing on one picks a
+   * heaven bridge, a hell bridge or a roll-again card.
+   */
+  powerSquares: boolean;
+  /** Each colour's first piece is a king: knocking one out, or knocking out with one, counts KING times. */
+  kings: boolean;
   /** Stop when the first player finishes, or play on until only one is left (the full ranking). */
   playUntil: 'winner' | 'all';
   /** Rank by points (pieces home and knock-outs), or by who brought everything home first. */
@@ -66,11 +79,14 @@ export const DEFAULT_RULES: Rules = {
   flights: true,
   flightCapture: true,
   bonusRollOnCapture: false,
+  walls: true,
+  powerSquares: true,
+  kings: true,
   playUntil: 'all',
   winBy: 'points',
 };
 
-export type Phase = 'box' | 'roll' | 'move' | 'bomb' | 'over';
+export type Phase = 'box' | 'roll' | 'move' | 'bomb' | 'power' | 'bridge' | 'over';
 
 export interface Bomb {
   /** Absolute track index (0..51), as in TRACK. */
@@ -88,8 +104,38 @@ export interface MagicBox {
 export type BoxOutcome = 'bomb' | 'vest' | 'empty' | 'minus' | 'freeze';
 export const BOX_OUTCOMES: readonly BoxOutcome[] = ['bomb', 'vest', 'empty', 'minus', 'freeze'];
 
+/** Which of each colour's pieces is the king, when kings are on. */
+export const KING_PIECE = 0;
+
+export function isKing(state: GameState, piece: number): boolean {
+  return !!state.rules.kings && piece === KING_PIECE;
+}
+
 /** What a box's ice sets a piece's `frozen` count to: the rest of this turn, then the owner's whole next turn. */
 const FROZEN_TURNS = 2;
+
+/**
+ * A bridge, placed from a power square: whoever lands on its square first, its owner too, is carried
+ * along the track, ahead for heaven and back for hell. Then it's gone.
+ */
+export type BridgeKind = 'heaven' | 'hell';
+export const BRIDGE_SPAN: Record<BridgeKind, number> = { heaven: 10, hell: -20 };
+export interface Bridge {
+  /** Absolute track square it starts from. */
+  square: number;
+  /** Absolute track square it leads to. */
+  to: number;
+  kind: BridgeKind;
+  owner: Seat;
+}
+
+/** What a player picks on a power square. */
+export type PowerChoice = BridgeKind | 'reroll';
+export const POWER_CHOICES: readonly PowerChoice[] = ['heaven', 'hell', 'reroll'];
+/** The power squares move after this many rounds. */
+export const POWER_EVERY_ROUNDS = 5;
+/** Turns in a row without a piece out of the hangar that earn a sad reaction. */
+export const STUCK_TURNS = 3;
 
 export interface SeatStats {
   points: number;
@@ -128,11 +174,28 @@ export interface GameState {
   lastHitBy: (Seat | null)[];
   /** frozen[seat][piece]: how many more of that seat's turns the piece can't move (0 = free). Each turn's end takes one off. */
   frozen: number[][];
+  /** kills[seat][piece]: knock-outs by that piece since it last left the hangar, for kill streaks. */
+  kills: number[][];
+  /** Absolute track squares of the power squares, one in each half of the board. */
+  power: number[];
+  /** The turn number at which the power squares move next. */
+  powerMovesAt: number;
+  bridges: Bridge[];
+  /** Roll-again cards each seat holds. */
+  rerolls: number[];
+  /** The six streak from before the last roll, so a roll-again can take that roll back. */
+  preRoll: { sixStreak: number; streakMoved: number[] } | null;
+  /** After a power square: whether the same seat rolls again once it's used, or the turn passes. */
+  powerThen: 'roll' | 'next' | null;
+  /** The bridge being placed in the 'bridge' phase. */
+  placing: BridgeKind | null;
+  /** Turns in a row each seat had nothing to move and no piece out of the hangar. */
+  stuck: number[];
   turnNo: number;
   seq: number;
 }
 
-export type StepKind = 'launch' | 'step' | 'bounce' | 'jump' | 'fly';
+export type StepKind = 'launch' | 'step' | 'bounce' | 'jump' | 'fly' | 'bridge';
 
 export interface PathStep {
   pos: number;
@@ -149,6 +212,12 @@ export interface Capture {
   points: number;
   /** The victim had last knocked out one of the mover's pieces, so this counts REVENGE times. */
   revenge: boolean;
+  /** The moving piece's knock-out count with this one, since it left the hangar: 2 is a double kill. */
+  streak: number;
+  /** The piece knocked out was a king. */
+  king: boolean;
+  /** The moving piece is a king. */
+  byKing: boolean;
 }
 
 /** A piece landing on a bomb: it goes back to the hangar and the bomb is used up. */
@@ -164,6 +233,8 @@ export interface BombHit {
   /** A protective vest took the blast: the piece carries on and the vest is used up. */
   saved: boolean;
   revenge: boolean;
+  /** The piece blown up was a king. */
+  king: boolean;
 }
 
 /** A piece opening someone's magic box. */
@@ -179,6 +250,19 @@ export interface BoxHit {
   /** Points for the box's owner when its bomb goes off. */
   points: number;
   revenge: boolean;
+  king: boolean;
+}
+
+/** A piece carried by a bridge. */
+export interface BridgeHit {
+  owner: Seat;
+  kind: BridgeKind;
+  square: number;
+  /** The mover's positions before and after the bridge. */
+  from: number;
+  to: number;
+  /** Index in the mover's path of the bridge step. */
+  atStep: number;
 }
 
 export interface MovePlan {
@@ -195,9 +279,13 @@ export interface MovePlan {
   points: number;
   bombed?: BombHit;
   box?: BoxHit;
+  bridge?: BridgeHit;
+  /** The move ends on a power square, so the mover picks a power. */
+  power?: boolean;
 }
 
-export type RollOutcome = 'move' | 'pass' | 'again' | 'forfeit' | 'penalty';
+/** 'decide': nothing can move, but the roller holds a roll-again card and may use it or pass. */
+export type RollOutcome = 'move' | 'pass' | 'again' | 'forfeit' | 'penalty' | 'decide';
 
 export interface RollEvent {
   type: 'roll';
@@ -209,6 +297,32 @@ export interface RollEvent {
   penalized: { piece: number; from: number }[];
   /** The roller now places a bomb. */
   bomb?: boolean;
+  /** This roll replaced the one before it, with a roll-again card. */
+  reroll?: boolean;
+  /** STUCK_TURNS turns in a row lost with nothing out of the hangar. */
+  stuck?: boolean;
+}
+
+/** Passing after a roll that couldn't be played, instead of using a roll-again card. */
+export interface PassEvent {
+  type: 'pass';
+  seat: Seat;
+  dice: number;
+  stuck?: boolean;
+}
+
+export interface PowerEvent {
+  type: 'power';
+  seat: Seat;
+  choice: PowerChoice;
+}
+
+export interface BridgeEvent {
+  type: 'bridge';
+  seat: Seat;
+  kind: BridgeKind;
+  square: number;
+  to: number;
 }
 
 export interface BombEvent {
@@ -232,7 +346,11 @@ export interface MoveEvent extends MovePlan {
   gameOver: boolean;
 }
 
-export type GameEvent = RollEvent | MoveEvent | BombEvent | BoxEvent;
+export type GameEvent = RollEvent | MoveEvent | BombEvent | BoxEvent | PassEvent | PowerEvent | BridgeEvent;
+
+/** `rand(n)` gives an integer in [0, n). */
+export type Rand = (n: number) => number;
+const defaultRand: Rand = (n) => Math.floor(Math.random() * n);
 
 export class RuleError extends Error {}
 
@@ -247,14 +365,15 @@ export function canLaunch(rules: Rules, dice: number): boolean {
   }
 }
 
-export function noneFrozen(): number[][] {
+/** A zero for every piece of every seat. */
+export function perPiece(): number[][] {
   return SEATS.map(() => Array.from({ length: PIECES_PER_SEAT }, () => 0));
 }
 
-export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTurn?: Seat): GameState {
+export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTurn?: Seat, rand: Rand = defaultRand): GameState {
   if (active.length < 2) throw new RuleError('At least two players are needed');
   const order = SEATS.filter((s) => active.includes(s));
-  return {
+  const game: GameState = {
     layout: LAYOUT_VERSION,
     rules: { ...rules },
     active: order,
@@ -273,10 +392,71 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     boxes: [],
     vests: SEATS.map(() => 0),
     lastHitBy: SEATS.map(() => null),
-    frozen: noneFrozen(),
+    frozen: perPiece(),
+    kills: perPiece(),
+    power: [],
+    powerMovesAt: 0,
+    bridges: [],
+    rerolls: SEATS.map(() => 0),
+    preRoll: null,
+    powerThen: null,
+    placing: null,
+    stuck: SEATS.map(() => 0),
     turnNo: 1,
     seq: 0,
   };
+  if (rules.powerSquares) movePower(game, rand);
+  return game;
+}
+
+/** Puts the power squares on new free squares, one in each half of the board, and sets when they move next. */
+function movePower(s: GameState, rand: Rand): void {
+  const free = freeSquares(s);
+  const half = TRACK_LEN / 2;
+  s.power = [0, 1].flatMap((h) => {
+    const options = free.filter((i) => Math.floor(i / half) === h);
+    return options.length ? [options[rand(options.length)]] : [];
+  });
+  const playing = s.active.filter((x) => !s.ranking.includes(x)).length;
+  s.powerMovesAt = s.turnNo + POWER_EVERY_ROUNDS * Math.max(1, playing);
+}
+
+/** Where a bridge takes a piece standing at `pos`, or null when a heaven bridge leads past its route's turn home. */
+export function bridgeTarget(kind: BridgeKind, pos: number): number | null {
+  const to = pos + BRIDGE_SPAN[kind];
+  if (kind === 'heaven') return to <= TRACK_LAST ? to : null;
+  return to >= TRACK_FIRST ? to : TAKEOFF;
+}
+
+/** Absolute squares where another colour has a wall in `seat`'s way. */
+function wallsAgainst(state: GameState, seat: Seat): Set<number> {
+  const walls = new Set<number>();
+  if (!state.rules.walls) return walls;
+  for (const other of state.active) {
+    if (other === seat) continue;
+    const seen = new Set<number>();
+    for (const p of state.pieces[other]) {
+      if (!isOnTrack(p)) continue;
+      const sq = trackIndex(other, p);
+      if (seen.has(sq)) walls.add(sq);
+      seen.add(sq);
+    }
+  }
+  return walls;
+}
+
+/** Absolute squares holding a wall: two or more pieces of one colour. */
+export function wallSquares(state: GameState): number[] {
+  if (!state.rules.walls) return [];
+  const count = new Map<string, number>();
+  for (const seat of state.active) {
+    for (const p of state.pieces[seat]) {
+      if (!isOnTrack(p)) continue;
+      const key = `${seat}:${trackIndex(seat, p)}`;
+      count.set(key, (count.get(key) ?? 0) + 1);
+    }
+  }
+  return [...count].filter(([, n]) => n > 1).map(([k]) => Number(k.split(':')[1]));
 }
 
 /**
@@ -310,11 +490,24 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     cur = target;
   }
 
-  // A knock-out's points, and whether it's revenge: the victim last knocked out one of the hitter's pieces.
-  const worth = (hitter: Seat, victim: Seat, pos: number) => {
+  // Another colour's wall can be landed on, which knocks it all out, but not passed.
+  const walls = wallsAgainst(state, seat);
+  const wallAt = (pos: number) => isOnTrack(pos) && walls.has(trackIndex(seat, pos));
+  if (plan.path.slice(0, -1).some((step) => wallAt(step.pos))) return null;
+
+  // A knock-out's points: by how far the victim had come, times REVENGE when the victim last knocked out one
+  // of the hitter's pieces, KING for a king on either side and the moving piece's kill streak, capped at
+  // the biggest award. Bombs have no moving piece, so only the victim's crown counts.
+  const worth = (hitter: Seat, victim: Seat, victimPiece: number, pos: number, streak = 0) => {
     const revenge = state.lastHitBy?.[hitter] === victim;
-    return { points: Math.round(captureValue(pos) * (revenge ? REVENGE : 1)), revenge };
+    const king = isKing(state, victimPiece);
+    const byKing = streak > 0 && isKing(state, piece);
+    const times = (revenge ? REVENGE : 1) * (king ? KING : 1) * (byKing ? KING : 1) * killStreakBonus(streak);
+    return { points: Math.min(POINTS.firstHome, Math.round(captureValue(pos) * times)), revenge, king, byKing };
   };
+  // Every knock-out in a move is the moving piece's, so its streak counts on from what it had.
+  const killsBefore = state.kills?.[seat]?.[piece] ?? 0;
+  const nextStreak = () => killsBefore + plan.captures.length + 1;
 
   // Positions of everyone else, updated as captures happen along the chain.
   const taken = new Set<string>();
@@ -327,7 +520,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
         const key = `${other}:${j}`;
         if (taken.has(key) || !isOnTrack(p) || trackIndex(other, p) !== idx) return;
         taken.add(key);
-        plan.captures.push({ seat: other, piece: j, from: p, atStep: plan.path.length - 1, byFlight: false, ...worth(seat, other, p) });
+        const streak = nextStreak();
+        plan.captures.push({ seat: other, piece: j, from: p, atStep: plan.path.length - 1, byFlight: false, streak, ...worth(seat, other, j, p, streak) });
       });
     }
   };
@@ -344,8 +538,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     if (bomb && !plan.bombed) {
       const saved = vests > 0;
       if (saved) vests--;
-      const hit = saved || bomb.owner === seat ? { points: 0, revenge: false } : worth(bomb.owner, seat, pos);
-      plan.bombed = { owner: bomb.owner, square, pos, atStep, saved, ...hit };
+      const { points, revenge } = saved || bomb.owner === seat ? { points: 0, revenge: false } : worth(bomb.owner, seat, piece, pos);
+      plan.bombed = { owner: bomb.owner, square, pos, atStep, saved, points, revenge, king: isKing(state, piece) };
       if (!saved) return 'hangar';
     }
     const knocked = plan.captures.length;
@@ -359,7 +553,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
       if (saved) vests--;
       if (outcome === 'vest') vests++;
       const scores = blast && !saved && box.owner !== seat;
-      plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, ...(scores ? worth(box.owner, seat, pos) : { points: 0, revenge: false }) };
+      const { points, revenge } = scores ? worth(box.owner, seat, piece, pos) : { points: 0, revenge: false };
+      plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, points, revenge, king: isKing(state, piece) };
       if (blast && !saved) return 'hangar';
       if (outcome === 'freeze') return 'stay';
     }
@@ -370,6 +565,16 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
   if (landed === 'hangar') return finishPlan(plan, HANGAR);
   if (landed === 'on' && isOnTrack(cur)) {
     for (;;) {
+      // A bridge carries the piece on, and the move ends where it puts it down.
+      const bridge = !plan.bridge && isOnTrack(cur) ? state.bridges?.find((b) => b.square === trackIndex(seat, cur)) : undefined;
+      const across = bridge ? bridgeTarget(bridge.kind, cur) : null;
+      if (bridge && across !== null) {
+        plan.bridge = { owner: bridge.owner, kind: bridge.kind, square: bridge.square, from: cur, to: across, atStep: plan.path.length };
+        cur = across;
+        plan.path.push({ pos: cur, kind: 'bridge' });
+        if (land(cur) === 'hangar') return finishPlan(plan, HANGAR);
+        break;
+      }
       if (rules.flights && !plan.flew && cur === FLIGHT_FROM) {
         if (rules.flightCapture) {
           const crossed = flightCrossedSeat(seat);
@@ -378,7 +583,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
               const key = `${crossed}:${j}`;
               if (p !== FLIGHT_CROSSES || taken.has(key)) return;
               taken.add(key);
-              plan.captures.push({ seat: crossed, piece: j, from: p, atStep: plan.path.length, byFlight: true, ...worth(seat, crossed, p) });
+              const streak = nextStreak();
+              plan.captures.push({ seat: crossed, piece: j, from: p, atStep: plan.path.length, byFlight: true, streak, ...worth(seat, crossed, j, p, streak) });
             });
           }
         }
@@ -390,7 +596,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
         if (landed === 'stay') break;
         continue;
       }
-      if (rules.jumps && !plan.jumped && isOwnColor(cur) && cur < TRACK_LAST) {
+      const wallInTheWay = [1, 2, 3].some((k) => wallAt(cur + k));
+      if (rules.jumps && !plan.jumped && isOwnColor(cur) && cur < TRACK_LAST && !wallInTheWay) {
         cur += JUMP_DISTANCE;
         plan.jumped = true;
         plan.path.push({ pos: cur, kind: 'jump' });
@@ -403,7 +610,9 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     }
   }
 
-  return finishPlan(plan, cur);
+  finishPlan(plan, cur);
+  if (isOnTrack(cur) && state.power?.includes(trackIndex(seat, cur))) plan.power = true;
+  return plan;
 }
 
 function finishPlan(plan: MovePlan, to: number): MovePlan {
@@ -422,9 +631,10 @@ export function blastOf(plan: MovePlan): { owner: Seat; square: number; pos: num
   return null;
 }
 
-/** Track squares (absolute indices) free for a bomb or a magic box: no piece, bomb or box on them. */
+/** Track squares (absolute indices) free for a bomb, a magic box or a bridge: no piece, bomb, box, power square or bridge on them. */
 export function freeSquares(state: GameState): number[] {
-  const used = new Set([...state.bombs, ...(state.boxes ?? [])].map((b) => b.square));
+  const used = new Set([...state.bombs, ...(state.boxes ?? []), ...(state.bridges ?? [])].map((b) => b.square));
+  for (const sq of state.power ?? []) used.add(sq);
   for (const seat of state.active) {
     for (const p of state.pieces[seat]) if (isOnTrack(p)) used.add(trackIndex(seat, p));
   }
@@ -441,12 +651,13 @@ export function legalPieces(state: GameState, seat: Seat, dice: number): number[
 
 /** One representative per group of movable pieces that would make the same move. */
 export function distinctMoves(state: GameState): number[] {
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   const out: number[] = [];
   for (const j of state.movable) {
-    const pos = state.pieces[state.turn][j];
-    if (seen.has(pos)) continue;
-    seen.add(pos);
+    // A king scores differently from the pieces sharing its square, so moving it is a move of its own.
+    const key = `${state.pieces[state.turn][j]}:${isKing(state, j)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push(j);
   }
   return out;
@@ -456,8 +667,8 @@ export function seatFinished(state: GameState, seat: Seat): boolean {
   return state.pieces[seat].every((p) => p === GOAL);
 }
 
-function nextTurn(s: GameState): void {
-  s.frozen ??= noneFrozen();
+function nextTurn(s: GameState, rand: Rand): void {
+  s.frozen ??= perPiece();
   s.frozen[s.turn] = s.frozen[s.turn].map((n) => Math.max(0, n - 1));
   s.sixStreak = 0;
   s.streakMoved = [];
@@ -471,13 +682,30 @@ function nextTurn(s: GameState): void {
       s.turn = cand;
       s.phase = 'roll';
       s.turnNo++;
+      if (s.rules.powerSquares && s.turnNo >= (s.powerMovesAt ?? 0)) movePower(s, rand);
       return;
     }
   }
   s.phase = 'over';
 }
 
-export function applyRoll(state: GameState, dice: number): { state: GameState; event: RollEvent } {
+/**
+ * Counts a lost turn for a seat with nothing out of the hangar. Returns true on every STUCK_TURNS-th one in
+ * a row, for a sad reaction.
+ */
+function countStuck(s: GameState, seat: Seat): boolean {
+  s.stuck ??= SEATS.map(() => 0);
+  if (s.pieces[seat].some((p) => p !== HANGAR && p !== GOAL)) {
+    s.stuck[seat] = 0;
+    return false;
+  }
+  s.stuck[seat]++;
+  if (s.stuck[seat] < STUCK_TURNS) return false;
+  s.stuck[seat] = 0;
+  return true;
+}
+
+export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRand): { state: GameState; event: RollEvent } {
   if (state.phase !== 'roll') throw new RuleError('Not time to roll');
   if (!Number.isInteger(dice) || dice < 1 || dice > 6) throw new RuleError('Bad dice value');
 
@@ -485,6 +713,7 @@ export function applyRoll(state: GameState, dice: number): { state: GameState; e
   const seat = s.turn;
   s.seq++;
   s.dice = dice;
+  s.preRoll = { sixStreak: state.sixStreak, streakMoved: [...state.streakMoved] };
   const event: RollEvent = { type: 'roll', seat, dice, outcome: 'move', movable: [], penalized: [] };
 
   if (dice === 6) {
@@ -502,6 +731,7 @@ export function applyRoll(state: GameState, dice: number): { state: GameState; e
         if (from === GOAL || from === HANGAR) continue;
         s.pieces[seat][j] = HANGAR;
         if (s.frozen) s.frozen[seat][j] = 0;
+        if (s.kills) s.kills[seat][j] = 0;
         event.penalized.push({ piece: j, from });
       }
       event.outcome = 'penalty';
@@ -517,7 +747,7 @@ export function applyRoll(state: GameState, dice: number): { state: GameState; e
       s.sixStreak = 0;
       s.streakMoved = [];
     } else {
-      nextTurn(s);
+      nextTurn(s, rand);
     }
     return { state: s, event };
   }
@@ -530,19 +760,55 @@ export function applyRoll(state: GameState, dice: number): { state: GameState; e
   } else if (dice === 6 && s.rules.bonusRollOnSix) {
     event.outcome = 'again';
     s.dice = null;
+  } else if ((s.rerolls?.[seat] ?? 0) > 0) {
+    // The roller may spend a roll-again card on it (applyReroll) or let it go (applyPass).
+    event.outcome = 'decide';
+    s.phase = 'move';
+    s.movable = [];
   } else {
     event.outcome = 'pass';
-    nextTurn(s);
+    if (countStuck(s, seat)) event.stuck = true;
+    nextTurn(s, rand);
   }
   return { state: s, event };
 }
 
+/** The state a roll-again card rolls from: the last roll taken back, with its six streak, and the card used up. */
+export function rerollBase(state: GameState): GameState {
+  if (state.phase !== 'move' || state.dice === null) throw new RuleError('There is no roll to take back');
+  if (!((state.rerolls?.[state.turn] ?? 0) > 0)) throw new RuleError('You have no roll-again card');
+  const s = structuredClone(state);
+  s.rerolls[s.turn]--;
+  if (s.preRoll) {
+    s.sixStreak = s.preRoll.sixStreak;
+    s.streakMoved = s.preRoll.streakMoved;
+  }
+  s.phase = 'roll';
+  s.dice = null;
+  s.movable = [];
+  return s;
+}
+
+/** Throws the last roll away with a roll-again card and rolls `dice` instead, which must be played. */
+export function applyReroll(state: GameState, dice: number, rand: Rand = defaultRand): { state: GameState; event: RollEvent } {
+  const result = applyRoll(rerollBase(state), dice, rand);
+  result.event.reroll = true;
+  return result;
+}
+
+/** Lets an unplayable roll go instead of using a roll-again card on it. */
+export function applyPass(state: GameState, rand: Rand = defaultRand): { state: GameState; event: PassEvent } {
+  if (state.phase !== 'move' || state.dice === null || state.movable.length) throw new RuleError('There is a move to make');
+  const s = structuredClone(state);
+  s.seq++;
+  const event: PassEvent = { type: 'pass', seat: s.turn, dice: state.dice };
+  if (countStuck(s, s.turn)) event.stuck = true;
+  nextTurn(s, rand);
+  return { state: s, event };
+}
+
 /** `rand(n)` gives an integer in [0, n); it decides what a magic box holds. */
-export function applyMove(
-  state: GameState,
-  piece: number,
-  rand: (n: number) => number = (n) => Math.floor(Math.random() * n),
-): { state: GameState; event: MoveEvent } {
+export function applyMove(state: GameState, piece: number, rand: Rand = defaultRand): { state: GameState; event: MoveEvent } {
   if (state.phase !== 'move' || state.dice === null) throw new RuleError('Not time to move');
   if (!state.movable.includes(piece)) throw new RuleError('That plane cannot move');
 
@@ -553,13 +819,19 @@ export function applyMove(
 
   const s = structuredClone(state);
   s.seq++;
-  s.frozen ??= noneFrozen();
+  s.frozen ??= perPiece();
+  s.kills ??= perPiece();
+  s.stuck ??= SEATS.map(() => 0);
+  s.stuck[seat] = 0;
   s.pieces[seat][piece] = plan.to;
+  s.kills[seat][piece] = plan.to === HANGAR ? 0 : s.kills[seat][piece] + plan.captures.length;
   for (const c of plan.captures) {
     s.pieces[c.seat][c.piece] = HANGAR;
     s.frozen[c.seat][c.piece] = 0;
+    s.kills[c.seat][c.piece] = 0;
     s.stats[c.seat].lost++;
   }
+  if (plan.bridge) s.bridges = s.bridges.filter((b) => b.square !== plan.bridge!.square);
   s.stats[seat].captures += plan.captures.length;
   s.stats[seat].points += plan.points;
   if (plan.bombed) {
@@ -624,24 +896,79 @@ export function applyMove(
       event.gameOver = true;
       return { state: s, event };
     }
-    nextTurn(s);
+    nextTurn(s, rand);
     return { state: s, event };
   }
 
   const extra =
     (dice === 6 && s.rules.bonusRollOnSix) || (s.rules.bonusRollOnCapture && plan.captures.length > 0);
-  if (extra) {
-    event.extraRoll = true;
+  event.extraRoll = extra;
+  if (extra && dice !== 6) {
+    s.sixStreak = 0;
+    s.streakMoved = [];
+  }
+  if (plan.power) {
+    // The turn waits while the mover picks a power, then carries on as it would have.
+    s.phase = 'power';
+    s.powerThen = extra ? 'roll' : 'next';
+    s.dice = null;
+    s.movable = [];
+  } else if (extra) {
     s.phase = 'roll';
     s.dice = null;
     s.movable = [];
-    if (dice !== 6) {
-      s.sixStreak = 0;
-      s.streakMoved = [];
-    }
   } else {
-    nextTurn(s);
+    nextTurn(s, rand);
   }
+  return { state: s, event };
+}
+
+/** Carries on after a power was used: another roll for the same seat, or the next turn. */
+function resumeAfterPower(s: GameState, rand: Rand): void {
+  const then = s.powerThen;
+  s.powerThen = null;
+  s.placing = null;
+  if (then === 'roll') {
+    s.phase = 'roll';
+    s.dice = null;
+    s.movable = [];
+  } else {
+    nextTurn(s, rand);
+  }
+}
+
+/** Picks a power on a power square: a bridge to place next, or a roll-again card kept for later. */
+export function applyPower(state: GameState, choice: PowerChoice, rand: Rand = defaultRand): { state: GameState; event: PowerEvent } {
+  if (state.phase !== 'power') throw new RuleError('Not time to pick a power');
+  if (!POWER_CHOICES.includes(choice)) throw new RuleError('Unknown power');
+  const s = structuredClone(state);
+  s.seq++;
+  const event: PowerEvent = { type: 'power', seat: s.turn, choice };
+  if (choice === 'reroll') {
+    s.rerolls ??= SEATS.map(() => 0);
+    s.rerolls[s.turn]++;
+    resumeAfterPower(s, rand);
+  } else if (freeSquares(s).length) {
+    s.phase = 'bridge';
+    s.placing = choice;
+  } else {
+    resumeAfterPower(s, rand);
+  }
+  return { state: s, event };
+}
+
+/** Places the bridge picked on a power square, starting from this absolute track square. */
+export function applyBridge(state: GameState, square: number, rand: Rand = defaultRand): { state: GameState; event: BridgeEvent } {
+  if (state.phase !== 'bridge' || !state.placing) throw new RuleError('Not time to place a bridge');
+  if (!freeSquares(state).includes(square)) throw new RuleError('A bridge can only start on an empty track square');
+  const s = structuredClone(state);
+  s.seq++;
+  const kind = state.placing;
+  const to = (square + BRIDGE_SPAN[kind] + TRACK_LEN) % TRACK_LEN;
+  s.bridges ??= [];
+  s.bridges.push({ square, to, kind, owner: s.turn });
+  const event: BridgeEvent = { type: 'bridge', seat: s.turn, kind, square, to };
+  resumeAfterPower(s, rand);
   return { state: s, event };
 }
 
@@ -659,14 +986,14 @@ export function applyBox(state: GameState, square: number): { state: GameState; 
   return { state: s, event };
 }
 
-export function applyBomb(state: GameState, square: number): { state: GameState; event: BombEvent } {
+export function applyBomb(state: GameState, square: number, rand: Rand = defaultRand): { state: GameState; event: BombEvent } {
   if (state.phase !== 'bomb') throw new RuleError('Not time to place a bomb');
   if (!freeSquares(state).includes(square)) throw new RuleError('A bomb can only go on an empty track square');
   const s = structuredClone(state);
   s.seq++;
   const event: BombEvent = { type: 'bomb', seat: s.turn, square };
   s.bombs.push({ square, owner: s.turn });
-  nextTurn(s);
+  nextTurn(s, rand);
   return { state: s, event };
 }
 

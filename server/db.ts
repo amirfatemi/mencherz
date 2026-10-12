@@ -48,7 +48,11 @@ export function initSchema(db: Db) {
       updated_at INTEGER NOT NULL
     );
   `);
-  addColumns(db, 'users', { total_points: 'INTEGER NOT NULL DEFAULT 0' });
+  addColumns(db, 'users', {
+    total_points: 'INTEGER NOT NULL DEFAULT 0',
+    total_captures: 'INTEGER NOT NULL DEFAULT 0',
+    total_lost: 'INTEGER NOT NULL DEFAULT 0',
+  });
 }
 
 /** Adds columns that databases created by older versions lack. */
