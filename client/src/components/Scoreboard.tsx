@@ -37,7 +37,7 @@ function Marks({ s, vests, userId }: { s: SeatView; vests: number; userId: numbe
         </span>
       )}
       {vests > 0 && (
-        <span className="mark" title="A protective vest stops the next bomb">
+        <span className="mark" title="Vests on their pieces: each stops that piece's next bomb">
           🦺{vests > 1 ? `×${vests}` : ''}
         </span>
       )}
@@ -93,7 +93,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
                 <td className="who">
                   <span className="swatch" />
                   <span className="who-name">{seatName(seats, seat)}</span>
-                  <Marks s={seats[seat]} vests={game.vests?.[seat] ?? 0} userId={userId} />
+                  <Marks s={seats[seat]} vests={(game.vested?.[seat] ?? []).reduce((n, v) => n + v, 0)} userId={userId} />
                 </td>
                 <td>
                   {st.home}/{PIECES_PER_SEAT}

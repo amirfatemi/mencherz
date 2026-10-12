@@ -1,9 +1,26 @@
-import { GOAL, HANGAR, HOME_FIRST, TAKEOFF, TRACK_LAST, isOnTrack, trackIndex, type Seat } from './board.ts';
 import {
+  FLIGHT_DISTANCE,
+  FLIGHT_FROM,
+  GOAL,
+  HANGAR,
+  HOME_FIRST,
+  HOME_LAST,
+  TAKEOFF,
+  TRACK_LAST,
+  flightCrossedSeat,
+  isOnTrack,
+  trackIndex,
+  type Seat,
+} from './board.ts';
+import {
+  POWER_CHOICES,
+  siratTargets,
   bridgeTarget,
   distinctMoves,
   freeSquares,
   planMove,
+  safeSquareOptions,
+  vestOptions,
   type BridgeKind,
   type GameState,
   type MovePlan,
@@ -188,28 +205,86 @@ export function chooseBridge(state: GameState, kind: BridgeKind, level: BotLevel
   return best;
 }
 
-/** Picks a power: the better of the best bridge of each kind, or a magic box when neither does much. */
-export function choosePower(state: GameState, level: BotLevel, rand: () => number = Math.random): PowerChoice {
-  if (level === 'easy') return (['heaven', 'hell', 'box'] as const)[Math.floor(rand() * 3)];
+/** A power picked by a bot, with whose home column a Sirat bridge opens. */
+export interface PowerPick {
+  choice: PowerChoice;
+  over?: Seat;
+}
+
+/** The bot's piece most worth protecting with a safe square: likely to be hit, and far along. */
+function safeCandidate(state: GameState): { square: number; value: number } | null {
+  const me = state.turn;
+  const options = new Set(safeSquareOptions(state));
+  let best: { square: number; value: number } | null = null;
+  state.pieces[me].forEach((p, j) => {
+    if (!isOnTrack(p) || !options.has(trackIndex(me, p))) return;
+    const worth = threatTo(state, me, j) * value(p);
+    if (!best || worth > best.value) best = { square: trackIndex(me, p), value: worth };
+  });
+  return best;
+}
+
+/** For each other player, how much a Sirat bridge over their home column might win: their pieces there, times the chance of taking that flight soon. */
+function siratValues(state: GameState): { over: Seat; value: number }[] {
+  const me = state.turn;
+  return siratTargets(state).map((over) => {
+    const inColumn = state.pieces[over].filter((p) => p >= HOME_FIRST && p <= HOME_LAST).length;
+    const square = trackIndex(flightCrossedSeat(over), FLIGHT_FROM);
+    let chance = 0;
+    for (const p of state.pieces[me]) {
+      if (p < TAKEOFF || p >= TRACK_LAST) continue;
+      for (let d = 1; d <= 12 && p + d + FLIGHT_DISTANCE <= TRACK_LAST; d++) {
+        if (trackIndex(me, p + d) === square) chance += d <= 6 ? 1 / 6 : 1 / 36;
+      }
+    }
+    return { over, value: chance * inColumn * 10 };
+  });
+}
+
+/** Picks a power: whichever of the bridges, a Sirat bridge or a safe square looks best, or a magic box when none does much. */
+export function choosePower(state: GameState, level: BotLevel, rand: () => number = Math.random): PowerPick {
+  const targets = siratTargets(state);
+  if (level === 'easy') {
+    const choice = POWER_CHOICES[Math.floor(rand() * POWER_CHOICES.length)];
+    return choice === 'sirat' ? { choice, over: targets[Math.floor(rand() * targets.length)] } : { choice };
+  }
   const free = freeSquares(state);
   const best = (kind: BridgeKind) => {
     const values = bridgeValues(state, kind);
     return Math.max(0, ...free.map((sq) => values.get(sq) ?? 0));
   };
-  const heaven = best('heaven');
-  const hell = best('hell');
-  // A box in front of the others is worth a little whatever it holds; a bridge's value is in squares over a turn or two.
-  const box = 1.5;
-  if (box >= heaven && box >= hell) return 'box';
-  return heaven >= hell ? 'heaven' : 'hell';
+  const sirat = siratValues(state).sort((a, b) => b.value - a.value)[0];
+  // A box in front of the others is worth a little whatever it holds; the rest are valued in squares over a turn or two.
+  const options: { pick: PowerPick; value: number }[] = [
+    { pick: { choice: 'box' }, value: 1.5 },
+    { pick: { choice: 'heaven' }, value: best('heaven') },
+    { pick: { choice: 'hell' }, value: best('hell') },
+    { pick: { choice: 'safe' }, value: (safeCandidate(state)?.value ?? 0) * 0.5 },
+  ];
+  if (sirat) options.push({ pick: { choice: 'sirat', over: sirat.over }, value: sirat.value });
+  return options.reduce((a, b) => (b.value > a.value ? b : a)).pick;
+}
+
+/** Picks where a safe square goes: under the piece most worth protecting, or else just ahead of the bot's lead piece. */
+export function chooseSafe(state: GameState, rand: () => number = Math.random): number {
+  const pick = safeCandidate(state);
+  if (pick) return pick.square;
+  const options = safeSquareOptions(state);
+  return options[Math.floor(rand() * options.length)];
+}
+
+/** Picks who wears a vest: the piece furthest along, which has most to lose to a bomb. */
+export function chooseVest(state: GameState): number {
+  const pieces = state.pieces[state.turn];
+  return vestOptions(state).reduce((best, j) => (pieces[j] > pieces[best] ? j : best));
 }
 
 /** One thing to do in the current phase. Rolls carry no dice: whoever applies the action rolls. */
 export type BotAction =
   | { type: 'roll' }
-  | { type: 'move'; piece: number }
+  | { type: 'move' | 'vest'; piece: number }
   | { type: 'bomb' | 'box' | 'place'; square: number }
-  | { type: 'power'; choice: PowerChoice };
+  | { type: 'power'; choice: PowerChoice; over?: Seat };
 
 /** What a bot does next, whatever the phase; also plays the turn of a player whose time ran out. */
 export function botAction(state: GameState, level: BotLevel, rand: () => number = Math.random): BotAction | null {
@@ -223,10 +298,13 @@ export function botAction(state: GameState, level: BotLevel, rand: () => number 
     case 'box':
       return { type: 'box', square: chooseBox(state, level, rand) };
     case 'power':
-      return { type: 'power', choice: choosePower(state, level, rand) };
+      return { type: 'power', ...choosePower(state, level, rand) };
+    case 'vest':
+      return { type: 'vest', piece: chooseVest(state) };
     case 'place':
       // A box from a power square goes where a bomb would: in front of the others' pieces.
       if (state.placing === 'box') return { type: 'place', square: chooseBomb(state, level, rand) };
+      if (state.placing === 'safe') return { type: 'place', square: chooseSafe(state, rand) };
       return state.placing ? { type: 'place', square: chooseBridge(state, state.placing, level, rand) } : null;
     default:
       return null;

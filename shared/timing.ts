@@ -30,8 +30,8 @@ export function eventDuration(event: GameEvent | null | undefined, holdPasses = 
   if (event.type === 'roll') {
     return ROLL_MS + (event.penalized.length ? CAPTURE_MS : 0) + (event.outcome === 'pass' && holdPasses ? PASS_HOLD_MS : 0);
   }
-  if (event.type === 'bomb' || event.type === 'box' || event.type === 'bridge') return BOMB_MS;
-  if (event.type === 'power') return POWER_MS;
+  if (event.type === 'bomb' || event.type === 'box' || event.type === 'bridge' || event.type === 'safe') return BOMB_MS;
+  if (event.type === 'power' || event.type === 'vest') return POWER_MS;
   let ms = settledAt(event);
   // Knocked-out pieces, or the mover itself after a bomb, fly back to the hangar.
   if (event.captures.length || event.to === HANGAR) ms += CAPTURE_MS;

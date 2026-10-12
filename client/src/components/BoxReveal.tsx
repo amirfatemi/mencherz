@@ -19,7 +19,7 @@ export function BoxRevealCard({ reveal, seats }: { reveal: BoxReveal; seats: Sea
         ? ['🦺', 'A bomb — but the vest saved it!', `${who}'s piece stays on the board. The vest is used up.`]
         : ['💣', 'A bomb!', `${who}'s piece goes back to the hangar.${box.points ? ` +${box.points} for ${owner}.` : ''}`]
       : box.outcome === 'vest'
-        ? ['🦺', 'A protective vest!', `The next bomb ${who} lands on won't hurt.`]
+        ? ['🦺', 'A protective vest!', `${who} picks a piece to wear it: that piece's next bomb won't hurt.`]
         : box.outcome === 'plus'
           ? ['💰', `+${POINTS.boxBonus} points!`, `${who} wins ${POINTS.boxBonus} points.`]
           : box.outcome === 'freeze'

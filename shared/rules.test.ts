@@ -9,6 +9,7 @@ import {
   HANGAR,
   HOME,
   HOME_FIRST,
+  HOME_LAST,
   SEATS,
   TAKEOFF,
   TAKEOFF_CELLS,
@@ -34,9 +35,12 @@ import {
   applyPlace,
   applyPower,
   applyRoll,
+  applyVest,
   distinctMoves,
+  vestOptions,
   freeSquares,
   createGame,
+  placeOptions,
   planMove,
   wallSquares,
   BOX_OUTCOMES,
@@ -81,7 +85,9 @@ function botStep(g: GameState, level: BotLevel) {
     case 'place':
       return applyPlace(g, a.square, randInt);
     case 'power':
-      return applyPower(g, a.choice, randInt);
+      return applyPower(g, a.choice, randInt, a.over);
+    case 'vest':
+      return applyVest(g, a.piece, randInt);
   }
 }
 
@@ -626,18 +632,36 @@ describe('magic boxes', () => {
     assert.equal(state.stats[0].lost, 1);
   });
 
-  test('a vest stops the next bomb, then is used up', () => {
+  test('a vest goes on one piece of your choice, in the hangar or out, and stops its next bomb', () => {
     const { state } = onBox('vest');
     assert.equal(state.pieces[0][0], 32);
-    assert.deepEqual(state.vests, [1, 0, 0, 0]);
-    state.bombs = [{ square: trackIndex(0, 35), owner: 1 }];
-    Object.assign(state, { turn: 0, phase: 'move', dice: 3, movable: [0, 1] });
-    const r = applyMove(state, 0);
+    assert.equal(state.phase, 'vest', 'the mover picks who wears it');
+    assert.equal(state.turn, 0);
+    assert.deepEqual(vestOptions(state), [0, 1, 2, 3]);
+    assert.throws(() => applyMove(state, 0), /Not time/);
+    const worn = applyVest(state, 1);
+    assert.deepEqual(worn.event, { type: 'vest', seat: 0, piece: 1 });
+    assert.deepEqual(worn.state.vested[0], [0, 1, 0, 0]);
+    assert.equal(worn.state.turn, 1, 'then the turn passes as usual');
+    const g = worn.state;
+    g.bombs = [{ square: trackIndex(0, 35), owner: 1 }, { square: trackIndex(0, 8), owner: 1 }];
+    Object.assign(g, { turn: 0, phase: 'move', dice: 3, movable: [0, 1] });
+    assert.equal(planMove(g, 0, 0, 3)!.bombed?.saved, false, "the other piece isn't covered");
+    const r = applyMove(g, 1);
     assert.equal(r.event.bombed?.saved, true);
-    assert.equal(r.state.pieces[0][0], 35, 'the piece stays on the board');
-    assert.deepEqual(r.state.vests, [0, 0, 0, 0]);
-    assert.deepEqual(r.state.bombs, []);
+    assert.equal(r.state.pieces[0][1], 8, 'the piece stays on the board');
+    assert.deepEqual(r.state.vested[0], [0, 0, 0, 0], 'used up');
     assert.equal(r.state.stats[1].points, 0, 'no points for a bomb the vest stopped');
+  });
+
+  test('a vest stays on its piece through a knock-out', () => {
+    const g = at(game([0, 1]), 0, [30]);
+    g.vested[0][0] = 1;
+    at(g, 1, [sameSquare(0, 28, 1)]);
+    Object.assign(g, { turn: 1, phase: 'move', dice: 2, movable: [0] });
+    const r = applyMove(g, 0);
+    assert.equal(r.state.pieces[0][0], HANGAR);
+    assert.equal(r.state.vested[0][0], 1);
   });
 
   test('a points box gives 20 or takes 10, and the piece stays put', () => {
@@ -1043,6 +1067,79 @@ describe('power squares and bridges', () => {
     const plan = planMove(g, 0, 0, 2)!;
     assert.equal(plan.bridge, undefined);
     assert.equal(plan.to, 50, 'it jumps from its colour as usual');
+  });
+});
+
+describe('safe squares and the Sirat bridge', () => {
+  // Seat 0 is on the power square (its square 5) and picks a power.
+  function power(seats: Seat[] = [0, 1]) {
+    const g = at(game(seats, { powerSquares: true }), 0, [3, 20]);
+    g.power = [trackIndex(0, 5)];
+    Object.assign(g, { phase: 'move', dice: 2, movable: [0, 1] });
+    return applyMove(g, 0).state;
+  }
+
+  test("a safe square keeps its owner's piece from being knocked out for two rounds", () => {
+    let g = applyPower(power(), 'safe').state;
+    assert.equal(g.phase, 'place');
+    const square = trackIndex(0, 20);
+    assert.ok(placeOptions(g).includes(square), 'it can go under your own piece');
+    assert.ok(!placeOptions(g).includes(g.power[0]), 'not on the power square');
+    g = applyPlace(g, square).state;
+    assert.deepEqual(g.safe, [{ square, owner: 0, until: g.turnNo + 3 }]);
+    at(g, 1, [sameSquare(0, 18, 1)]);
+    Object.assign(g, { turn: 1, phase: 'move', dice: 2, movable: [0] });
+    const r = applyMove(g, 0);
+    assert.deepEqual(r.event.captures, [], 'the opponent lands, but hits nothing');
+    assert.equal(r.state.pieces[0][1], 20);
+    assert.equal(trackIndex(1, r.state.pieces[1][0]), square, 'both stand on it');
+    assert.ok(!freeSquares(r.state).includes(square), 'nothing else can go there meanwhile');
+  });
+
+  test('a safe square protects only its owner, and lasts two rounds', () => {
+    // Placed on seat 0's turn 1; nobody has anything to move after that, so every roll passes.
+    let g = at(applyPlace(applyPower(power(), 'safe').state, trackIndex(0, 20)).state, 0, []);
+    assert.equal(g.turn, 1);
+    for (let turn = 0; turn < 2; turn++) g = applyRoll(g, 3).state;
+    assert.equal(g.safe.length, 1, 'still there for the other player\'s second turn');
+    g = applyRoll(g, 3).state;
+    assert.equal(g.turn, 0);
+    assert.deepEqual(g.safe, [], 'gone when its owner comes round the second time');
+  });
+
+  test("the Sirat bridge opens a home column to every other colour's flight, and knocks out the whole column", () => {
+    const g = applyPower(power([0, 1, 2]), 'sirat', undefined, 2).state;
+    assert.deepEqual(g.sirat, { over: 2, owner: 0, until: 1 + 2 * 3 }, 'two rounds of three players from turn 1');
+    at(g, 2, [HOME_FIRST, HOME_FIRST + 2, HOME_LAST]);
+    // Blue lands on the yellow flight square, whose line crosses green's home column.
+    const start = sameSquare(0, FLIGHT_FROM, 1) - 2;
+    at(g, 1, [start]);
+    Object.assign(g, { turn: 1, phase: 'move', dice: 2, movable: [0] });
+    const plan = planMove(g, 1, 0, 2)!;
+    assert.equal(plan.flew, true);
+    assert.equal(trackIndex(1, plan.to), trackIndex(0, FLIGHT_FROM + 12));
+    assert.deepEqual(
+      plan.captures.map((c) => [c.seat, c.from]),
+      [
+        [2, HOME_FIRST],
+        [2, HOME_FIRST + 2],
+        [2, HOME_LAST],
+      ],
+    );
+    const own = at(structuredClone(g), 0, [FLIGHT_FROM - 2]);
+    Object.assign(own, { turn: 0 });
+    assert.equal(planMove(own, 0, 0, 2)!.captures.length, 3, "yellow's own flight takes the whole column too");
+    const green = at(structuredClone(g), 2, [sameSquare(0, FLIGHT_FROM, 2) - 2]);
+    assert.equal(planMove(green, 2, 0, 2)!.flew, false, "green can't use the bridge over its own column");
+  });
+
+  test('the Sirat bridge needs another player still playing, and ends after two rounds', () => {
+    assert.throws(() => applyPower(power(), 'sirat', undefined, 0), /another player/);
+    let g = at(applyPower(power(), 'sirat', undefined, 1).state, 0, []);
+    for (let turn = 0; turn < 2; turn++) g = applyRoll(g, 3).state;
+    assert.ok(g.sirat);
+    g = applyRoll(g, 3).state;
+    assert.equal(g.sirat, null);
   });
 });
 

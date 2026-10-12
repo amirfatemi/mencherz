@@ -22,6 +22,7 @@ import {
   applyPlace,
   applyPower,
   applyRoll,
+  applyVest,
   createGame,
   RuleError,
   POWER_CHOICES,
@@ -77,7 +78,7 @@ interface Room {
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_EVENTS = 60;
-const BOT_THINK_MS = { roll: 650, move: 550, bomb: 1100, box: 700, power: 900, place: 1100 };
+const BOT_THINK_MS = { roll: 650, move: 550, bomb: 1100, box: 700, power: 900, place: 1100, vest: 700 };
 const rand = (n: number) => randomInt(n);
 const OFFLINE_GRACE_MS = 6000;
 const KEEP_FINISHED_MS = 6 * 3600 * 1000;
@@ -355,7 +356,8 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       else if (a.type === 'bomb') commit(room, applyBomb(g, a.square, rand));
       else if (a.type === 'box') commit(room, applyBox(g, a.square));
       else if (a.type === 'place') commit(room, applyPlace(g, a.square, rand));
-      else if (a.type === 'power') commit(room, applyPower(g, a.choice, rand));
+      else if (a.type === 'power') commit(room, applyPower(g, a.choice, rand, a.over));
+      else if (a.type === 'vest') commit(room, applyVest(g, a.piece, rand));
     } catch (err) {
       console.error(`Auto move failed in ${room.code}:`, err);
     }
@@ -691,7 +693,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         requireTurn(room, user);
         const choice = req?.choice as PowerChoice;
         if (!POWER_CHOICES.includes(choice)) throw new InputError('Unknown power');
-        commit(room, applyPower(room.game!, choice, rand));
+        commit(room, applyPower(room.game!, choice, rand, choice === 'sirat' ? parseSeat(req?.over) : undefined));
         return null;
       }),
     );
@@ -704,6 +706,18 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         const square = Number(req?.square);
         if (!Number.isInteger(square)) throw new InputError('Invalid square');
         commit(room, applyPlace(room.game!, square, rand));
+        return null;
+      }),
+    );
+
+    socket.on(
+      'game:vest',
+      handler((req) => {
+        const room = getRoom(req?.code);
+        requireTurn(room, user);
+        const piece = Number(req?.piece);
+        if (!Number.isInteger(piece)) throw new InputError('Invalid piece');
+        commit(room, applyVest(room.game!, piece, rand));
         return null;
       }),
     );

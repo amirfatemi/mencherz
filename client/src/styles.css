@@ -1096,6 +1096,31 @@ select:focus {
   font-size: 34px;
 }
 
+.sirat-line {
+  stroke: #ffb300;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: 12 7;
+  opacity: 0.85;
+  animation: bridge-flow 1s linear infinite;
+}
+
+.sirat-start {
+  fill: none;
+  stroke: #ffb300;
+  stroke-width: 4;
+}
+
+.safe-square.ghost {
+  opacity: 0.75;
+}
+
+.btn.seat-pick {
+  background: var(--seat);
+  color: #fff;
+  border-color: transparent;
+}
+
 .power-choices {
   display: flex;
   flex-wrap: wrap;
@@ -1120,6 +1145,12 @@ select:focus {
   fill: rgba(150, 210, 255, 0.7);
   stroke: #4a9fdc;
   stroke-width: 3;
+}
+
+.piece-vest circle {
+  fill: #fff3e0;
+  stroke: #ef6c00;
+  stroke-width: 2;
 }
 
 .piece-frozen circle {
@@ -1196,6 +1227,15 @@ select:focus {
 .dice-help {
   flex: 1;
   font-size: 0.95rem;
+}
+
+/* Nothing to say beside the dice when it's yours to roll: tap the dice itself, centred. */
+.dice-row.solo {
+  justify-content: center;
+}
+
+.dice-row.solo .dice-help {
+  display: none;
 }
 
 .dice {

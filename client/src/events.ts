@@ -29,8 +29,15 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
   if (ev.type === 'bomb') return `${who} dropped a bomb 💣`;
   if (ev.type === 'box') return `${who} hid a magic box 🎁`;
   if (ev.type === 'power') {
-    return ev.choice === 'box' ? `${who} picked a magic box 🎁` : `${who} picked a ${ev.choice} bridge ${ev.choice === 'heaven' ? '🌈' : '🔥'}`;
+    if (ev.choice === 'sirat') {
+      return `${who} opened the Sirat bridge 🌉 over ${ev.over === undefined ? 'a' : `${seatName(seats, ev.over)}'s`} home column — every flight over it knocks out the whole column`;
+    }
+    if (ev.choice === 'box') return `${who} picked a magic box 🎁`;
+    if (ev.choice === 'safe') return `${who} picked a safe square 🛡`;
+    return `${who} picked a ${ev.choice} bridge ${ev.choice === 'heaven' ? '🌈' : '🔥'}`;
   }
+  if (ev.type === 'safe') return `${who} made a square safe 🛡 for two rounds`;
+  if (ev.type === 'vest') return `${who} put the vest 🦺 on a piece`;
   if (ev.type === 'bridge') return `${who} built a ${ev.kind} bridge ${ev.kind === 'heaven' ? '🌈 +10' : '🔥 −20'}`;
   if (ev.to === TAKEOFF) return `${who} launched a plane ✈`;
   const bits = [`${who} moved ${ev.dice}`];
@@ -53,7 +60,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     const owner = seatName(seats, ev.box.owner);
     const inside = {
       bomb: ev.box.saved ? 'a bomb, but the vest saved it 🦺' : `a bomb! 💣${ev.box.points ? ` +${ev.box.points} for ${owner}` : ''}`,
-      vest: 'a protective vest 🦺',
+      vest: 'a protective vest 🦺 for one piece',
       plus: `+${POINTS.boxBonus} points 💰`,
       minus: `−${POINTS.boxPenalty} points`,
       freeze: 'ice 🧊 — that piece sits out a turn',

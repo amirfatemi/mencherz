@@ -54,6 +54,8 @@ interface Props {
   king?: boolean;
   /** Two or more of a colour on a track square: a wall others can't pass. */
   wall?: boolean;
+  /** Wears a protective vest, which stops its next bomb. */
+  vest?: boolean;
   ghost?: boolean;
   onClick?: () => void;
   onHover?: (on: boolean) => void;
@@ -123,6 +125,7 @@ export const Piece = memo(function Piece({
   frozen,
   king,
   wall,
+  vest,
   ghost,
   onClick,
   onHover,
@@ -179,6 +182,15 @@ export const Piece = memo(function Piece({
           <circle r={size * 0.5} fill="#fff" stroke={COLOR_DARK[seat]} strokeWidth={2} />
           <text textAnchor="middle" dy="0.35em" fontSize={size * 0.68} fill={COLOR_DARK[seat]}>
             {count}
+          </text>
+        </g>
+      )}
+      {vest && !ghost && (
+        <g transform={`translate(${-size * 0.85} ${size * 0.25})`} className="piece-vest">
+          <title>Wears a protective vest: its next bomb won't hurt</title>
+          <circle r={size * 0.5} />
+          <text textAnchor="middle" dy="0.35em" fontSize={size * 0.6}>
+            🦺
           </text>
         </g>
       )}

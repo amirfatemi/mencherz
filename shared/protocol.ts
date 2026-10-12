@@ -158,9 +158,11 @@ export interface ClientToServer {
   'game:bomb': (req: { code: string; square: number }, ack: Ack<null>) => void;
   /** Before the first roll: hide your magic box on this absolute track square. */
   'game:box': (req: { code: string; square: number }, ack: Ack<null>) => void;
-  /** On a power square: pick a heaven bridge, a hell bridge or a magic box. */
-  'game:power': (req: { code: string; choice: PowerChoice }, ack: Ack<null>) => void;
-  /** Put the bridge or box picked on a power square on this absolute track square. */
+  /** On a power square: pick a power. A Sirat bridge names whose home column it opens (`over`). */
+  'game:power': (req: { code: string; choice: PowerChoice; over?: Seat }, ack: Ack<null>) => void;
+  /** Put the vest from a magic box on this piece. */
+  'game:vest': (req: { code: string; piece: number }, ack: Ack<null>) => void;
+  /** Put the bridge, box or safe square picked on a power square on this absolute track square. */
   'game:place': (req: { code: string; square: number }, ack: Ack<null>) => void;
   /** Host only: stop or restart the game clock. */
   'game:pause': (req: { code: string; paused: boolean }, ack: Ack<null>) => void;

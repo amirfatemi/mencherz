@@ -1,8 +1,8 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { COLOR_HEX } from '../../../shared/board.ts';
+import { COLOR_HEX, type Seat } from '../../../shared/board.ts';
 import { peopleIn, type PublicUser, type SeatView } from '../../../shared/protocol.ts';
 import { RANKED_MIN_PEOPLE } from '../../../shared/scoring.ts';
-import { distinctMoves, freeSquares, type PowerChoice } from '../../../shared/rules.ts';
+import { distinctMoves, freeSquares, placeOptions, siratTargets, vestOptions, type PowerChoice } from '../../../shared/rules.ts';
 import { seatName } from '../events.ts';
 import { navigate } from '../router.ts';
 import { call } from '../socket.ts';
@@ -54,6 +54,8 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [help, setHelp] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  // The Sirat bridge needs a second pick: whose home column it opens.
+  const [pickingSirat, setPickingSirat] = useState(false);
   const [pieceStyle, setPieceStyle] = usePieceStyle();
   const gifs = view.settings.gifs;
   useEffect(() => {
@@ -72,7 +74,9 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   // On a shared device the turn belongs to whoever is holding it, so say their name.
   const you = mySeat === game.turn ? 'You' : seatName(view.seats, game.turn);
   const canRoll = myTurn && game.phase === 'roll' && !busy;
-  const movable = myTurn && game.phase === 'move' && !busy ? game.movable : [];
+  // Who wears a vest from a magic box is picked on the board, like a move.
+  const givingVest = myTurn && game.phase === 'vest' && !busy;
+  const movable = myTurn && game.phase === 'move' && !busy ? game.movable : givingVest ? vestOptions(game) : [];
   const placingBomb = myTurn && game.phase === 'bomb' && !busy;
   const hidingBox = myTurn && game.phase === 'box' && !busy;
   const pickingPower = myTurn && game.phase === 'power' && !busy;
@@ -91,15 +95,18 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
     setError(null);
     req.catch((e: Error) => setError(e.message)).finally(() => setPending(false));
   };
-  const act = (event: 'game:roll' | 'game:move' | 'game:bomb' | 'game:box' | 'game:place', n?: number) =>
+  const act = (event: 'game:roll' | 'game:move' | 'game:vest' | 'game:bomb' | 'game:box' | 'game:place', n?: number) =>
     send(
       event === 'game:roll'
         ? call(event, { code: view.code })
-        : event === 'game:move'
-          ? call('game:move', { code: view.code, piece: n! })
+        : event === 'game:move' || event === 'game:vest'
+          ? call(event, { code: view.code, piece: n! })
           : call(event, { code: view.code, square: n! }),
     );
-  const pickPower = (choice: PowerChoice) => send(call('game:power', { code: view.code, choice }));
+  const pickPower = (choice: PowerChoice, over?: Seat) => {
+    setPickingSirat(false);
+    send(call('game:power', { code: view.code, choice, over }));
+  };
   const setPaused = (on: boolean) => call('game:pause', { code: view.code, paused: on }).catch((e: Error) => setError(e.message));
 
   useEffect(() => {
@@ -134,6 +141,8 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
     status = `🎁 ${mySeat === game.turn ? 'Hide' : `${you}, hide`} your magic box on any square`;
   } else if (myTurn && game.phase === 'bomb') {
     status = `💣 ${mySeat === game.turn ? 'Drop' : `${you}, drop`} your bomb on any empty square`;
+  } else if (myTurn && game.phase === 'vest') {
+    status = `🦺 A vest! ${mySeat === game.turn ? 'Pick' : `${you}, pick`} the piece that wears it`;
   } else if (myTurn && game.phase === 'power') {
     status = `⚡ Power square! ${mySeat === game.turn ? 'Pick' : `${you}, pick`} a power`;
   } else if (myTurn && game.phase === 'place') {
@@ -141,7 +150,9 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
     status =
       game.placing === 'box'
         ? `🎁 ${pick} where to hide your magic box`
-        : `${game.placing === 'heaven' ? '🌈' : '🔥'} ${pick} where your ${game.placing} bridge starts`;
+        : game.placing === 'safe'
+          ? `🛡 ${pick} a square to make safe`
+          : `${game.placing === 'heaven' ? '🌈' : '🔥'} ${pick} where your ${game.placing} bridge starts`;
   } else if (myTurn) {
     const whose = mySeat === game.turn ? 'Your' : `${you}'s`;
     status = game.phase === 'roll' ? `${whose} turn — roll the dice` : forced ? `${you} rolled ${game.dice} — move your piece` : `${you} rolled ${game.dice} — pick a piece`;
@@ -154,10 +165,14 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
           ? 'is placing a bomb 💣'
           : game.phase === 'power'
             ? 'is picking a power ⚡'
+            : game.phase === 'vest'
+              ? 'is putting a vest on a piece 🦺'
             : game.phase === 'place'
               ? game.placing === 'box'
                 ? 'is hiding a magic box 🎁'
-                : `is building a ${game.placing} bridge ${game.placing === 'heaven' ? '🌈' : '🔥'}`
+                : game.placing === 'safe'
+                  ? 'is making a square safe 🛡'
+                  : `is building a ${game.placing} bridge ${game.placing === 'heaven' ? '🌈' : '🔥'}`
               : s.kind === 'bot'
             ? 'is thinking'
             : game.phase === 'roll'
@@ -185,9 +200,9 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
             pieceStyle={pieceStyle}
             popups={stream.popups}
             reactions={stream.reactions}
-            targets={placingBomb || hidingBox || placing ? freeSquares(game) : []}
+            targets={placing ? placeOptions(game) : placingBomb || hidingBox ? freeSquares(game) : []}
             targetKind={hidingBox ? 'box' : (placing ?? 'bomb')}
-            onMove={(p) => act('game:move', p)}
+            onMove={(p) => act(givingVest ? 'game:vest' : 'game:move', p)}
             onTarget={(sq) => act(hidingBox ? 'game:box' : placing ? 'game:place' : 'game:bomb', sq)}
           />
           {stream.reveal && <BoxRevealCard key={stream.reveal.key} reveal={stream.reveal} seats={view.seats} />}
@@ -213,29 +228,43 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
         <section className="card turn-card" style={{ '--turn': COLOR_HEX[game.turn] } as CSSProperties}>
           <div className="turn-head">
             <div className="turn-status">{status}</div>
-            {isHost && !over && (
-              <button className="btn ghost small" onClick={() => setPaused(!view.paused)} title={view.paused ? 'Resume the game' : 'Pause the game and its timer'}>
-                {view.paused ? '▶ Resume' : '⏸ Pause'}
-              </button>
-            )}
           </div>
-          <div className="dice-row">
+          <div className={`dice-row${canRoll ? ' solo' : ''}`}>
             {game.phase === 'box' || (game.phase === 'place' && game.placing === 'box') ? (
               <BoxBadge color={COLOR_HEX[game.turn]} />
             ) : game.phase === 'bomb' && !stream.rolling ? (
               <BombBadge color={COLOR_HEX[game.turn]} />
             ) : game.phase === 'power' ? (
               <EmojiBadge icon="⚡" color={COLOR_HEX[game.turn]} label="Power square" />
+            ) : game.phase === 'vest' ? (
+              <EmojiBadge icon="🦺" color={COLOR_HEX[game.turn]} label="Protective vest" />
             ) : game.phase === 'place' ? (
-              <EmojiBadge icon={game.placing === 'heaven' ? '🌈' : '🔥'} color={COLOR_HEX[game.turn]} label={`${game.placing} bridge`} />
+              <EmojiBadge
+                icon={game.placing === 'safe' ? '🛡' : game.placing === 'heaven' ? '🌈' : '🔥'}
+                color={COLOR_HEX[game.turn]}
+                label={game.placing === 'safe' ? 'Safe square' : `${game.placing} bridge`}
+              />
             ) : (
               <Dice value={stream.rolling ? null : diceValue} rolling={stream.rolling} color={COLOR_HEX[diceSeat]} canRoll={canRoll} onRoll={() => act('game:roll')} />
             )}
             <div className="dice-help">
-              {canRoll ? (
-                <button className="btn primary big" onClick={() => act('game:roll')}>
-                  Roll
-                </button>
+              {canRoll ? null : givingVest ? (
+                <span>
+                  {TOUCH ? 'Tap one of your glowing pieces, then tap it again.' : 'Click one of your glowing pieces.'} It wears the vest — in the hangar or out —
+                  until it stops a bomb.
+                </span>
+              ) : pickingPower && pickingSirat ? (
+                <div className="power-choices">
+                  <span>🌉 Open whose home column?</span>
+                  {siratTargets(game).map((seat) => (
+                    <button key={seat} className="btn seat-pick" style={{ '--seat': COLOR_HEX[seat] } as CSSProperties} onClick={() => pickPower('sirat', seat)}>
+                      {seatName(view.seats, seat)}
+                    </button>
+                  ))}
+                  <button className="btn ghost" onClick={() => setPickingSirat(false)}>
+                    ← Back
+                  </button>
+                </div>
               ) : pickingPower ? (
                 <div className="power-choices">
                   <button className="btn primary" onClick={() => pickPower('heaven')} title="Whoever lands on its start, you too, jumps 10 squares ahead. Used once.">
@@ -247,9 +276,24 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                   <button className="btn ghost" onClick={() => pickPower('box')} title="Hide a magic box on any empty square. Whoever lands on it first opens it — you too.">
                     🎁 Magic box
                   </button>
+                  <button className="btn ghost" onClick={() => pickPower('safe')} title="For two rounds, your pieces on that square can't be knocked out.">
+                    🛡 Safe square
+                  </button>
+                  <button
+                    className="btn ghost"
+                    onClick={() => setPickingSirat(true)}
+                    title="For two rounds, every colour can take the flight over another player's home column, and it knocks out every piece in it."
+                  >
+                    🌉 Sirat bridge · پل صراط
+                  </button>
                 </div>
               ) : placing === 'box' ? (
                 <span>{TOUCH ? 'Tap an empty square, then tap it again.' : 'Click any empty square.'} Whoever lands on it first opens it — you too.</span>
+              ) : placing === 'safe' ? (
+                <span>
+                  {TOUCH ? 'Tap a square, then tap it again.' : 'Click a square.'} For two rounds your pieces there can't be knocked out — others can still land
+                  there.
+                </span>
               ) : placing ? (
                 <span>
                   {TOUCH ? 'Tap a square to see where the bridge leads, then tap it again.' : 'Hover a square to see where the bridge leads, then click it.'} It works once, for
@@ -294,6 +338,11 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
           <button className="btn ghost small" onClick={() => setHelp(true)}>
             📖 آموزش
           </button>
+          {isHost && !over && (
+            <button className="btn ghost small" onClick={() => setPaused(!view.paused)} title={view.paused ? 'Resume the game' : 'Pause the game and its timer'}>
+              {view.paused ? '▶ Resume' : '⏸ Pause'}
+            </button>
+          )}
           {mySeat >= 0 && !over ? (
             <button className="btn ghost small" onClick={() => setConfirmLeave(true)}>
               Leave game

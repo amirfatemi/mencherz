@@ -34,7 +34,7 @@ import {
 import type { SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
-import { BRIDGE_SPAN, KING_PIECE, isKing, planMove, type BridgeKind, type GameState } from '../../../shared/rules.ts';
+import { BRIDGE_SPAN, KING_PIECE, isKing, planMove, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
 import { BOARD_PX, CELL, heading, restHeading, toPx } from '../geometry.ts';
 import type { ActiveReaction, AnimFrame, Popup } from '../useRoomStream.ts';
@@ -156,6 +156,21 @@ function Defs() {
   );
 }
 
+/**
+ * A seat's flight line in pixels. It runs straight through the middle of the home square it crosses, where a
+ * flight knocks a piece out, rather than between the two corner spots, which sit a little off that square's centre.
+ */
+function flightLine(s: Seat, rot: number): { a: Point; b: Point } {
+  const from = rotatePoint(TRACK[trackIndex(s, FLIGHT_FROM)].spot, rot);
+  const to = rotatePoint(TRACK[trackIndex(s, FLIGHT_TO)].spot, rot);
+  const len = Math.hypot(to.x - from.x, to.y - from.y);
+  const ux = (to.x - from.x) / len;
+  const uy = (to.y - from.y) / len;
+  const hit = px(rotatePoint(HOME[flightCrossedSeat(s)][FLIGHT_CROSSES - HOME_FIRST].spot, rot));
+  const along = (p: Point) => (p.x * CELL - hit.x) * ux + (p.y * CELL - hit.y) * uy;
+  return { a: { x: hit.x + ux * along(from), y: hit.y + uy * along(from) }, b: { x: hit.x + ux * along(to), y: hit.y + uy * along(to) } };
+}
+
 /** The printed board, drawn already rotated so the light always comes from the top. */
 const BoardBase = memo(function BoardBase({ rot, active, turn }: { rot: number; active: Seat[]; turn: Seat | null }) {
   const R = (p: Point) => rotatePoint(p, rot);
@@ -227,15 +242,10 @@ const BoardBase = memo(function BoardBase({ rot, active, turn }: { rot: number; 
         const from = R(TRACK[trackIndex(s, FLIGHT_FROM)].spot);
         const to = R(TRACK[trackIndex(s, FLIGHT_TO)].spot);
         const plane = px(from);
-        const len = Math.hypot(to.x - from.x, to.y - from.y);
-        const ux = (to.x - from.x) / len;
-        const uy = (to.y - from.y) / len;
-        // The line runs straight through the middle of the home square it crosses, where a flight knocks a
-        // piece out, rather than between the two corner spots, which sit a little off that square's centre.
-        const hit = px(R(HOME[flightCrossedSeat(s)][FLIGHT_CROSSES - HOME_FIRST].spot));
-        const along = (p: Point) => (p.x * CELL - hit.x) * ux + (p.y * CELL - hit.y) * uy;
-        const a = { x: hit.x + ux * along(from), y: hit.y + uy * along(from) };
-        const b = { x: hit.x + ux * along(to), y: hit.y + uy * along(to) };
+        const { a, b } = flightLine(s, rot);
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        const ux = (b.x - a.x) / len;
+        const uy = (b.y - a.y) / len;
         const trim = CELL * 0.5;
         const fly = heading(from, to);
         const t = px(takeoff);
@@ -356,6 +366,53 @@ function BridgeArc({ from, kind, ghost }: { from: number; kind: BridgeKind; ghos
   );
 }
 
+const shield = (r: number) => `M0 ${-r}L${r} ${-r * 0.62}V${r * 0.12}Q${r} ${r * 0.85} 0 ${r * 1.2}Q${-r} ${r * 0.85} ${-r} ${r * 0.12}V${-r * 0.62}Z`;
+
+/** A safe square: its owner's pieces there can't be knocked out. Shows the rounds it has left. */
+function SafeMark({ square, owner, rounds, ghost }: { square: number; owner: Seat; rounds: number; ghost?: boolean }) {
+  const sq = TRACK[square];
+  const c = px(sq.spot);
+  return (
+    <g className={`safe-square${ghost ? ' ghost' : ''}`} pointerEvents="none">
+      <ShapeEl s={sq.shape} fill="rgba(255,255,255,0.22)" stroke={COLOR_HEX[owner]} strokeWidth={4} inset={2.5} />
+      <g transform={`translate(${c.x - CELL * 0.3} ${c.y - CELL * 0.3})`}>
+        <title>{`${['Yellow', 'Blue', 'Green', 'Red'][owner]}'s safe square — ${rounds === 1 ? 'ends this round' : `${rounds} rounds left`}`}</title>
+        <path d={shield(CELL * 0.2)} fill="#fff" stroke={COLOR_DARK[owner]} strokeWidth={2} strokeLinejoin="round" />
+        <text textAnchor="middle" dy="0.3em" fontSize={CELL * 0.22} fontWeight={700} fill={COLOR_DARK[owner]}>
+          {rounds}
+        </text>
+      </g>
+    </g>
+  );
+}
+
+/**
+ * The Sirat bridge: a seat's home column lit up, with the flight line over it in gold, since every colour
+ * can take that flight while it lasts.
+ */
+function SiratMark({ over, rounds }: { over: Seat; rounds: number }) {
+  const flier = flightCrossedSeat(over);
+  const { a, b } = flightLine(flier, 0);
+  const start = px(TRACK[trackIndex(flier, FLIGHT_FROM)].spot);
+  const mid = px(HOME[over][FLIGHT_CROSSES - HOME_FIRST].spot);
+  return (
+    <g className="sirat" pointerEvents="none">
+      {HOME[over].map((sq, k) => (
+        <ShapeEl key={k} s={sq.shape} fill="rgba(255,213,79,0.28)" stroke="#ffb300" strokeWidth={3.5} inset={1.5} />
+      ))}
+      <line className="sirat-line" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+      <circle className="sirat-start" cx={start.x} cy={start.y} r={CELL * 0.5} />
+      <g transform={`translate(${mid.x + CELL * 0.62} ${mid.y - CELL * 0.62})`}>
+        <title>{`Sirat bridge — ${rounds === 1 ? 'ends this round' : `${rounds} rounds left`}`}</title>
+        <circle r={CELL * 0.3} fill="#fff" stroke="#ffb300" strokeWidth={2.5} />
+        <text textAnchor="middle" dy="0.35em" fontSize={CELL * 0.22} fontWeight={700} fill="#8a5a00">
+          🌉{rounds}
+        </text>
+      </g>
+    </g>
+  );
+}
+
 interface BoardProps {
   game: GameState;
   seats: SeatView[];
@@ -367,7 +424,7 @@ interface BoardProps {
   reactions: ActiveReaction[];
   /** Squares the viewer may drop a bomb, hide a magic box or start a bridge on right now. */
   targets: number[];
-  targetKind: 'bomb' | 'box' | BridgeKind;
+  targetKind: 'bomb' | Placeable;
   onMove: (piece: number) => void;
   onTarget: (square: number) => void;
 }
@@ -383,12 +440,20 @@ interface Item {
   lift: number;
   spin: number;
   animated: boolean;
+  /** Absolute track square, for pieces resting on the track. */
+  square?: number;
 }
 
 const pct = (v: number) => `${(v / BOARD_SIZE) * 100}%`;
 
-const TARGET_LABEL = { bomb: 'Drop the bomb', box: 'Hide the magic box', heaven: 'Start the heaven bridge', hell: 'Start the hell bridge' };
-const TARGET_COLOR = { bomb: '#d50000', box: '#7c4dff', heaven: '#00acc1', hell: '#d84315' };
+const TARGET_LABEL = {
+  bomb: 'Drop the bomb',
+  box: 'Hide the magic box',
+  heaven: 'Start the heaven bridge',
+  hell: 'Start the hell bridge',
+  safe: 'Make this square safe',
+};
+const TARGET_COLOR = { bomb: '#d50000', box: '#7c4dff', heaven: '#00acc1', hell: '#d84315', safe: '#2e7d32' };
 
 /** Reaction GIFs sit on top of the board over their seat's hangar, as large as fits without cropping. */
 function ReactionLayer({ reactions, rot }: { reactions: ActiveReaction[]; rot: number }) {
@@ -434,11 +499,12 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
   );
 
   // Planes of one colour on one square are drawn as a single piece with a count, so one leaving never shifts the other.
-  // A king stands beside them instead, so either can be picked to move.
+  // A king, or a piece wearing a vest, stands beside the rest instead, so each can be picked on its own.
   const items = useMemo(() => {
     const out: Item[] = [];
     const groups = new Map<string, Item>();
-    const kingOn = (seat: Seat, pos: number) => !!game.rules.kings && pos !== HANGAR && pos !== GOAL && game.pieces[seat][KING_PIECE] === pos;
+    const vested = (seat: Seat, piece: number) => (game.vested?.[seat]?.[piece] ?? 0) > 0;
+    const kind = (seat: Seat, piece: number) => `${isKing(game, piece) ? 'king' : ''}${vested(seat, piece) ? 'vest' : ''}`;
     for (const seat of game.active) {
       game.pieces[seat].forEach((pos, piece) => {
         const o = anim?.pieces.get(`${seat}:${piece}`);
@@ -453,19 +519,34 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           out.push({ ...base, key: `${seat}:hangar:${piece}`, pieces: [piece] });
           return;
         }
-        const king = isKing(game, piece);
-        const gk = `${seat}:at:${pos}${king ? ':king' : ''}`;
+        const gk = `${seat}:at:${pos}:${kind(seat, piece)}`;
         const g = groups.get(gk);
         if (g) g.pieces.push(piece);
         else {
-          // Side by side when the king shares the square with others of its colour.
-          const shared = kingOn(seat, pos) && game.pieces[seat].some((q, j) => j !== KING_PIECE && q === pos);
-          const shift = shared ? CELL * 0.2 * (king ? -1 : 1) : 0;
-          const item = { ...base, x: base.x + shift, y: base.y + shift * 0.4, key: gk, pieces: [piece] };
+          // Side by side when the square holds more than one kind of this colour's pieces.
+          const kinds = [...new Set(game.pieces[seat].flatMap((q, j) => (q === pos ? [kind(seat, j)] : [])))].sort();
+          const shift = CELL * 0.4 * (kinds.indexOf(kind(seat, piece)) - (kinds.length - 1) / 2);
+          const square = isOnTrack(pos) ? trackIndex(seat, pos) : undefined;
+          const item = { ...base, x: base.x + shift, y: base.y + shift * 0.4, key: gk, pieces: [piece], square };
           groups.set(gk, item);
           out.push(item);
         }
       });
+    }
+    // Pieces of different colours share a square only on a safe square: set them side by side.
+    const onSquare = new Map<number, Seat[]>();
+    for (const it of out) {
+      if (it.square === undefined) continue;
+      const seats = onSquare.get(it.square) ?? [];
+      if (!seats.includes(it.seat)) seats.push(it.seat);
+      onSquare.set(it.square, seats);
+    }
+    for (const it of out) {
+      const seats = it.square === undefined ? [] : onSquare.get(it.square)!;
+      if (seats.length < 2) continue;
+      const k = seats.indexOf(it.seat) - (seats.length - 1) / 2;
+      it.x += k * CELL * 0.38;
+      it.y += k * CELL * 0.12;
     }
     const canMove = (it: Item) => !it.animated && it.seat === game.turn && it.pieces.some((p) => movable.includes(p));
     return out.sort((a, b) => Number(a.animated) - Number(b.animated) || Number(canMove(a)) - Number(canMove(b)) || a.y - b.y);
@@ -473,7 +554,8 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
 
   // Rounds until the power squares move: they move once the turn number reaches powerMovesAt.
   const playing = Math.max(1, game.active.filter((s) => !game.ranking.includes(s)).length);
-  const powerRounds = Math.max(1, Math.ceil(((game.powerMovesAt ?? 0) - game.turnNo) / playing));
+  const roundsUntil = (turn: number) => Math.max(1, Math.ceil((turn - game.turnNo) / playing));
+  const powerRounds = roundsUntil(game.powerMovesAt ?? 0);
 
   const labels = SEATS.map((s) => {
     const c = toPx(HANGAR_CENTERS[s], rot);
@@ -498,7 +580,6 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
               {medal}
               {name.length > 13 ? `${name.slice(0, 12)}…` : name}
               {seat?.kind === 'bot' && !seat.left ? ' 🤖' : ''}
-              {game.vests?.[s] ? ` 🦺${game.vests[s] > 1 ? `×${game.vests[s]}` : ''}` : ''}
             </text>
           );
         })}
@@ -606,6 +687,10 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
         {(game.bridges ?? []).map((b) => (
           <BridgeArc key={`bridge${b.square}`} from={b.square} kind={b.kind} />
         ))}
+        {(game.safe ?? []).map((x) => (
+          <SafeMark key={`safe${x.square}`} square={x.square} owner={x.owner} rounds={roundsUntil(x.until)} />
+        ))}
+        {game.sirat && <SiratMark over={game.sirat.over} rounds={roundsUntil(game.sirat.until)} />}
 
         <g filter="url(#piece-shadow)">
           {items.map((it) => {
@@ -630,6 +715,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 movable={canMove}
                 frozen={!it.animated && it.pieces.some((p) => (game.frozen?.[it.seat]?.[p] ?? 0) > 0)}
                 king={!!game.rules.kings && it.pieces.includes(KING_PIECE)}
+                vest={it.pieces.some((p) => (game.vested?.[it.seat]?.[p] ?? 0) > 0)}
                 wall={wall}
                 onClick={canMove ? () => (TOUCH && hovered !== mover ? setHover(mover) : onMove(mover)) : undefined}
                 onHover={canMove && !TOUCH ? (on) => setHover(on ? mover : null) : undefined}
@@ -665,6 +751,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
               (() => {
                 const p = toPx(TRACK[bombHover].spot, rot);
                 if (targetKind === 'heaven' || targetKind === 'hell') return <BridgeArc from={bombHover} kind={targetKind} ghost />;
+                if (targetKind === 'safe') return <SafeMark square={bombHover} owner={game.turn} rounds={2} ghost />;
                 return targetKind === 'box' ? (
                   <BoxIcon x={p.x} y={p.y} owner={game.turn} ghost />
                 ) : (

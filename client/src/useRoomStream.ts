@@ -324,10 +324,10 @@ export function useRoomStream(code: string) {
               }
               continue;
             }
-          } else if (ev.type === 'power') {
+          } else if (ev.type === 'power' || ev.type === 'vest') {
             commit(u.room);
             continue;
-          } else if (ev.type === 'bomb' || ev.type === 'box' || ev.type === 'bridge') {
+          } else if (ev.type === 'bomb' || ev.type === 'box' || ev.type === 'bridge' || ev.type === 'safe') {
             // The bomb or box drops in (CSS) once the new state is shown.
             commit(u.room);
             await sleep(BOMB_MS / speed);

@@ -97,7 +97,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 8. **Bomb 💣:** after that penalty, the same player drops a bomb on any empty track square (home columns can't be bombed). The next piece to land there goes back to its hangar, whoever it belongs to. Passing over a bomb is safe. The bomb's owner scores as for a knock-out.
 9. **Magic box 🎁:** before the first roll, everyone hides one box on a track square, in turn order. Any piece landing on it opens it, the owner's included, and one of these happens at random:
    - a bomb, which sends the piece home and scores for the box's owner
-   - a protective vest 🦺, which stops the next bomb that player lands on
+   - a protective vest 🦺: the player puts it on one of their pieces, in the hangar or out, and it stays on that piece (knock-outs included) until it stops a bomb
    - +20 points
    - −10 points
    - ice 🧊, which locks the piece on that square (no jump or flight from it) until its owner's next turn is over. Other pieces can still knock it out.
@@ -109,6 +109,8 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
     - **Heaven bridge 🌈:** you pick a free start square; the bridge leads 10 squares ahead. The first piece to land on its start, yours included, is carried there, and the bridge is gone. It does nothing for a piece whose route turns home before its end.
     - **Hell bridge 🔥:** the same, but 20 squares back (or to the piece's takeoff spot, if it hasn't come that far).
     - **Magic box 🎁:** hide a new magic box on any free square. Whoever lands on it first opens it, you included.
+    - **Safe square 🛡:** pick a track square (not a home column), even one your piece stands on. For 2 rounds your pieces there can't be knocked out; others can still land there and share it.
+    - **Sirat bridge 🌉 (پل صراط):** pick another player. For 2 rounds their home column is open to everyone: any colour that lands on the ✈ square whose flight crosses that column may take the flight (if it doesn't fly past its own turn home), and the flight knocks out every piece in the column, not only the middle one.
 
     A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on the power square.
 13. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.

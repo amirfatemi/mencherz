@@ -13,7 +13,19 @@ export function upgradeGame(game: GameState): GameState {
   });
   g.bombs ??= [];
   g.boxes ??= [];
-  g.vests ??= SEATS.map(() => 0);
+  // Vests used to belong to the whole seat; each now goes on a piece, the one furthest along.
+  const seatVests = (g as GameState & { vests?: number[] }).vests;
+  if (!g.vested) {
+    g.vested = perPiece();
+    SEATS.forEach((seat) => {
+      const n = seatVests?.[seat] ?? 0;
+      if (!n) return;
+      const order = g.pieces[seat].map((p, j) => [p, j]).filter(([p]) => p !== GOAL).sort((a, b) => b[0] - a[0]);
+      if (order.length) g.vested[seat][order[0][1]] += n;
+    });
+  }
+  delete (g as GameState & { vests?: number[] }).vests;
+  g.powerAfterVest ??= false;
   g.lastHitBy ??= SEATS.map(() => null);
   g.frozen ??= perPiece();
   g.kills ??= perPiece();
@@ -24,6 +36,8 @@ export function upgradeGame(game: GameState): GameState {
   g.bridges ??= [];
   g.powerThen ??= null;
   g.placing ??= null;
+  g.safe ??= [];
+  g.sirat ??= null;
   // Roll-again cards were dropped: the phase that placed bridges also places boxes now, and a roll that
   // waited for a card or a pass is simply rolled again.
   const old = g as Omit<GameState, 'phase'> & { rerolls?: unknown; preRoll?: unknown; phase: string };
