@@ -17,6 +17,7 @@ import {
   flightCrossedSeat,
   isOnTrack,
   isOwnColor,
+  trackColor,
   trackIndex,
   type Seat,
 } from './board.ts';
@@ -146,8 +147,10 @@ export interface SafeSquare {
 }
 
 /**
- * A Sirat bridge over a seat's home column, until turn `until`: the flight that crosses that column is open to
- * every other colour, and it knocks out every piece in the column, not just the one in the middle.
+ * A Sirat bridge over a seat's home column, until turn `until`. The one flight line over that column becomes
+ * two: the ✈ square that flies over it shares its corner square with a triangle of another colour, and that
+ * colour flies too, from its triangle to the square of its colour on the far side. Every flight over the
+ * column knocks out every piece in it, not just the one in the middle.
  */
 export interface SiratBridge {
   over: Seat;
@@ -463,15 +466,23 @@ function holdUntil(s: GameState): number {
 }
 
 /**
- * Whose flight a piece of `seat` takes from `pos`: its own, from its ✈ square, or during a Sirat bridge the
- * flight over the bridged home column, which any other colour may take if it doesn't fly past its turn home.
+ * The square a Sirat bridge over `over`'s home column adds a flight from: the other triangle of the corner
+ * square whose ✈ flies over that column.
  */
-function flightAt(state: GameState, seat: Seat, pos: number): Seat | null {
-  if (pos === FLIGHT_FROM) return seat;
+export function siratStart(over: Seat): number {
+  return trackIndex(flightCrossedSeat(over), FLIGHT_FROM - 1);
+}
+
+/**
+ * Whose home column a piece of `seat` flies over from `pos`, if it flies: from its own ✈ square, or during a
+ * Sirat bridge from the Sirat square when it's that piece's colour, unless that would take it past its turn home.
+ */
+function flightOver(state: GameState, seat: Seat, pos: number): Seat | null {
+  if (pos === FLIGHT_FROM) return flightCrossedSeat(seat);
   const sb = state.sirat;
-  if (!sb || seat === sb.over || !isOnTrack(pos) || pos + FLIGHT_DISTANCE > TRACK_LAST) return null;
-  const owner = flightCrossedSeat(sb.over);
-  return trackIndex(seat, pos) === trackIndex(owner, FLIGHT_FROM) ? owner : null;
+  if (!sb || !isOnTrack(pos) || pos + FLIGHT_DISTANCE > TRACK_LAST) return null;
+  const square = trackIndex(seat, pos);
+  return trackColor(square) === seat && square === siratStart(sb.over) ? sb.over : null;
 }
 
 /** Whether a piece of `seat` on this absolute square is on its own safe square, so can't be knocked out. */
@@ -633,9 +644,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
         if (land(cur) === 'hangar') return finishPlan(plan, HANGAR);
         break;
       }
-      const flight = rules.flights && !plan.flew ? flightAt(state, seat, cur) : null;
-      if (flight !== null) {
-        const crossed = flightCrossedSeat(flight);
+      const crossed = rules.flights && !plan.flew ? flightOver(state, seat, cur) : null;
+      if (crossed !== null) {
         // A Sirat bridge opens the whole home column: every piece in it is in the flight's way.
         const open = state.sirat?.over === crossed;
         if ((rules.flightCapture || open) && crossed !== seat) {

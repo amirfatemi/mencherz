@@ -1096,21 +1096,6 @@ select:focus {
   font-size: 34px;
 }
 
-.sirat-line {
-  stroke: #ffb300;
-  stroke-width: 7;
-  stroke-linecap: round;
-  stroke-dasharray: 12 7;
-  opacity: 0.85;
-  animation: bridge-flow 1s linear infinite;
-}
-
-.sirat-start {
-  fill: none;
-  stroke: #ffb300;
-  stroke-width: 4;
-}
-
 .safe-square.ghost {
   opacity: 0.75;
 }

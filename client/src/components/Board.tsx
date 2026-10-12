@@ -6,6 +6,7 @@ import {
   COLOR_HEX,
   COLOR_LIGHT,
   FLIGHT_CROSSES,
+  FLIGHT_DISTANCE,
   FLIGHT_FROM,
   FLIGHT_TO,
   GOAL,
@@ -34,7 +35,7 @@ import {
 import type { SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
-import { BRIDGE_SPAN, KING_PIECE, isKing, planMove, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
+import { BRIDGE_SPAN, KING_PIECE, isKing, planMove, siratStart, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
 import { BOARD_PX, CELL, heading, restHeading, toPx } from '../geometry.ts';
 import type { ActiveReaction, AnimFrame, Popup } from '../useRoomStream.ts';
@@ -386,22 +387,47 @@ function SafeMark({ square, owner, rounds, ghost }: { square: number; owner: Sea
   );
 }
 
+/** A dotted flight line with chevrons, as printed on the board. */
+function FlightLine({ a, b, seat }: { a: Point; b: Point; seat: Seat }) {
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const ux = (b.x - a.x) / len;
+  const uy = (b.y - a.y) / len;
+  const trim = CELL * 0.5;
+  const fly = heading(a, b);
+  return (
+    <g>
+      <line
+        x1={a.x + ux * trim}
+        y1={a.y + uy * trim}
+        x2={b.x - ux * trim}
+        y2={b.y - uy * trim}
+        stroke={COLOR_HEX[seat]}
+        strokeWidth={3}
+        strokeDasharray="2 7"
+        strokeLinecap="round"
+        opacity={0.9}
+      />
+      {[0.3, 0.5, 0.7].map((f) => (
+        <Chevron key={f} at={{ x: (a.x + (b.x - a.x) * f) / CELL, y: (a.y + (b.y - a.y) * f) / CELL }} angle={fly} color={COLOR_DARK[seat]} size={4.5} width={2.4} />
+      ))}
+    </g>
+  );
+}
+
 /**
- * The Sirat bridge: a seat's home column lit up, with the flight line over it in gold, since every colour
- * can take that flight while it lasts.
+ * The Sirat bridge: the flight line over a seat's home column gets a second one beside it, from the other
+ * triangle of that ✈ corner square to the square of the same colour on the far side.
  */
 function SiratMark({ over, rounds }: { over: Seat; rounds: number }) {
-  const flier = flightCrossedSeat(over);
-  const { a, b } = flightLine(flier, 0);
-  const start = px(TRACK[trackIndex(flier, FLIGHT_FROM)].spot);
+  const start = siratStart(over);
+  const seat = trackColor(start);
+  const a = px(TRACK[start].spot);
+  const b = px(TRACK[(start + FLIGHT_DISTANCE) % TRACK.length].spot);
   const mid = px(HOME[over][FLIGHT_CROSSES - HOME_FIRST].spot);
   return (
     <g className="sirat" pointerEvents="none">
-      {HOME[over].map((sq, k) => (
-        <ShapeEl key={k} s={sq.shape} fill="rgba(255,213,79,0.28)" stroke="#ffb300" strokeWidth={3.5} inset={1.5} />
-      ))}
-      <line className="sirat-line" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-      <circle className="sirat-start" cx={start.x} cy={start.y} r={CELL * 0.5} />
+      <FlightLine seat={seat} a={a} b={b} />
+      <path d={PLANE_PATH} transform={`translate(${a.x} ${a.y}) rotate(${heading(a, b)}) scale(${CELL * 0.2})`} fill={COLOR_DARK[seat]} />
       <g transform={`translate(${mid.x + CELL * 0.62} ${mid.y - CELL * 0.62})`}>
         <title>{`Sirat bridge — ${rounds === 1 ? 'ends this round' : `${rounds} rounds left`}`}</title>
         <circle r={CELL * 0.3} fill="#fff" stroke="#ffb300" strokeWidth={2.5} />

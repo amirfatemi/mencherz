@@ -42,6 +42,7 @@ import {
   createGame,
   placeOptions,
   planMove,
+  siratStart,
   wallSquares,
   BOX_OUTCOMES,
   type BoxOutcome,
@@ -1107,19 +1108,26 @@ describe('safe squares and the Sirat bridge', () => {
     assert.deepEqual(g.safe, [], 'gone when its owner comes round the second time');
   });
 
-  test("the Sirat bridge opens a home column to every other colour's flight, and knocks out the whole column", () => {
-    const g = applyPower(power([0, 1, 2]), 'sirat', undefined, 2).state;
-    assert.deepEqual(g.sirat, { over: 2, owner: 0, until: 1 + 2 * 3 }, 'two rounds of three players from turn 1');
+  test('the Sirat bridge adds a second flight over a home column, and every flight over it knocks out the whole column', () => {
+    const g = applyPower(power([0, 1, 2, 3]), 'sirat', undefined, 2).state;
+    assert.deepEqual(g.sirat, { over: 2, owner: 0, until: 1 + 2 * 4 }, 'two rounds of four players from turn 1');
     at(g, 2, [HOME_FIRST, HOME_FIRST + 2, HOME_LAST]);
-    // Blue lands on the yellow flight square, whose line crosses green's home column.
-    const start = sameSquare(0, FLIGHT_FROM, 1) - 2;
-    at(g, 1, [start]);
-    Object.assign(g, { turn: 1, phase: 'move', dice: 2, movable: [0] });
-    const plan = planMove(g, 1, 0, 2)!;
+    // Yellow's flight crosses green's home column. Yellow's ✈ corner square is half red: red flies from that
+    // triangle to the red square on the far side, over the same column.
+    assert.equal(siratStart(2), trackIndex(0, FLIGHT_FROM - 1));
+    assert.equal(trackColor(siratStart(2)), 3);
+    assert.equal(trackColor(trackIndex(0, FLIGHT_FROM + 11)), 3);
+    at(g, 3, [sameSquare(0, FLIGHT_FROM - 1, 3) - 2]);
+    Object.assign(g, { turn: 3, phase: 'move', dice: 2, movable: [0] });
+    const plan = planMove(g, 3, 0, 2)!;
     assert.equal(plan.flew, true);
-    assert.equal(trackIndex(1, plan.to), trackIndex(0, FLIGHT_FROM + 12));
+    const landing = plan.path.find((step) => step.kind === 'fly')!.pos;
+    assert.equal(trackIndex(3, landing), trackIndex(0, FLIGHT_FROM + 11), 'red to red');
+    const blue = at(structuredClone(g), 1, [sameSquare(0, FLIGHT_FROM + 1, 1) - 2]);
+    Object.assign(blue, { turn: 1 });
+    assert.equal(planMove(blue, 1, 0, 2)!.flew, false, 'blue has no flight over it');
     assert.deepEqual(
-      plan.captures.map((c) => [c.seat, c.from]),
+      plan.captures.filter((c) => c.byFlight).map((c) => [c.seat, c.from]),
       [
         [2, HOME_FIRST],
         [2, HOME_FIRST + 2],

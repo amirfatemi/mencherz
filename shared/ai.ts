@@ -9,6 +9,7 @@ import {
   TRACK_LAST,
   flightCrossedSeat,
   isOnTrack,
+  trackColor,
   trackIndex,
   type Seat,
 } from './board.ts';
@@ -20,6 +21,7 @@ import {
   freeSquares,
   planMove,
   safeSquareOptions,
+  siratStart,
   vestOptions,
   type BridgeKind,
   type GameState,
@@ -229,7 +231,9 @@ function siratValues(state: GameState): { over: Seat; value: number }[] {
   const me = state.turn;
   return siratTargets(state).map((over) => {
     const inColumn = state.pieces[over].filter((p) => p >= HOME_FIRST && p <= HOME_LAST).length;
-    const square = trackIndex(flightCrossedSeat(over), FLIGHT_FROM);
+    // The bot's own way over that column: its ✈ square, or the Sirat square if it's the bot's colour.
+    const square = me === flightCrossedSeat(over) ? trackIndex(me, FLIGHT_FROM) : trackColor(siratStart(over)) === me ? siratStart(over) : undefined;
+    if (square === undefined) return { over, value: 0 };
     let chance = 0;
     for (const p of state.pieces[me]) {
       if (p < TAKEOFF || p >= TRACK_LAST) continue;

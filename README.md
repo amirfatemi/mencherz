@@ -110,7 +110,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
     - **Hell bridge 🔥:** the same, but 20 squares back (or to the piece's takeoff spot, if it hasn't come that far).
     - **Magic box 🎁:** hide a new magic box on any free square. Whoever lands on it first opens it, you included.
     - **Safe square 🛡:** pick a track square (not a home column), even one your piece stands on. For 2 rounds your pieces there can't be knocked out; others can still land there and share it.
-    - **Sirat bridge 🌉 (پل صراط):** pick another player. For 2 rounds their home column is open to everyone: any colour that lands on the ✈ square whose flight crosses that column may take the flight (if it doesn't fly past its own turn home), and the flight knocks out every piece in the column, not only the middle one.
+    - **Sirat bridge 🌉 (پل صراط):** pick another player. For 2 rounds a second flight line crosses their home column. The corner square holding the ✈ that flies over it is two triangles of two colours, and the second colour now flies too, from its triangle to the square of its colour on the far side (if that doesn't take it past its own turn home). Every flight over the column knocks out every piece in it, not only the middle one.
 
     A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on the power square.
 13. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
