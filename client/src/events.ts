@@ -26,7 +26,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
         return `${who} rolled ${ev.dice}`;
     }
   }
-  if (ev.type === 'bomb') return `${who} dropped a bomb 💣`;
+  if (ev.type === 'bomb') return ev.super ? `${who} put down a super bomb 💥` : `${who} dropped a bomb 💣`;
   if (ev.type === 'box') return `${who} hid a magic box 🎁`;
   if (ev.type === 'power') {
     if (ev.choice === 'sirat') {
@@ -34,6 +34,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     }
     if (ev.choice === 'box') return `${who} picked a magic box 🎁`;
     if (ev.choice === 'safe') return `${who} picked a safe square 🛡`;
+    if (ev.choice === 'superBomb') return `${who} picked the super bomb 💥`;
     return `${who} picked a ${ev.choice} bridge ${ev.choice === 'heaven' ? '🌈' : '🔥'}`;
   }
   if (ev.type === 'safe') return `${who} made a square safe 🛡 for two rounds`;
@@ -52,8 +53,11 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
   if (ev.bombed) {
     const b = ev.bombed;
     const whose = b.owner === ev.seat ? 'their own' : `${seatName(seats, b.owner)}'s`;
-    if (b.saved) bits.push(`stepped on ${whose} bomb — the vest saved it 🦺`);
-    else bits.push(b.owner === ev.seat ? 'stepped on their own bomb 💣' : `stepped on ${whose} bomb 💣 +${b.points} for ${seatName(seats, b.owner)}`);
+    const kind = b.blast ? 'super bomb 💥' : 'bomb 💣';
+    if (b.saved) bits.push(`stepped on ${whose} ${kind} — the vest saved it 🦺`);
+    else bits.push(b.owner === ev.seat ? `stepped on their own ${kind}` : `stepped on ${whose} ${kind} +${b.points} for ${seatName(seats, b.owner)}`);
+    const caught = (b.blast ?? []).filter((v) => !v.saved);
+    if (caught.length) bits.push(`the blast took ${caught.map((v) => seatName(seats, v.seat)).join(', ')} with it`);
   }
   if (ev.box?.outcome) {
     const own = ev.box.owner === ev.seat;

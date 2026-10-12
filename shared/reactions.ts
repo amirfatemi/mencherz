@@ -147,6 +147,13 @@ export function reactionsFor(ev: GameEvent, pick: (group: ReactionGroup) => stri
     show(ev.seat, 'sad', at);
     if (blast.owner !== ev.seat) show(blast.owner, 'happy', at);
   }
+  // A super bomb's blast: its owner is happy whenever it catches someone else; anyone caught past halfway is sad.
+  const caught = (ev.bombed?.blast ?? []).filter((v) => !v.saved);
+  if (caught.length) {
+    const at = blastAt(ev);
+    for (const v of caught) if (v.from >= HURT_FROM) show(v.seat, 'sad', at);
+    if (caught.some((v) => v.seat !== ev.bombed!.owner)) show(ev.bombed!.owner, 'happy', at);
+  }
   const late = ev.captures.filter((c) => c.from >= HURT_FROM);
   if (late.length) {
     show(ev.seat, 'happy', captureAt(ev, late[0]));

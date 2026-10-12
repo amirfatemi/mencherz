@@ -38,6 +38,7 @@ export function upgradeGame(game: GameState): GameState {
   g.placing ??= null;
   g.safe ??= [];
   g.sirat ??= null;
+  g.usedPowers ??= [];
   // Roll-again cards were dropped: the phase that placed bridges also places boxes now, and a roll that
   // waited for a card or a pass is simply rolled again.
   const old = g as Omit<GameState, 'phase'> & { rerolls?: unknown; preRoll?: unknown; phase: string };

@@ -43,6 +43,8 @@ import {
   placeOptions,
   planMove,
   siratStart,
+  availablePowers,
+  ONCE_POWERS,
   wallSquares,
   BOX_OUTCOMES,
   type BoxOutcome,
@@ -1148,6 +1150,80 @@ describe('safe squares and the Sirat bridge', () => {
     assert.ok(g.sirat);
     g = applyRoll(g, 3).state;
     assert.equal(g.sirat, null);
+  });
+});
+
+describe('once-a-game powers and the super bomb', () => {
+  function power(seats: Seat[] = [0, 1, 2]) {
+    const g = at(game(seats, { powerSquares: true }), 0, [3]);
+    g.power = [trackIndex(0, 5)];
+    Object.assign(g, { phase: 'move', dice: 2, movable: [0] });
+    return applyMove(g, 0).state;
+  }
+
+  test('bridges, the Sirat bridge and the super bomb can be picked once a game; boxes and safe squares any time', () => {
+    const g = applyPower(power(), 'heaven').state;
+    assert.deepEqual(g.usedPowers, ['heaven']);
+    const later = power();
+    later.usedPowers = ['heaven', 'sirat'];
+    assert.deepEqual(availablePowers(later), ['hell', 'box', 'safe', 'superBomb']);
+    assert.throws(() => applyPower(later, 'heaven'), /already been used/);
+    later.usedPowers = [...ONCE_POWERS];
+    assert.deepEqual(availablePowers(later), ['box', 'safe']);
+    assert.deepEqual(applyPower(later, 'box').state.usedPowers, ONCE_POWERS, 'a box never runs out');
+  });
+
+  test('a super bomb also blows up every piece within two squares, ahead or behind, the owner\'s too', () => {
+    let g = applyPower(power(), 'superBomb').state;
+    assert.equal(g.phase, 'place');
+    const square = trackIndex(1, 20);
+    g = applyPlace(g, square).state;
+    assert.deepEqual(g.bombs, [{ square, owner: 0, super: true }]);
+    // Blue steps on it from two behind, where a green piece also stands. Around it: yellow (the owner) one
+    // ahead, blue two ahead, green three ahead.
+    at(g, 1, [18, 22]);
+    at(g, 2, [sameSquare(1, 18, 2), sameSquare(1, 23, 2)]);
+    g.pieces[0] = [sameSquare(1, 21, 0), GOAL, GOAL, GOAL];
+    Object.assign(g, { turn: 1, phase: 'move', dice: 2, movable: [0, 1] });
+    const r = applyMove(g, 0);
+    assert.deepEqual(
+      r.event.bombed?.blast?.map((v) => [v.seat, v.piece, v.saved]).sort(),
+      [
+        [0, 0, false],
+        [1, 1, false],
+        [2, 0, false],
+      ].sort(),
+    );
+    assert.equal(r.state.pieces[1][0], HANGAR, 'the piece that stepped on it');
+    assert.equal(r.state.pieces[1][1], HANGAR, 'two ahead');
+    assert.equal(r.state.pieces[2][0], HANGAR, 'two behind');
+    assert.equal(r.state.pieces[0][0], HANGAR, "the owner's own piece one ahead");
+    assert.equal(r.state.pieces[2][1], sameSquare(1, 23, 2), 'three ahead is out of reach');
+    assert.deepEqual(r.state.bombs, []);
+    assert.equal(
+      r.state.stats[0].points,
+      captureValue(20) + captureValue(22) + captureValue(sameSquare(1, 18, 2)),
+      'the owner scores the others, not its own',
+    );
+  });
+
+  test('a vest or a safe square keeps a piece out of the blast; home columns are out of reach', () => {
+    const g = power([0, 1]);
+    g.phase = 'move';
+    g.bombs = [{ square: trackIndex(1, 20), owner: 0, super: true }];
+    at(g, 1, [18, 21, 22]);
+    g.pieces[0] = [sameSquare(1, 19, 0), GOAL, GOAL, HOME_FIRST];
+    g.vested[1][1] = 1;
+    g.safe = [{ square: trackIndex(1, 22), owner: 1, until: 99 }];
+    Object.assign(g, { turn: 1, dice: 2, movable: [0, 1, 2] });
+    const blast = planMove(g, 1, 0, 2)!.bombed!.blast!;
+    assert.deepEqual(
+      blast.map((v) => [v.seat, v.piece, v.saved]).sort(),
+      [
+        [0, 0, false],
+        [1, 1, true],
+      ].sort(),
+    );
   });
 });
 

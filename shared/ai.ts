@@ -14,7 +14,8 @@ import {
   type Seat,
 } from './board.ts';
 import {
-  POWER_CHOICES,
+  SUPER_BOMB_REACH,
+  availablePowers,
   siratTargets,
   bridgeTarget,
   distinctMoves,
@@ -248,8 +249,9 @@ function siratValues(state: GameState): { over: Seat; value: number }[] {
 /** Picks a power: whichever of the bridges, a Sirat bridge or a safe square looks best, or a magic box when none does much. */
 export function choosePower(state: GameState, level: BotLevel, rand: () => number = Math.random): PowerPick {
   const targets = siratTargets(state);
+  const open = availablePowers(state);
   if (level === 'easy') {
-    const choice = POWER_CHOICES[Math.floor(rand() * POWER_CHOICES.length)];
+    const choice = open[Math.floor(rand() * open.length)];
     return choice === 'sirat' ? { choice, over: targets[Math.floor(rand() * targets.length)] } : { choice };
   }
   const free = freeSquares(state);
@@ -266,7 +268,34 @@ export function choosePower(state: GameState, level: BotLevel, rand: () => numbe
     { pick: { choice: 'safe' }, value: (safeCandidate(state)?.value ?? 0) * 0.5 },
   ];
   if (sirat) options.push({ pick: { choice: 'sirat', over: sirat.over }, value: sirat.value });
-  return options.reduce((a, b) => (b.value > a.value ? b : a)).pick;
+  options.push({ pick: { choice: 'superBomb' }, value: superBombPlan(state)?.value ?? 0 });
+  return options.filter((o) => open.includes(o.pick.choice)).reduce((a, b) => (b.value > a.value ? b : a)).pick;
+}
+
+/**
+ * The best square for a super bomb: where opponents' pieces are likely to land next, plus how many of
+ * their pieces (and how few of the bot's) stand within the blast's reach.
+ */
+function superBombPlan(state: GameState): { square: number; value: number } | null {
+  const near = new Map<number, number>();
+  for (const seat of state.active) {
+    if (state.ranking.includes(seat)) continue;
+    const sign = seat === state.turn ? -1.5 : 1;
+    for (const p of state.pieces[seat]) {
+      if (!isOnTrack(p)) continue;
+      const sq = trackIndex(seat, p);
+      for (let d = -SUPER_BOMB_REACH; d <= SUPER_BOMB_REACH; d++) {
+        const at = (sq + d + 52) % 52;
+        near.set(at, (near.get(at) ?? 0) + sign * (1 + p / 20));
+      }
+    }
+  }
+  let best: { square: number; value: number } | null = null;
+  for (const sq of freeSquares(state)) {
+    const value = (near.get(sq) ?? 0) * 1.5;
+    if (!best || value > best.value) best = { square: sq, value };
+  }
+  return best;
 }
 
 /** Picks where a safe square goes: under the piece most worth protecting, or else just ahead of the bot's lead piece. */
@@ -309,6 +338,7 @@ export function botAction(state: GameState, level: BotLevel, rand: () => number 
       // A box from a power square goes where a bomb would: in front of the others' pieces.
       if (state.placing === 'box') return { type: 'place', square: chooseBomb(state, level, rand) };
       if (state.placing === 'safe') return { type: 'place', square: chooseSafe(state, rand) };
+      if (state.placing === 'superBomb') return { type: 'place', square: superBombPlan(state)?.square ?? chooseBomb(state, level, rand) };
       return state.placing ? { type: 'place', square: chooseBridge(state, state.placing, level, rand) } : null;
     default:
       return null;

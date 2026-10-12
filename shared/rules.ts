@@ -99,7 +99,12 @@ export interface Bomb {
   /** Absolute track index (0..51), as in TRACK. */
   square: number;
   owner: Seat;
+  /** A super bomb, from a power square: its blast also takes every piece within SUPER_BOMB_REACH squares. */
+  super?: boolean;
 }
+
+/** How far along the track, ahead or behind, a super bomb's blast reaches. Home columns are out of reach. */
+export const SUPER_BOMB_REACH = 2;
 
 /** A magic box. Whoever lands on it first opens it, the owner too. */
 export interface MagicBox {
@@ -162,8 +167,10 @@ export interface SiratBridge {
  * What a player picks on a power square. A bridge, a magic box or a safe square is then placed on a square;
  * a Sirat bridge names the seat whose home column it opens.
  */
-export type PowerChoice = BridgeKind | 'box' | 'safe' | 'sirat';
-export const POWER_CHOICES: readonly PowerChoice[] = ['heaven', 'hell', 'box', 'safe', 'sirat'];
+export type PowerChoice = BridgeKind | 'box' | 'safe' | 'sirat' | 'superBomb';
+export const POWER_CHOICES: readonly PowerChoice[] = ['heaven', 'hell', 'box', 'safe', 'sirat', 'superBomb'];
+/** Powers that can be picked only once a game: whoever picks one first uses it up for everyone. */
+export const ONCE_POWERS: readonly PowerChoice[] = ['heaven', 'hell', 'sirat', 'superBomb'];
 /** What gets put on a square in the 'place' phase. */
 export type Placeable = Exclude<PowerChoice, 'sirat'>;
 /** A safe square and a Sirat bridge last this many rounds. */
@@ -225,6 +232,8 @@ export interface GameState {
   placing: Placeable | null;
   safe: SafeSquare[];
   sirat: SiratBridge | null;
+  /** ONCE_POWERS already picked this game. */
+  usedPowers: PowerChoice[];
   /** Turns in a row each seat had nothing to move and no piece out of the hangar. */
   stuck: number[];
   turnNo: number;
@@ -270,6 +279,22 @@ export interface BombHit {
   saved: boolean;
   revenge: boolean;
   /** The piece blown up was a king. */
+  king: boolean;
+  /** A super bomb: the other pieces its blast reached. */
+  blast?: BlastHit[];
+}
+
+/** A piece caught in a super bomb's blast. */
+export interface BlastHit {
+  seat: Seat;
+  piece: number;
+  /** Its seat-relative position. */
+  from: number;
+  /** Points for the bomb's owner (none for the owner's own pieces, or when a vest stopped it). */
+  points: number;
+  /** Its vest took the blast and is used up. */
+  saved: boolean;
+  revenge: boolean;
   king: boolean;
 }
 
@@ -369,6 +394,8 @@ export interface BombEvent {
   type: 'bomb';
   seat: Seat;
   square: number;
+  /** A super bomb, from a power square. */
+  super?: boolean;
 }
 
 export interface BoxEvent {
@@ -442,6 +469,7 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     placing: null,
     safe: [],
     sirat: null,
+    usedPowers: [],
     stuck: SEATS.map(() => 0),
     turnNo: 1,
     seq: 0,
@@ -595,6 +623,24 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     }
   };
 
+  // The other pieces on track squares within reach of a super bomb: anyone's, the owner's too, unless on
+  // their own safe square or already knocked out on the way. A vest saves its wearer.
+  const blastAround = (owner: Seat, center: number): BlastHit[] => {
+    const out: BlastHit[] = [];
+    for (const other of state.active) {
+      state.pieces[other].forEach((p, j) => {
+        if ((other === seat && j === piece) || !isOnTrack(p) || taken.has(`${other}:${j}`)) return;
+        const sq = trackIndex(other, p);
+        const apart = Math.min((sq - center + TRACK_LEN) % TRACK_LEN, (center - sq + TRACK_LEN) % TRACK_LEN);
+        if (apart > SUPER_BOMB_REACH || isSafe(state, other, sq)) return;
+        const saved = (state.vested?.[other]?.[j] ?? 0) > 0;
+        const hit = saved || other === owner ? { points: 0, revenge: false } : worth(owner, other, j, p);
+        out.push({ seat: other, piece: j, from: p, saved, points: hit.points, revenge: hit.revenge, king: isKing(state, j) });
+      });
+    }
+    return out;
+  };
+
   // Everything that happens where the piece lands: a bomb, knock-outs, then a magic box. A blast sends the
   // piece back to the hangar ('hangar'); a knock-out or a box's ice keeps it on that square, with no jump or
   // flight after ('stay'); otherwise the move carries on ('on').
@@ -610,6 +656,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
       if (saved) vests--;
       const { points, revenge } = saved || bomb.owner === seat ? { points: 0, revenge: false } : worth(bomb.owner, seat, piece, pos);
       plan.bombed = { owner: bomb.owner, square, pos, atStep, saved, points, revenge, king: isKing(state, piece) };
+      // A super bomb goes off even when a vest saves the piece that set it off.
+      if (bomb.super) plan.bombed.blast = blastAround(bomb.owner, square);
       if (!saved) return 'hangar';
     }
     const knocked = plan.captures.length;
@@ -896,6 +944,20 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
         s.stats[owner].points += points;
       }
     }
+    for (const v of plan.bombed.blast ?? []) {
+      if (v.saved) {
+        s.vested[v.seat][v.piece]--;
+        continue;
+      }
+      s.pieces[v.seat][v.piece] = HANGAR;
+      s.frozen[v.seat][v.piece] = 0;
+      s.kills[v.seat][v.piece] = 0;
+      s.stats[v.seat].lost++;
+      if (owner !== v.seat) {
+        s.stats[owner].captures++;
+        s.stats[owner].points += v.points;
+      }
+    }
   }
   if (plan.box) {
     const { owner, square, points, saved, outcome } = plan.box;
@@ -923,6 +985,11 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   if (blast && blast.owner !== seat) {
     if ((plan.bombed && !plan.bombed.saved ? plan.bombed : plan.box)?.revenge) s.lastHitBy[blast.owner] = null;
     s.lastHitBy[seat] = blast.owner;
+  }
+  for (const v of plan.bombed?.blast ?? []) {
+    if (v.saved || v.seat === plan.bombed!.owner) continue;
+    if (v.revenge) s.lastHitBy[plan.bombed!.owner] = null;
+    s.lastHitBy[v.seat] = plan.bombed!.owner;
   }
 
   const event: MoveEvent = { ...plan, type: 'move', extraRoll: false, seatFinished: false, bonus: 0, gameOver: false };
@@ -1011,6 +1078,11 @@ export function applyVest(state: GameState, piece: number, rand: Rand = defaultR
   return { state: s, event };
 }
 
+/** The powers the player on a power square may pick: all but the once-a-game ones already used. */
+export function availablePowers(state: GameState): PowerChoice[] {
+  return POWER_CHOICES.filter((c) => !(ONCE_POWERS.includes(c) && state.usedPowers?.includes(c)));
+}
+
 /** Who a Sirat bridge may be built over: the other players still playing. */
 export function siratTargets(state: GameState): Seat[] {
   return state.active.filter((x) => x !== state.turn && !state.ranking.includes(x));
@@ -1023,8 +1095,10 @@ export function siratTargets(state: GameState): Seat[] {
 export function applyPower(state: GameState, choice: PowerChoice, rand: Rand = defaultRand, over?: Seat): { state: GameState; event: PowerEvent } {
   if (state.phase !== 'power') throw new RuleError('Not time to pick a power');
   if (!POWER_CHOICES.includes(choice)) throw new RuleError('Unknown power');
+  if (!availablePowers(state).includes(choice)) throw new RuleError('That power has already been used this game');
   const s = structuredClone(state);
   s.seq++;
+  if (ONCE_POWERS.includes(choice)) (s.usedPowers ??= []).push(choice);
   const event: PowerEvent = { type: 'power', seat: s.turn, choice };
   if (choice === 'sirat') {
     if (over === undefined || !siratTargets(state).includes(over)) throw new RuleError('Pick another player for the Sirat bridge');
@@ -1043,17 +1117,20 @@ export function applyPower(state: GameState, choice: PowerChoice, rand: Rand = d
  * Puts down what was picked on a power square on this free absolute track square: a bridge starting
  * there, or a magic box that opens for whoever lands on it first, its owner too.
  */
-export function applyPlace(state: GameState, square: number, rand: Rand = defaultRand): { state: GameState; event: BridgeEvent | BoxEvent | SafeEvent } {
+export function applyPlace(state: GameState, square: number, rand: Rand = defaultRand): { state: GameState; event: BridgeEvent | BoxEvent | SafeEvent | BombEvent } {
   if (state.phase !== 'place' || !state.placing) throw new RuleError('Not time to place that');
   if (!placeOptions(state).includes(square)) throw new RuleError("That can't go on that square");
   const s = structuredClone(state);
   s.seq++;
   const kind = state.placing;
-  let event: BridgeEvent | BoxEvent | SafeEvent;
+  let event: BridgeEvent | BoxEvent | SafeEvent | BombEvent;
   if (kind === 'safe') {
     s.safe ??= [];
     s.safe.push({ square, owner: s.turn, until: holdUntil(s) });
     event = { type: 'safe', seat: s.turn, square };
+  } else if (kind === 'superBomb') {
+    s.bombs.push({ square, owner: s.turn, super: true });
+    event = { type: 'bomb', seat: s.turn, square, super: true };
   } else if (kind === 'box') {
     s.boxes ??= [];
     s.boxes.push({ square, owner: s.turn });

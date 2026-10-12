@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { COLOR_HEX, type Seat } from '../../../shared/board.ts';
 import { peopleIn, type PublicUser, type SeatView } from '../../../shared/protocol.ts';
 import { RANKED_MIN_PEOPLE } from '../../../shared/scoring.ts';
-import { distinctMoves, freeSquares, placeOptions, siratTargets, vestOptions, type PowerChoice } from '../../../shared/rules.ts';
+import { availablePowers, distinctMoves, freeSquares, placeOptions, siratTargets, vestOptions, type PowerChoice } from '../../../shared/rules.ts';
 import { seatName } from '../events.ts';
 import { navigate } from '../router.ts';
 import { call } from '../socket.ts';
@@ -17,6 +17,25 @@ import { Modal } from './Modal.tsx';
 import { MEDALS, Scoreboard } from './Scoreboard.tsx';
 
 type Stream = ReturnType<typeof useRoomStream>;
+
+const POWER_BUTTONS: { choice: PowerChoice; label: string; className: string; title: string }[] = [
+  { choice: 'heaven', label: '🌈 Heaven bridge · +10', className: 'btn primary', title: 'Whoever lands on its start, you too, jumps 10 squares ahead. Once a game.' },
+  { choice: 'hell', label: '🔥 Hell bridge · −20', className: 'btn danger', title: 'Whoever lands on its start, you too, falls 20 squares back. Once a game.' },
+  { choice: 'box', label: '🎁 Magic box', className: 'btn ghost', title: 'Hide a magic box on any empty square. Whoever lands on it first opens it — you too.' },
+  { choice: 'safe', label: '🛡 Safe square', className: 'btn ghost', title: "For two rounds, your pieces on that square can't be knocked out." },
+  {
+    choice: 'sirat',
+    label: '🌉 Sirat bridge · پل صراط',
+    className: 'btn ghost',
+    title: "For two rounds a second flight line crosses another player's home column, and any flight over it knocks out the whole column. Once a game.",
+  },
+  {
+    choice: 'superBomb',
+    label: '💥 Super bomb',
+    className: 'btn danger',
+    title: 'Whoever lands on it blows up, with every piece within two squares ahead or behind. Once a game.',
+  },
+];
 
 function useTicker(active: boolean, ms = 250) {
   const [, setN] = useState(0);
@@ -152,7 +171,9 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
         ? `🎁 ${pick} where to hide your magic box`
         : game.placing === 'safe'
           ? `🛡 ${pick} a square to make safe`
-          : `${game.placing === 'heaven' ? '🌈' : '🔥'} ${pick} where your ${game.placing} bridge starts`;
+          : game.placing === 'superBomb'
+            ? `💥 ${pick} where your super bomb goes`
+            : `${game.placing === 'heaven' ? '🌈' : '🔥'} ${pick} where your ${game.placing} bridge starts`;
   } else if (myTurn) {
     const whose = mySeat === game.turn ? 'Your' : `${you}'s`;
     status = game.phase === 'roll' ? `${whose} turn — roll the dice` : forced ? `${you} rolled ${game.dice} — move your piece` : `${you} rolled ${game.dice} — pick a piece`;
@@ -172,7 +193,9 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                 ? 'is hiding a magic box 🎁'
                 : game.placing === 'safe'
                   ? 'is making a square safe 🛡'
-                  : `is building a ${game.placing} bridge ${game.placing === 'heaven' ? '🌈' : '🔥'}`
+                  : game.placing === 'superBomb'
+                    ? 'is placing a super bomb 💥'
+                    : `is building a ${game.placing} bridge ${game.placing === 'heaven' ? '🌈' : '🔥'}`
               : s.kind === 'bot'
             ? 'is thinking'
             : game.phase === 'roll'
@@ -232,7 +255,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
           <div className={`dice-row${canRoll ? ' solo' : ''}`}>
             {game.phase === 'box' || (game.phase === 'place' && game.placing === 'box') ? (
               <BoxBadge color={COLOR_HEX[game.turn]} />
-            ) : game.phase === 'bomb' && !stream.rolling ? (
+            ) : (game.phase === 'bomb' && !stream.rolling) || (game.phase === 'place' && game.placing === 'superBomb') ? (
               <BombBadge color={COLOR_HEX[game.turn]} />
             ) : game.phase === 'power' ? (
               <EmojiBadge icon="⚡" color={COLOR_HEX[game.turn]} label="Power square" />
@@ -267,26 +290,27 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                 </div>
               ) : pickingPower ? (
                 <div className="power-choices">
-                  <button className="btn primary" onClick={() => pickPower('heaven')} title="Whoever lands on its start, you too, jumps 10 squares ahead. Used once.">
-                    🌈 Heaven bridge · +10
-                  </button>
-                  <button className="btn danger" onClick={() => pickPower('hell')} title="Whoever lands on its start, you too, falls 20 squares back. Used once.">
-                    🔥 Hell bridge · −20
-                  </button>
-                  <button className="btn ghost" onClick={() => pickPower('box')} title="Hide a magic box on any empty square. Whoever lands on it first opens it — you too.">
-                    🎁 Magic box
-                  </button>
-                  <button className="btn ghost" onClick={() => pickPower('safe')} title="For two rounds, your pieces on that square can't be knocked out.">
-                    🛡 Safe square
-                  </button>
-                  <button
-                    className="btn ghost"
-                    onClick={() => setPickingSirat(true)}
-                    title="For two rounds, every colour can take the flight over another player's home column, and it knocks out every piece in it."
-                  >
-                    🌉 Sirat bridge · پل صراط
-                  </button>
+                  {POWER_BUTTONS.map((b) => {
+                    const used = !availablePowers(game).includes(b.choice);
+                    return (
+                      <button
+                        key={b.choice}
+                        className={b.className}
+                        disabled={used}
+                        onClick={() => (b.choice === 'sirat' ? setPickingSirat(true) : pickPower(b.choice))}
+                        title={used ? 'Already used this game: each bridge and the super bomb can be picked only once' : b.title}
+                      >
+                        {b.label}
+                        {used ? ' · used' : ''}
+                      </button>
+                    );
+                  })}
                 </div>
+              ) : placing === 'superBomb' ? (
+                <span>
+                  {TOUCH ? 'Tap an empty square, then tap it again.' : 'Click any empty square.'} Whoever lands on it blows up, with every piece within two
+                  squares ahead or behind — yours too.
+                </span>
               ) : placing === 'box' ? (
                 <span>{TOUCH ? 'Tap an empty square, then tap it again.' : 'Click any empty square.'} Whoever lands on it first opens it — you too.</span>
               ) : placing === 'safe' ? (

@@ -33,8 +33,8 @@ export function eventDuration(event: GameEvent | null | undefined, holdPasses = 
   if (event.type === 'bomb' || event.type === 'box' || event.type === 'bridge' || event.type === 'safe') return BOMB_MS;
   if (event.type === 'power' || event.type === 'vest') return POWER_MS;
   let ms = settledAt(event);
-  // Knocked-out pieces, or the mover itself after a bomb, fly back to the hangar.
-  if (event.captures.length || event.to === HANGAR) ms += CAPTURE_MS;
+  // Knocked-out pieces, the mover itself after a bomb, or a super bomb's blast fly back to the hangar.
+  if (event.captures.length || event.to === HANGAR || event.bombed?.blast?.some((v) => !v.saved)) ms += CAPTURE_MS;
   return ms;
 }
 

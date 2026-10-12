@@ -1968,6 +1968,10 @@ button.user-chip:hover {
   animation: bomb-drop 0.6s cubic-bezier(0.3, 1.5, 0.6, 1) both;
 }
 
+.bomb.super .bomb-body {
+  filter: drop-shadow(0 0 4px rgba(255, 87, 34, 0.7));
+}
+
 .bomb.ghost {
   opacity: 0.75;
 }

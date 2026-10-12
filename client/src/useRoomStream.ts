@@ -118,6 +118,10 @@ function scoreMoments(ev: MoveEvent): ScoreMoment[] {
   if (b) {
     const text = b.saved ? '🦺 Saved!' : b.points ? `💣 +${b.points}` : '💣';
     out.push({ at: TRACK_CELLS[b.square], delay: stepEnd(ev, b.atStep), text, seat: b.saved ? ev.seat : b.owner });
+    for (const v of b.blast ?? []) {
+      const at = piecePoint(v.seat, v.piece, v.from);
+      out.push({ at, delay: stepEnd(ev, b.atStep), text: v.saved ? '🦺 Saved!' : v.points ? `💥 +${v.points}` : '💥', seat: v.saved ? v.seat : b.owner });
+    }
   }
   // What a magic box held is shown on its own card (see BoxReveal), not as a popup.
   return out;
@@ -160,6 +164,14 @@ function moveTimeline(ev: MoveEvent): Timeline {
     const at = blastAt(ev);
     tl.motions.push(returnHome(ev.seat, ev.piece, blast.pos, at));
     tl.booms.push({ at: TRACK_CELLS[blast.square], start: at });
+    tl.total = Math.max(tl.total, at + CAPTURE_MS);
+  }
+  // A super bomb takes the pieces around it along, whether or not the one that set it off survived.
+  for (const v of ev.bombed?.blast ?? []) {
+    if (v.saved) continue;
+    const at = stepEnd(ev, ev.bombed!.atStep);
+    tl.motions.push(returnHome(v.seat, v.piece, v.from, at));
+    tl.booms.push({ at: piecePoint(v.seat, v.piece, v.from), start: at });
     tl.total = Math.max(tl.total, at + CAPTURE_MS);
   }
   return tl;

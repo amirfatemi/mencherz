@@ -35,7 +35,7 @@ import {
 import type { SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
-import { BRIDGE_SPAN, KING_PIECE, isKing, planMove, siratStart, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
+import { BRIDGE_SPAN, KING_PIECE, SUPER_BOMB_REACH, isKing, planMove, siratStart, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
 import { BOARD_PX, CELL, heading, restHeading, toPx } from '../geometry.ts';
 import type { ActiveReaction, AnimFrame, Popup } from '../useRoomStream.ts';
@@ -277,12 +277,21 @@ const BoardBase = memo(function BoardBase({ rot, active, turn }: { rot: number; 
   );
 });
 
-/** A cartoon bomb, ringed in its owner's colour. */
-function BombIcon({ x, y, owner, ghost }: { x: number; y: number; owner: Seat; ghost?: boolean }) {
-  const r = CELL * 0.27;
+/** A twelve-pointed burst of outer radius r. */
+const burst = (r: number) =>
+  `M${Array.from({ length: 24 }, (_, i) => {
+    const a = (i * Math.PI) / 12;
+    const k = i % 2 ? r * 0.72 : r;
+    return `${(Math.sin(a) * k).toFixed(1)} ${(-Math.cos(a) * k).toFixed(1)}`;
+  }).join('L')}Z`;
+
+/** A cartoon bomb, ringed in its owner's colour. A super bomb is bigger, on a jagged red burst. */
+function BombIcon({ x, y, owner, ghost, big }: { x: number; y: number; owner: Seat; ghost?: boolean; big?: boolean }) {
+  const r = CELL * (big ? 0.31 : 0.27);
   return (
-    <g className={ghost ? 'bomb ghost' : 'bomb'} transform={`translate(${x} ${y})`} pointerEvents="none">
+    <g className={`bomb${big ? ' super' : ''}${ghost ? ' ghost' : ''}`} transform={`translate(${x} ${y})`} pointerEvents="none">
       <g className="bomb-body">
+        {big && <path d={burst(r * 1.75)} fill="#ff5722" stroke="#bf360c" strokeWidth={1.5} strokeLinejoin="round" />}
         <circle r={r + 3} fill="#fff" stroke={COLOR_HEX[owner]} strokeWidth={3} />
         <rect x={-r * 0.32} y={-r * 1.18} width={r * 0.64} height={r * 0.4} rx={1.5} fill="#444" />
         <circle r={r} fill="url(#bomb-body)" />
@@ -474,12 +483,13 @@ const pct = (v: number) => `${(v / BOARD_SIZE) * 100}%`;
 
 const TARGET_LABEL = {
   bomb: 'Drop the bomb',
+  superBomb: 'Put the super bomb',
   box: 'Hide the magic box',
   heaven: 'Start the heaven bridge',
   hell: 'Start the hell bridge',
   safe: 'Make this square safe',
 };
-const TARGET_COLOR = { bomb: '#d50000', box: '#7c4dff', heaven: '#00acc1', hell: '#d84315', safe: '#2e7d32' };
+const TARGET_COLOR = { bomb: '#d50000', superBomb: '#d50000', box: '#7c4dff', heaven: '#00acc1', hell: '#d84315', safe: '#2e7d32' };
 
 /** Reaction GIFs sit on top of the board over their seat's hangar, as large as fits without cropping. */
 function ReactionLayer({ reactions, rot }: { reactions: ActiveReaction[]; rot: number }) {
@@ -665,13 +675,19 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 );
               })()}
             {(() => {
+              // Pieces a super bomb's blast would take with it.
+              const blast = (preview.bombed?.blast ?? []).map((v) => {
+                const q = toPx(piecePoint(v.seat, v.piece, v.from), rot);
+                return v.saved ? null : <circle key={`${v.seat}:${v.piece}`} cx={q.x} cy={q.y} r={CELL * 0.5} fill="none" stroke="#d50000" strokeWidth={4} className="threat" />;
+              });
               if (preview.bombed && !preview.bombed.saved) {
                 const b = toPx(TRACK[preview.bombed.square].spot, rot);
                 return (
                   <>
+                    {blast}
                     <circle cx={b.x} cy={b.y} r={CELL * 0.55} fill="none" stroke="#d50000" strokeWidth={4} className="threat" />
                     <text x={b.x} y={b.y - CELL * 0.8} className="preview-points danger" textAnchor="middle">
-                      💣 back to hangar
+                      {preview.bombed.blast ? '💥 super bomb' : '💣 back to hangar'}
                     </text>
                   </>
                 );
@@ -705,7 +721,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
         })}
         {game.bombs.map((b) => {
           const p = toPx(TRACK[b.square].spot, rot);
-          return <BombIcon key={b.square} x={p.x} y={p.y} owner={b.owner} />;
+          return <BombIcon key={b.square} x={p.x} y={p.y} owner={b.owner} big={b.super} />;
         })}
         {(game.power ?? []).map((sq) => (
           <PowerSquare key={`power${sq}`} square={sq} rounds={powerRounds} />
@@ -778,6 +794,18 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 const p = toPx(TRACK[bombHover].spot, rot);
                 if (targetKind === 'heaven' || targetKind === 'hell') return <BridgeArc from={bombHover} kind={targetKind} ghost />;
                 if (targetKind === 'safe') return <SafeMark square={bombHover} owner={game.turn} rounds={2} ghost />;
+                if (targetKind === 'superBomb') {
+                  // The squares its blast would reach.
+                  const reach = Array.from({ length: SUPER_BOMB_REACH * 2 + 1 }, (_, k) => (bombHover + k - SUPER_BOMB_REACH + TRACK.length) % TRACK.length);
+                  return (
+                    <>
+                      {reach.map((sq) => (
+                        <ShapeEl key={sq} s={rotateShape(TRACK[sq].shape, rot)} fill="rgba(213,0,0,0.16)" stroke="#d50000" strokeWidth={2.5} inset={2.5} />
+                      ))}
+                      <BombIcon x={p.x} y={p.y} owner={game.turn} ghost big />
+                    </>
+                  );
+                }
                 return targetKind === 'box' ? (
                   <BoxIcon x={p.x} y={p.y} owner={game.turn} ghost />
                 ) : (
