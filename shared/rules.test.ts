@@ -947,11 +947,10 @@ describe('kings', () => {
 describe('power squares and bridges', () => {
   const powered = (rand: (n: number) => number = () => 0) => createGame([0, 1], { ...DEFAULT_RULES, magicBoxes: false, kings: false }, 0, rand);
 
-  test('there is one in each half of the board, and nothing else can go on them', () => {
+  test('there is one, and nothing else can go on it', () => {
     const g = powered();
-    assert.equal(g.power.length, 2);
-    assert.ok(g.power[0] < 26 && g.power[1] >= 26);
-    assert.ok(!freeSquares(g).some((sq) => g.power.includes(sq)));
+    assert.equal(g.power.length, 1);
+    assert.ok(!freeSquares(g).includes(g.power[0]));
   });
 
   test('they are nobody\'s colour: no colour jump from them, and never on a flight square', () => {
@@ -977,7 +976,7 @@ describe('power squares and bridges', () => {
     assert.deepEqual(g.power, first, 'not yet after nine turns of two players');
     g = applyRoll(g, 3, last).state;
     assert.notDeepEqual(g.power, first);
-    assert.ok(g.power[0] < 26 && g.power[1] >= 26, 'still one in each half');
+    assert.equal(g.power.length, 1);
   });
 
   function onPower(dice = 2) {

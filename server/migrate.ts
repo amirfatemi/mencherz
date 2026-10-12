@@ -18,7 +18,8 @@ export function upgradeGame(game: GameState): GameState {
   g.frozen ??= perPiece();
   g.kills ??= perPiece();
   // Older games get their power squares on the next turn.
-  g.power ??= [];
+  // Older games get their power square on the next turn; games from when there were two keep one.
+  g.power = (g.power ?? []).slice(0, 1);
   g.powerMovesAt ??= 0;
   g.bridges ??= [];
   g.powerThen ??= null;

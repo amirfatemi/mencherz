@@ -55,7 +55,7 @@ export interface Rules {
    */
   walls: boolean;
   /**
-   * Two power squares, one in each half of the board, that move every few rounds. Landing on one picks a
+   * A power square that moves every few rounds. Ending a move on it picks a
    * heaven bridge, a hell bridge or a magic box to hide.
    */
   powerSquares: boolean;
@@ -180,7 +180,7 @@ export interface GameState {
   frozen: number[][];
   /** kills[seat][piece]: knock-outs by that piece since it last left the hangar, for kill streaks. */
   kills: number[][];
-  /** Absolute track squares of the power squares, one in each half of the board. */
+  /** Absolute track square of the power square (a list, empty when they're off; older games had two). */
   power: number[];
   /** The turn number at which the power squares move next. */
   powerMovesAt: number;
@@ -396,16 +396,12 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
   return game;
 }
 
-/** Puts the power squares on new free squares, one in each half of the board, and sets when they move next. */
+/** Moves the power square to a random free square and sets when it moves next. */
 function movePower(s: GameState, rand: Rand): void {
   // Not on a flight square: a power square is nobody's colour, and a flight square has to stay one.
   const flights = new Set(SEATS.map((seat) => trackIndex(seat, FLIGHT_FROM)));
   const free = freeSquares(s).filter((i) => !flights.has(i));
-  const half = TRACK_LEN / 2;
-  s.power = [0, 1].flatMap((h) => {
-    const options = free.filter((i) => Math.floor(i / half) === h);
-    return options.length ? [options[rand(options.length)]] : [];
-  });
+  s.power = free.length ? [free[rand(free.length)]] : [];
   const playing = s.active.filter((x) => !s.ranking.includes(x)).length;
   s.powerMovesAt = s.turnNo + POWER_EVERY_ROUNDS * Math.max(1, playing);
 }

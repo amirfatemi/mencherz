@@ -120,8 +120,8 @@ export function SettingsForm({ value, onChange }: Props) {
         </div>
         <Toggle label="A 6 gives another roll" checked={rules.bonusRollOnSix} onChange={(v) => setRules({ bonusRollOnSix: v })} />
         <Toggle
-          label="Power squares ⚡"
-          hint="Two squares that move every 5 rounds. End a move on one to pick a heaven bridge (+10), a hell bridge (−20) or a magic box to hide."
+          label="Power square ⚡"
+          hint="A square that moves every 5 rounds. End a move on it to pick a heaven bridge (+10), a hell bridge (−20) or a magic box to hide."
           checked={rules.powerSquares}
           onChange={(v) => setRules({ powerSquares: v })}
         />

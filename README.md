@@ -105,12 +105,12 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
    What was inside shows on a card for 3 seconds while the game waits.
 10. **Walls 🧱:** two or more pieces of one colour on a track square make a wall. Other colours can't pass it by stepping or with a colour jump (a move that would is not allowed, and a colour jump that would just doesn't happen). Flights ✈ and bridges go over it. Landing exactly on a wall knocks out every piece in it, each scored. Your own pieces pass your own walls.
 11. **Kings 👑:** each colour's first piece wears a crown. Knocking out a king, or knocking out with your king, counts ×1.5; a king knocking out a king, ×2.25.
-12. **Power squares ⚡:** two track squares, one in each half of the board, move to random free squares every 5 rounds (never a flight square). They're painted purple with a gold sparkle: nobody's colour, so nobody jumps from them. A number on each shows the rounds left before they move. Ending a move on one lets you pick:
+12. **Power square ⚡:** one track square moves to a random free square every 5 rounds (never a flight square). It's painted purple with a gold sparkle: nobody's colour, so nobody jumps from it. A number on it shows the rounds left before it moves. Ending a move on it lets you pick:
     - **Heaven bridge 🌈:** you pick a free start square; the bridge leads 10 squares ahead. The first piece to land on its start, yours included, is carried there, and the bridge is gone. It does nothing for a piece whose route turns home before its end.
     - **Hell bridge 🔥:** the same, but 20 squares back (or to the piece's takeoff spot, if it hasn't come that far).
     - **Magic box 🎁:** hide a new magic box on any free square. Whoever lands on it first opens it, you included.
 
-    A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on power squares.
+    A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on the power square.
 13. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
 
 ### Points
@@ -160,7 +160,7 @@ The weights live in `shared/dice.ts`.
 - Three sixes: all pieces go back / the planes moved on the sixes go back / the turn just ends / nothing happens
 - Bombs after a three-sixes penalty (on or off)
 - Magic boxes (on or off)
-- Power squares (on or off)
+- Power square (on or off)
 - Walls (on or off)
 - Kings (on or off)
 - Reaction GIFs (on or off)
