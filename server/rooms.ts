@@ -30,6 +30,7 @@ import {
   type GameState,
   type PowerChoice,
 } from '../shared/rules.ts';
+import { medalsWon } from '../shared/awards.ts';
 import { drawReaction, reactionsFor, type ReactionDeck, type ShownReaction } from '../shared/reactions.ts';
 import { RANKED_MIN_PEOPLE } from '../shared/scoring.ts';
 import { eventDuration } from '../shared/timing.ts';
@@ -370,7 +371,8 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     room.seats.forEach((s, i) => {
       if (s.kind === 'human' && s.userId !== undefined && !s.left) {
         const st = room.game!.stats[i];
-        auth.recordGame(s.userId, i === winner, { points: st?.points ?? 0, captures: st?.captures ?? 0, lost: st?.lost ?? 0, minutes });
+        const medals = medalsWon(room.game!, i as Seat).map((m) => m.id);
+        auth.recordGame(s.userId, i === winner, { points: st?.points ?? 0, captures: st?.captures ?? 0, lost: st?.lost ?? 0, minutes, medals });
       }
     });
   }

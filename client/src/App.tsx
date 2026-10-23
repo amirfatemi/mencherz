@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PublicUser } from '../../shared/protocol.ts';
 import { api } from './api.ts';
+import { titleFor } from '../../shared/awards.ts';
 import { FullscreenButton } from './components/FullscreenButton.tsx';
 import { Logo } from './components/Logo.tsx';
 import { AccountPage } from './pages/AccountPage.tsx';
@@ -98,7 +99,9 @@ export function App() {
             onClick={() => navigate('/settings')}
           >
             <span className="avatar">{user.username[0].toUpperCase()}</span>
-            <span className="user-name">{user.username}</span>
+            <span className="user-name">
+              <span title={titleFor(user.points).name}>{titleFor(user.points).icon}</span> {user.username}
+            </span>
             <span className="user-stats">
               ⭐ {user.points} · 🏆 {user.wins}
             </span>

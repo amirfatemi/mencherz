@@ -40,6 +40,7 @@ import {
   vestOptions,
   freeSquares,
   createGame,
+  newStats,
   placeOptions,
   planMove,
   ambushStart,
@@ -418,7 +419,7 @@ describe('points', () => {
     Object.assign(g, { phase: 'move', dice: 2, movable: [0] });
     const { state, event } = applyMove(g, 0);
     assert.equal(event.points, captureValue(victimPos));
-    assert.deepEqual(state.stats[0], { points: captureValue(victimPos), home: 0, captures: 1, lost: 0 });
+    assert.deepEqual(state.stats[0], { ...newStats(), points: captureValue(victimPos), captures: 1, bestHit: captureValue(victimPos), bestStreak: 1 });
     assert.equal(state.stats[1].lost, 1);
   });
 
@@ -899,12 +900,12 @@ describe('kill streaks', () => {
     return { g, v: g.pieces[1][0], ...applyMove(g, 0) };
   }
 
-  test("a piece's second knock-out counts 1.25 times, its third and later 1.5 times", () => {
+  test("a piece's second knock-out counts 1.5 times, its third and later twice", () => {
     for (const [before, times] of [
       [0, 1],
-      [1, 1.25],
-      [2, 1.5],
-      [5, 1.5],
+      [1, 1.5],
+      [2, 2],
+      [5, 2],
     ]) {
       const { event, v } = hit(before);
       assert.equal(event.captures[0].streak, before + 1);

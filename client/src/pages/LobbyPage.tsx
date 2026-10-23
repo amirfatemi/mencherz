@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { MEDALS, titleFor } from '../../../shared/awards.ts';
 import { LEADER_SORTS, type LeaderRow, type LeaderSort, type LobbyData, type PublicUser, type RoomSummary } from '../../../shared/protocol.ts';
 import { api } from '../api.ts';
 import { CreateGameDialog, type CreateMode } from '../components/CreateGameDialog.tsx';
@@ -91,7 +92,17 @@ function Leaderboard({ rows, me, sort, onSort }: { rows: LeaderRow[] | null; me:
             {rows.map((r, i) => (
               <tr key={r.username} className={r.username === me ? 'me' : ''}>
                 <td className="place">{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td>
-                <td className="who">{r.username}</td>
+                <td className="who">
+                  <span title={titleFor(r.points).name}>{titleFor(r.points).icon}</span> {r.username}
+                  <span className="leader-medals">
+                    {MEDALS.filter((m) => r.medals?.[m.id]).map((m) => (
+                      <span key={m.id} title={`${m.name}: ${m.how}`}>
+                        {m.icon}
+                        {r.medals[m.id] > 1 ? <sub>{r.medals[m.id]}</sub> : null}
+                      </span>
+                    ))}
+                  </span>
+                </td>
                 {SORT_COLUMNS.map((c) => (
                   <td key={c.sort} className={`num${sort === c.sort ? ' points' : ''}`}>
                     {c.value(r).toLocaleString()}

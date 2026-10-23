@@ -19,6 +19,7 @@ import {
   stepEnd,
 } from '../../shared/timing.ts';
 import { heading, lerpAngle, restHeading } from './geometry.ts';
+import { sfx } from './sound.ts';
 import { getSocket, call } from './socket.ts';
 
 export interface AnimPiece extends Point {
@@ -236,6 +237,32 @@ function frameAt(tl: Timeline, t: number): AnimFrame {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** The sounds of a move, each with when it plays, in ms from the start of the move's animation. */
+function moveSounds(ev: MoveEvent): { at: number; play: () => void }[] {
+  const out: { at: number; play: () => void }[] = [];
+  ev.path.forEach((step, i) => {
+    const end = stepEnd(ev, i);
+    if (step.kind === 'fly' || step.kind === 'bridge') out.push({ at: end - STEP_MS[step.kind], play: sfx.fly });
+    else if (step.kind === 'jump') out.push({ at: end - STEP_MS.jump, play: sfx.jump });
+    else if (step.kind === 'launch') out.push({ at: 0, play: sfx.launch });
+    else out.push({ at: end, play: sfx.step });
+  });
+  for (const c of ev.captures) out.push({ at: captureAt(ev, c), play: (c.streak ?? 1) >= 2 ? sfx.streak : sfx.hit });
+  if (blastOf(ev) || ev.bombed?.blast?.some((v) => !v.saved)) out.push({ at: blastOf(ev) ? blastAt(ev) : stepEnd(ev, ev.bombed!.atStep), play: sfx.boom });
+  if (ev.bombed?.saved) out.push({ at: stepEnd(ev, ev.bombed.atStep), play: sfx.good });
+  const box = ev.box;
+  if (box?.outcome) {
+    const open = boxOpenAt(ev);
+    out.push({ at: open, play: sfx.box });
+    const outcome = box.outcome === 'freeze' ? sfx.freeze : (box.outcome === 'bomb' && !box.saved) || box.outcome === 'minus' ? sfx.bad : sfx.good;
+    out.push({ at: open + 350, play: outcome });
+  }
+  if (ev.to === GOAL) out.push({ at: arrivalAt(ev), play: sfx.home });
+  if (ev.seatFinished || ev.gameOver) out.push({ at: arrivalAt(ev) + 450, play: sfx.win });
+  if (ev.power) out.push({ at: arrivalAt(ev), play: sfx.power });
+  return out;
+}
+
 /**
  * Joins a room and replays its updates in order, animating dice rolls and moves before
  * each new state is shown. Falls behind gracefully by speeding up or skipping animations.
@@ -324,8 +351,11 @@ export function useRoomStream(code: string) {
           }
           if (ev.type === 'roll') {
             setRolling(true);
+            sfx.roll();
             await sleep(ROLL_MS / speed);
             setRolling(false);
+            if (ev.outcome === 'penalty' || ev.outcome === 'forfeit') sfx.bad();
+            else sfx.land();
             if (ev.penalized.length) await play(penaltyTimeline(ev), speed);
             if (ev.outcome === 'pass') {
               // Show the turn moving on, but keep the number up (and, with a bot about, the next player waiting).
@@ -339,14 +369,17 @@ export function useRoomStream(code: string) {
               continue;
             }
           } else if (ev.type === 'power' || ev.type === 'vest') {
+            (ev.type === 'power' ? sfx.power : sfx.good)();
             commit(u.room);
             continue;
           } else if (ev.type === 'bomb' || ev.type === 'box' || ev.type === 'bridge' || ev.type === 'safe') {
             // The bomb or box drops in (CSS) once the new state is shown.
+            sfx.place();
             commit(u.room);
             await sleep(BOMB_MS / speed);
             continue;
           } else {
+            for (const s of moveSounds(ev)) setTimeout(() => alive.current && s.play(), s.at / speed);
             for (const m of scoreMoments(ev)) {
               const popup: Popup = { ...m.at, id: ++popupIds, text: m.text, seat: m.seat, big: m.big };
               setTimeout(() => {

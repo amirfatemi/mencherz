@@ -84,6 +84,9 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 - **Absent players:** a player who closes the tab has their turns played for them, so the others can carry on. A game where no human is present pauses.
 - **Auto-save:** every change is written to SQLite, and games survive a server restart. Leaving mid-game hands your seat to a computer player.
 - **Game clock:** the scoreboard shows the time played (pauses left out), and the results the whole game's length.
+- **End-of-game report:** with the results come the game's highlights (player of the match, top hunter, biggest hit, longest kill streak, demolition expert, frequent flyer, six machine, unluckiest) and the medals each person won.
+- **Medals and titles** (`shared/awards.ts`): in games that count, players win medals for good (Rocket, Hunter, Triple kill, Sniper, Demolisher, Untouchable, Phoenix), shown on the leaderboard and the Settings page. A title comes with total points: Rookie, Pilot (150), Captain (500), Ace (1200), Legend (2500).
+- **Sounds:** short sounds for the dice, steps, jumps, flights, knock-outs, bombs, boxes, pieces home and wins, made with the Web Audio API (no files). The 🔊 button turns them off.
 - **Version:** the top bar (and the sign-in page) shows the version, build date and commit, e.g. `v1.0.0 · 2026-10-23 · 5d3749c`.
 - **Full screen:** the ⛶ button in the top bar fills the screen with the game. On an iPad or phone, *Add to Home Screen* installs it as an app that always opens full screen (iPhones only allow full screen this way).
 - **Stats:** points, games played, wins, hits made and taken, and minutes played per user, on the leaderboard (sortable by any of them) and on the Settings page. A game counts only if at least two people played it (`RANKED_MIN_PEOPLE` in `shared/scoring.ts`), so games against computers alone are practice.
@@ -133,17 +136,17 @@ By default the game is scored, so knocking pieces out pays as well as racing:
 | Knock out a piece in the first half of its track (squares 1–25) | 4 |
 | …between halfway and the last 15% (26–42) | 6 |
 | …in the last 15% (43–50) | 8 |
-| Fly over a piece in its home column (only the opposite player's flight can) | 15 |
+| Fly over a piece in its home column (only the opposite player's flight can) | 20 |
 | **Revenge:** knock out whoever last knocked out one of yours | ×1.5 (once per knock-out received) |
-| **Double kill:** a piece's second knock-out since it left the hangar | ×1.25 |
-| **Triple kill** and later: its third knock-out and each one after | ×1.5 |
+| **Double kill:** a piece's second knock-out since it left the hangar | ×1.5 |
+| **Triple kill** and later: its third knock-out and each one after | ×2 |
 | **King:** knock out a king | ×1.5 |
 | A magic box that gives points | +20 |
 | A magic box that takes points | −10 |
 
 Bonuses multiply, and a single knock-out is capped at 100.
 
-The numbers are kept small, with 100 the biggest award. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. They have come down twice: from 10/15/20/40, when a busy hunter could collect close to the first-home bonus before anyone finished, and from 5/7/10/20 (with ×1.5/×2 streaks and a bonus for hitting with the king) after a game where the runner-up out-scored the first player home.
+The numbers are kept small, with 100 the biggest award. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. They have come down twice: from 10/15/20/40, when a busy hunter could collect close to the first-home bonus before anyone finished, and the three track values from 5/7/10 to 4/6/8 (with the bonus for hitting with the king dropped) after a game where the runner-up out-scored the first player home.
 
 The game goes on after the first player finishes, until third place is decided (only one player left). Places go by points, with ties broken by pieces home and then finishing order, so finishing first nearly always decides the winner, and knock-outs settle the places behind.
 

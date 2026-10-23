@@ -1,9 +1,11 @@
 import { useEffect, useState, type CSSProperties } from 'react';
+import { gameAwards, medalsWon } from '../../../shared/awards.ts';
 import { COLOR_HEX, type Seat } from '../../../shared/board.ts';
 import { peopleIn, type PublicUser, type SeatView } from '../../../shared/protocol.ts';
 import { RANKED_MIN_PEOPLE } from '../../../shared/scoring.ts';
 import { availablePowers, distinctMoves, freeSquares, placeOptions, ambushTargets, vestOptions, type PowerChoice } from '../../../shared/rules.ts';
 import { formatDuration } from '../duration.ts';
+import { isMuted, setMuted, sfx } from '../sound.ts';
 import { seatName } from '../events.ts';
 import { navigate } from '../router.ts';
 import { call } from '../socket.ts';
@@ -74,6 +76,11 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [help, setHelp] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [muted, setMutedState] = useState(isMuted);
+  const toggleSound = () => {
+    setMuted(!muted);
+    setMutedState(!muted);
+  };
   // The ambush needs a second pick: whose home column it opens.
   const [pickingAmbush, setPickingAmbush] = useState(false);
   const [pieceStyle, setPieceStyle] = usePieceStyle();
@@ -131,6 +138,11 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
     send(call('game:power', { code: view.code, choice, over }));
   };
   const setPaused = (on: boolean) => call('game:pause', { code: view.code, paused: on }).catch((e: Error) => setError(e.message));
+
+  // A chime when the dice is yours to roll.
+  useEffect(() => {
+    if (canRoll) sfx.turn();
+  }, [canRoll, game.turnNo]);
 
   useEffect(() => {
     if (!canRoll) return;
@@ -375,6 +387,9 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
           <button className="btn ghost small" onClick={() => setHelp(true)}>
             📖 آموزش
           </button>
+          <button className="btn ghost small" onClick={toggleSound} aria-pressed={!muted} title={muted ? 'Sounds are off' : 'Sounds are on'}>
+            {muted ? '🔇 Sound' : '🔊 Sound'}
+          </button>
           {isHost && !over && (
             <button className="btn ghost small" onClick={() => setPaused(!view.paused)} title={view.paused ? 'Resume the game' : 'Pause the game and its timer'}>
               {view.paused ? '▶ Resume' : '⏸ Pause'}
@@ -409,6 +424,47 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
             ))}
           </ol>
           <p className="results-time">⏱ Game time: {formatDuration(played)}</p>
+          {game.standings.length > 0 && (
+            <>
+              <h3 className="report-head">Highlights</h3>
+              <ul className="awards">
+                {gameAwards(game).map((a) => (
+                  <li key={a.id} style={{ '--seat': COLOR_HEX[a.seat] } as CSSProperties}>
+                    <span className="award-icon">{a.icon}</span>
+                    <span className="award-text">
+                      <b>{a.title}</b>
+                      <span>
+                        <span className="swatch" /> {seatName(view.seats, a.seat)} · {a.detail}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {peopleIn(view.seats) >= RANKED_MIN_PEOPLE &&
+                game.standings.some((seat) => view.seats[seat].kind === 'human' && medalsWon(game, seat).length > 0) && (
+                  <>
+                    <h3 className="report-head">New medals 🏅</h3>
+                    <ul className="new-medals">
+                      {game.standings
+                        .filter((seat) => view.seats[seat].kind === 'human')
+                        .map((seat) => {
+                          const won = medalsWon(game, seat);
+                          return won.length ? (
+                            <li key={seat}>
+                              <b>{seatName(view.seats, seat)}</b>:{' '}
+                              {won.map((m) => (
+                                <span key={m.id} className="pill" title={m.how}>
+                                  {m.icon} {m.name}
+                                </span>
+                              ))}
+                            </li>
+                          ) : null;
+                        })}
+                    </ul>
+                  </>
+                )}
+            </>
+          )}
           {game.standings.length === 0 && <p className="muted">Everyone left, so the game was stopped.</p>}
           {peopleIn(view.seats) < RANKED_MIN_PEOPLE && (
             <p className="muted small">Practice game: with only one person playing, it doesn't count on the leaderboard.</p>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { MEDALS, TITLES, titleFor } from '../../../shared/awards.ts';
 import type { PairCode, PublicUser } from '../../../shared/protocol.ts';
 import { api } from '../api.ts';
 import { navigate } from '../router.ts';
@@ -27,6 +28,35 @@ function RecordCard({ user }: { user: PublicUser }) {
           <span>win rate</span>
         </div>
       </div>
+    </section>
+  );
+}
+
+function MedalsCard({ user }: { user: PublicUser }) {
+  const title = titleFor(user.points);
+  const next = TITLES.find((t) => t.from > user.points);
+  return (
+    <section className="card">
+      <h2>
+        {title.icon} {title.name}
+      </h2>
+      <p className="muted small">
+        {next ? `${next.from - user.points} more points to ${next.icon} ${next.name}.` : 'The highest title there is.'} Titles and medals come from
+        games with at least two people.
+      </p>
+      <ul className="medal-grid">
+        {MEDALS.map((m) => {
+          const n = user.medals?.[m.id] ?? 0;
+          return (
+            <li key={m.id} className={n ? 'won' : ''} title={m.how}>
+              <span className="medal-icon">{m.icon}</span>
+              <b>{m.name}</b>
+              <span className="muted small">{m.how}</span>
+              <span className="medal-count">{n ? `×${n}` : 'not yet'}</span>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
@@ -122,6 +152,7 @@ export function AccountPage({ user, onVisible }: { user: PublicUser; onVisible: 
         </button>
       </div>
       <RecordCard user={user} />
+      <MedalsCard user={user} />
       <PairCodeCard user={user} />
     </div>
   );

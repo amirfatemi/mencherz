@@ -1635,6 +1635,60 @@ select:focus {
   box-shadow: inset 0 0 0 2px #ffca28;
 }
 
+.report-head {
+  margin: 14px 0 6px;
+  font-size: 1rem;
+}
+
+.awards {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px;
+}
+
+.awards li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--card-soft);
+  box-shadow: inset 4px 0 0 var(--seat);
+}
+
+.award-icon {
+  font-size: 1.5rem;
+}
+
+.award-text {
+  display: grid;
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.award-text .swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--seat);
+}
+
+.new-medals {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.new-medals .pill {
+  margin: 2px 4px 2px 0;
+}
+
 .results-time {
   margin: 10px 0 0;
   font-weight: 600;
@@ -1987,6 +2041,53 @@ svg.board {
 
 .leaderboard th.num {
   text-align: right;
+}
+
+.leader-medals {
+  margin-left: 6px;
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+}
+
+.leader-medals sub {
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.medal-grid {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.medal-grid li {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  text-align: center;
+  padding: 10px 8px;
+  border-radius: 14px;
+  background: var(--card-soft);
+  opacity: 0.55;
+  filter: grayscale(0.8);
+}
+
+.medal-grid li.won {
+  opacity: 1;
+  filter: none;
+  box-shadow: inset 0 0 0 2px #ffca28;
+}
+
+.medal-icon {
+  font-size: 1.8rem;
+}
+
+.medal-count {
+  font-weight: 700;
+  font-size: 0.8rem;
 }
 
 .leaderboard tr.me td {

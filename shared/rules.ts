@@ -190,6 +190,26 @@ export interface SeatStats {
   captures: number;
   /** Own pieces knocked out. */
   lost: number;
+  // For the end-of-game report and medals:
+  /** The most points one knock-out brought, bombs included. */
+  bestHit: number;
+  /** The longest kill streak of one of the seat's pieces. */
+  bestStreak: number;
+  /** Opponent pieces blown up by the seat's bombs, box bombs and super bombs. */
+  bombKills: number;
+  /** Magic boxes opened. */
+  boxes: number;
+  /** Sixes rolled. */
+  sixes: number;
+  /** Flights taken. */
+  flights: number;
+  /** Times the seat ended a move on the power square. */
+  powers: number;
+}
+
+/** A seat's stats at the start of a game. */
+export function newStats(): SeatStats {
+  return { points: 0, home: 0, captures: 0, lost: 0, bestHit: 0, bestStreak: 0, bombKills: 0, boxes: 0, sixes: 0, flights: 0, powers: 0 };
 }
 
 export interface GameState {
@@ -454,7 +474,7 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     streakMoved: [],
     ranking: [],
     standings: [],
-    stats: SEATS.map(() => ({ points: 0, home: 0, captures: 0, lost: 0 })),
+    stats: SEATS.map(newStats),
     bombs: [],
     boxes: [],
     vested: perPiece(),
@@ -855,6 +875,7 @@ export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRa
 
   if (dice === 6) {
     s.sixStreak++;
+    s.stats[seat].sixes = (s.stats[seat].sixes ?? 0) + 1;
   } else {
     s.sixStreak = 0;
     s.streakMoved = [];
@@ -932,6 +953,23 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   if (plan.bridge) s.bridges = s.bridges.filter((b) => b.square !== plan.bridge!.square);
   s.stats[seat].captures += plan.captures.length;
   s.stats[seat].points += plan.points;
+  // Report and medal bookkeeping; a bomb's owner is credited with what it blew up.
+  const mine = s.stats[seat];
+  const credit = (owner: Seat, points: number) => {
+    const st = s.stats[owner];
+    st.bestHit = Math.max(st.bestHit ?? 0, points);
+    st.bombKills = (st.bombKills ?? 0) + 1;
+  };
+  for (const c of plan.captures) {
+    mine.bestHit = Math.max(mine.bestHit ?? 0, c.points);
+    mine.bestStreak = Math.max(mine.bestStreak ?? 0, c.streak);
+  }
+  if (plan.flew) mine.flights = (mine.flights ?? 0) + 1;
+  if (plan.box) mine.boxes = (mine.boxes ?? 0) + 1;
+  if (plan.power) mine.powers = (mine.powers ?? 0) + 1;
+  if (plan.bombed && !plan.bombed.saved && plan.bombed.owner !== seat) credit(plan.bombed.owner, plan.bombed.points);
+  for (const v of plan.bombed?.blast ?? []) if (!v.saved && v.seat !== plan.bombed!.owner) credit(plan.bombed!.owner, v.points);
+  if (plan.box?.outcome === 'bomb' && !plan.box.saved && plan.box.owner !== seat) credit(plan.box.owner, plan.box.points);
   if (plan.bombed) {
     const { owner, square, points, saved } = plan.bombed;
     s.bombs = s.bombs.filter((b) => b.square !== square);

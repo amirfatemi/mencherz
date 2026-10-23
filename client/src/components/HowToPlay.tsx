@@ -1,8 +1,12 @@
 import { TRACK_LAST } from '../../../shared/board.ts';
+import { TITLES } from '../../../shared/awards.ts';
 import { AMBUSH_ROUNDS, BRIDGE_SPAN, POWER_EVERY_ROUNDS, SAFE_ROUNDS, SUPER_BOMB_REACH } from '../../../shared/rules.ts';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { BOX_REVEAL_MS, PASS_HOLD_MS } from '../../../shared/timing.ts';
 import { Modal } from './Modal.tsx';
+
+/** TITLES' names in Persian, in the same order. */
+const TITLE_NAMES_FA = ['تازه‌کار', 'خلبان', 'کاپیتان', 'آس', 'افسانه'];
 
 /** A number in Persian digits. */
 const fa = (n: number) => n.toLocaleString('fa-IR');
@@ -264,6 +268,28 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
             <b>🤕</b> چند بار مهره‌اش زده شده است.
           </li>
         </ul>
+
+        <h3>گزارش پایان بازی، مدال‌ها و لقب‌ها 🏅</h3>
+        <p>
+          آخر هر بازی، کنار رتبه‌ها و مدت بازی، گزارش بازی هم می‌آید: بهترین بازیکن 🏆، بهترین شکارچی 🏹، بزرگ‌ترین ضربه 🎯، طولانی‌ترین
+          سری زدن 💀، استاد بمب 💣، پروازکنندهٔ حرفه‌ای ✈، ماشین شش 🎲 و بدشانس‌ترین 🤕.
+        </p>
+        <p>در بازی‌هایی که در جدول کل حساب می‌شوند، این مدال‌ها برای همیشه به حسابتان اضافه می‌شوند:</p>
+        <ul>
+          <li>🚀 موشک: اولین نفری که هر چهار مهره را به مرکز برساند.</li>
+          <li>🏹 شکارچی: هشت بار زدن یا بیشتر در یک بازی.</li>
+          <li>💀 تریپل کیل: یک مهره سه بار پشت سر هم بزند.</li>
+          <li>🎯 تک‌تیرانداز: یک زدن که سی امتیاز یا بیشتر بیارزد.</li>
+          <li>💣 تخریب‌گر: منفجر کردن سه مهره یا بیشتر در یک بازی، با بمب، جعبه یا ابر بمب.</li>
+          <li>🛡 شکست‌ناپذیر: هر چهار مهره را برسانید بی‌آنکه حتی یک مهره زده شود.</li>
+          <li>🔥 ققنوس: شش بار یا بیشتر زده شوید و باز هم اول یا دوم شوید.</li>
+        </ul>
+        <p>
+          لقب شما از امتیاز کل می‌آید و کنار اسمتان در جدول کل دیده می‌شود:{' '}
+          {TITLES.map((t, i) => `${t.icon} ${TITLE_NAMES_FA[i]} (${fa(t.from)})`).join('، ')}. مدال‌ها و لقب را در صفحهٔ Settings هم
+          می‌بینید.
+        </p>
+        <p className="muted small">صدای بازی را با دکمهٔ 🔊 Sound کنار صفحه روشن و خاموش کنید.</p>
 
         <h3>درجهٔ سختی</h3>
         <p>

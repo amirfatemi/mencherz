@@ -1,5 +1,5 @@
 import { GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, type Seat } from '../shared/board.ts';
-import { DEFAULT_RULES, legalPieces, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
+import { DEFAULT_RULES, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
 import { POINTS } from '../shared/scoring.ts';
 
 /** Brings a saved game up to date: board numbering first, then fields added since it was saved. */
@@ -9,8 +9,10 @@ export function upgradeGame(game: GameState): GameState {
   // Games from before scoring: credit the pieces already home; earlier knock-outs weren't recorded.
   g.stats ??= SEATS.map((s) => {
     const home = g.pieces[s].filter((p) => p === GOAL).length;
-    return { points: home * POINTS.home, home, captures: 0, lost: 0 };
+    return { ...newStats(), points: home * POINTS.home, home };
   });
+  // Stats added later for the end-of-game report start at zero.
+  g.stats = g.stats.map((st) => ({ ...newStats(), ...st }));
   g.bombs ??= [];
   g.boxes ??= [];
   // Vests used to belong to the whole seat; each now goes on a piece, the one furthest along.

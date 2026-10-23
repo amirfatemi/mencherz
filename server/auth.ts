@@ -57,6 +57,7 @@ interface UserRow {
   total_captures: number;
   total_lost: number;
   total_minutes: number;
+  medals: string;
   created_at: number;
 }
 
@@ -69,6 +70,16 @@ const LEADER_ORDER: Record<LeaderSort, string> = {
   lost: 'total_lost DESC, total_points DESC, wins DESC',
   minutes: 'total_minutes DESC, total_points DESC, wins DESC',
 };
+
+/** A user's medals: medal id → times won. */
+function readMedals(raw: string | null | undefined): Record<string, number> {
+  try {
+    const v = JSON.parse(raw ?? '{}');
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
@@ -107,6 +118,7 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     wins: u.wins,
     points: u.total_points,
     isAdmin: isAdmin(u.username),
+    medals: readMedals(u.medals),
   });
 
   const q = {
@@ -124,11 +136,13 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
         total_captures = total_captures + ?, total_lost = total_lost + ?, total_minutes = total_minutes + ?
       WHERE id = ?
     `),
+    medalsOf: db.prepare('SELECT medals FROM users WHERE id = ?'),
+    setMedals: db.prepare('UPDATE users SET medals = ? WHERE id = ?'),
     leaderboard: Object.fromEntries(
       LEADER_SORTS.map((sort) => [
         sort,
         db.prepare(`
-          SELECT username, total_points, games_played, wins, total_captures, total_lost, total_minutes FROM users WHERE games_played > 0
+          SELECT username, total_points, games_played, wins, total_captures, total_lost, total_minutes, medals FROM users WHERE games_played > 0
           ORDER BY ${LEADER_ORDER[sort]}, username LIMIT 50
         `),
       ]),
@@ -246,7 +260,7 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     const sort = asked && LEADER_SORTS.includes(asked) ? asked : 'points';
     const rows = q.leaderboard[sort].all() as Pick<
       UserRow,
-      'username' | 'total_points' | 'games_played' | 'wins' | 'total_captures' | 'total_lost' | 'total_minutes'
+      'username' | 'total_points' | 'games_played' | 'wins' | 'total_captures' | 'total_lost' | 'total_minutes' | 'medals'
     >[];
     return json(
       rows.map(
@@ -258,6 +272,7 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
           captures: r.total_captures,
           lost: r.total_lost,
           minutes: r.total_minutes,
+          medals: readMedals(r.medals),
         }),
       ),
     );
@@ -332,8 +347,13 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     json,
     stop: () => clearInterval(purge),
     userFromCookieHeader: (header: string | null | undefined) => userFromToken(readCookie(header)),
-    recordGame(userId: number, won: boolean, stats: { points: number; captures: number; lost: number; minutes: number }) {
+    recordGame(userId: number, won: boolean, stats: { points: number; captures: number; lost: number; minutes: number; medals: string[] }) {
       q.recordGame.run(won ? 1 : 0, Math.max(0, Math.round(stats.points)), stats.captures, stats.lost, stats.minutes, userId);
+      if (!stats.medals.length) return;
+      const row = q.medalsOf.get(userId) as { medals: string } | undefined;
+      const medals = readMedals(row?.medals);
+      for (const id of stats.medals) medals[id] = (medals[id] ?? 0) + 1;
+      q.setMedals.run(JSON.stringify(medals), userId);
     },
     /** Checks a player's one-time code and uses it up. Too many wrong guesses burn the code. */
     consumePairCode(username: string, code: string): PublicUser {

@@ -104,6 +104,8 @@ export interface PublicUser {
   points: number;
   /** Can see every account and set their passwords (see /admin). */
   isAdmin: boolean;
+  /** Medal id → times won, over the games that count. */
+  medals: Record<string, number>;
 }
 
 /** A "what is a + b?" check on the sign-in and sign-up forms. */
@@ -134,6 +136,8 @@ export interface LeaderRow {
   lost: number;
   /** Minutes played, over all counted games. */
   minutes: number;
+  /** Medal id → times won. */
+  medals: Record<string, number>;
 }
 
 /** What the leaderboard can be ordered by. */
