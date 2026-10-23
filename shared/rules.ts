@@ -135,7 +135,7 @@ export const WORLD_EVENTS: Record<WorldEventKind, { rounds: number }> = {
 export const EVENT_EVERY_ROUNDS = 6;
 
 /** The bounty on the points leader: what it starts at, what each round in the lead adds, and its most. */
-export const BOUNTY = { start: 5, perRound: 3, max: 30 } as const;
+export const BOUNTY = { start: 3, perRound: 1, max: 8 } as const;
 
 export const DRAGON_EVERY_ROUNDS = 5;
 export const DRAGON_ROUNDS = 2;

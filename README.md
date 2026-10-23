@@ -125,7 +125,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 
     A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on the power square.
 13. **Surprise events 🌪:** every 6 rounds one happens at random, announced with a banner and a sound: a storm (no flights, 1 round), gold rain (pieces reaching the centre score double, 2 rounds), an earthquake (every bomb jumps to another free square), a dark night (knock-outs score double, 2 rounds) or fog (magic boxes hidden, 1 round).
-14. **Bounty on the leader 🎯:** whoever leads on points (alone) gets a MOST WANTED poster by their hangar. Knocking out one of their pieces, bombs included, pays the bounty on top: it starts at 5, grows by 3 each time their turn comes round in the lead (up to 30), and starts again at 5 once claimed.
+14. **Bounty on the leader 🎯:** whoever leads on points (alone) gets a MOST WANTED poster by their hangar. Knocking out one of their pieces, bombs included, pays the bounty on top: it starts at 3, grows by 1 each time their turn comes round in the lead (up to 8), and starts again at 3 once claimed. It's meant to make the leader a little juicier, not to outweigh the knock-out itself.
 15. **Dragon 🐉:** every 5 rounds a dragon appears on a free square for 2 rounds. It belongs to nobody and moves with every roll, as far as the dice says. Any piece where it stops is eaten (back to the hangar), unless on its own safe square. A piece that lands on the dragon slays it for 40 points.
 16. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
 
