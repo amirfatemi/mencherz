@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { AdminUserRow, PublicUser } from '../../../shared/protocol.ts';
+import type { AccountStatus, AdminUserRow, PublicUser } from '../../../shared/protocol.ts';
 import { api } from '../api.ts';
 import { Modal } from '../components/Modal.tsx';
 import { navigate } from '../router.ts';
@@ -68,18 +68,32 @@ function ResetDialog({ user, onClose }: { user: AdminUserRow; onClose: () => voi
   );
 }
 
+const STATUS_LABEL: Record<AccountStatus, string> = { pending: '⏳ Waiting', active: 'Active', disabled: '⛔ Disabled' };
+
 export function AdminPage({ user }: { user: PublicUser }) {
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resetting, setResetting] = useState<AdminUserRow | null>(null);
   const [filter, setFilter] = useState('');
+  const [busy, setBusy] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!user.isAdmin) return;
+  const load = () =>
     api<AdminUserRow[]>('/admin/users')
       .then(setUsers)
       .catch((e: Error) => setError(e.message));
+  useEffect(() => {
+    if (user.isAdmin) void load();
   }, [user.isAdmin]);
+
+  /** Approves, disables or re-enables an account. */
+  const setStatus = (u: AdminUserRow, status: 'active' | 'disabled') => {
+    setBusy(u.id);
+    setError(null);
+    api('/admin/status', { userId: u.id, status })
+      .then(load)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(null));
+  };
 
   if (!user.isAdmin) {
     return (
@@ -92,7 +106,11 @@ export function AdminPage({ user }: { user: PublicUser }) {
     );
   }
 
-  const shown = (users ?? []).filter((u) => u.username.toLowerCase().includes(filter.trim().toLowerCase()));
+  // New accounts waiting for approval come first.
+  const shown = (users ?? [])
+    .filter((u) => u.username.toLowerCase().includes(filter.trim().toLowerCase()))
+    .sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending'));
+  const waiting = (users ?? []).filter((u) => u.status === 'pending').length;
 
   return (
     <div className="account">
@@ -104,9 +122,16 @@ export function AdminPage({ user }: { user: PublicUser }) {
       </div>
       <section className="card leaderboard admin-users">
         <div className="admin-head">
-          <h2>Players {users && <span className="muted small">· {users.length}</span>}</h2>
+          <h2>
+            Players {users && <span className="muted small">· {users.length}</span>}
+            {waiting > 0 && <span className="pill accent">{waiting} waiting for approval</span>}
+          </h2>
           <input placeholder="Search" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Search players" />
         </div>
+        <p className="muted small">
+          New accounts wait here until you approve them; until then they can look around but can't create or join games. A disabled account
+          can't either, until you enable it again.
+        </p>
         {error && <div className="error">{error}</div>}
         {!users ? (
           <p className="muted">Loading…</p>
@@ -115,6 +140,7 @@ export function AdminPage({ user }: { user: PublicUser }) {
             <thead>
               <tr>
                 <th>Player</th>
+                <th>Status</th>
                 <th>Joined</th>
                 <th className="num">Games</th>
                 <th className="num">Wins</th>
@@ -124,16 +150,34 @@ export function AdminPage({ user }: { user: PublicUser }) {
             </thead>
             <tbody>
               {shown.map((u) => (
-                <tr key={u.id} className={u.id === user.id ? 'me' : ''}>
+                <tr key={u.id} className={`${u.id === user.id ? 'me' : ''} status-${u.status}`}>
                   <td className="who">
                     {u.username}
                     {u.isAdmin && <span className="pill">admin</span>}
+                  </td>
+                  <td>
+                    <span className={`pill account-status ${u.status}`}>{STATUS_LABEL[u.status]}</span>
                   </td>
                   <td>{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td className="num">{u.gamesPlayed}</td>
                   <td className="num">{u.wins}</td>
                   <td className="num">{u.points.toLocaleString()}</td>
-                  <td className="num">
+                  <td className="num admin-actions">
+                    {u.status === 'pending' && (
+                      <button className="btn primary small" disabled={busy === u.id} onClick={() => setStatus(u, 'active')}>
+                        Approve
+                      </button>
+                    )}
+                    {u.status === 'disabled' && (
+                      <button className="btn ghost small" disabled={busy === u.id} onClick={() => setStatus(u, 'active')}>
+                        Enable
+                      </button>
+                    )}
+                    {!u.isAdmin && u.status !== 'disabled' && (
+                      <button className="btn danger small" disabled={busy === u.id} onClick={() => setStatus(u, 'disabled')}>
+                        Disable
+                      </button>
+                    )}
                     <button className="btn ghost small" onClick={() => setResetting(u)}>
                       Reset password
                     </button>

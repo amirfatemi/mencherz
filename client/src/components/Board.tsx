@@ -35,7 +35,20 @@ import {
 import type { SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
-import { BRIDGE_SPAN, DRAGON_PRIZE, KING_PIECE, SUPER_BOMB_REACH, isKing, planMove, ambushStart, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
+import {
+  BRIDGE_SPAN,
+  DRAGON_PATH,
+  DRAGON_PRIZE,
+  KING_PIECE,
+  SUPER_BOMB_REACH,
+  asSeen,
+  isKing,
+  planMove,
+  ambushStart,
+  type BridgeKind,
+  type GameState,
+  type Placeable,
+} from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
 import { BOARD_PX, CELL, dragonPoint, heading, restHeading, toPx } from '../geometry.ts';
 import type { ActiveReaction, AnimFrame, Popup } from '../useRoomStream.ts';
@@ -286,14 +299,15 @@ const burst = (r: number) =>
     return `${(Math.sin(a) * k).toFixed(1)} ${(-Math.cos(a) * k).toFixed(1)}`;
   }).join('L')}Z`;
 
-/** A cartoon bomb, ringed in its owner's colour. A super bomb is bigger, on a jagged red burst. */
-function BombIcon({ x, y, owner, ghost, big }: { x: number; y: number; owner: Seat; ghost?: boolean; big?: boolean }) {
+/** A cartoon bomb, ringed in its owner's colour (the dragon's in dark red). A super bomb is bigger, on a jagged red burst. */
+function BombIcon({ x, y, owner, ghost, big }: { x: number; y: number; owner: Seat | null; ghost?: boolean; big?: boolean }) {
   const r = CELL * (big ? 0.31 : 0.27);
   return (
     <g className={`bomb${big ? ' super' : ''}${ghost ? ' ghost' : ''}`} transform={`translate(${x} ${y})`} pointerEvents="none">
+      {owner === null && <title>The dragon's bomb: whoever lands on it goes back to the hangar, and nobody scores</title>}
       <g className="bomb-body">
         {big && <path d={burst(r * 1.75)} fill="#ff5722" stroke="#bf360c" strokeWidth={1.5} strokeLinejoin="round" />}
-        <circle r={r + 3} fill="#fff" stroke={COLOR_HEX[owner]} strokeWidth={3} />
+        <circle r={r + 3} fill={owner === null ? '#ffccbc' : '#fff'} stroke={owner === null ? '#bf360c' : COLOR_HEX[owner]} strokeWidth={3} />
         <rect x={-r * 0.32} y={-r * 1.18} width={r * 0.64} height={r * 0.4} rx={1.5} fill="#444" />
         <circle r={r} fill="url(#bomb-body)" />
         <ellipse cx={-r * 0.35} cy={-r * 0.38} rx={r * 0.3} ry={r * 0.2} fill="rgba(255,255,255,0.5)" />
@@ -452,10 +466,11 @@ function AmbushMark({ over, rounds }: { over: Seat; rounds: number }) {
 }
 
 /** The dragon: it eats what it stops on. The badge says how many rounds it stays. */
-function DragonIcon({ x, y, rounds }: { x: number; y: number; rounds: number }) {
+/** The dragon, with how many squares of its lap it has left before it explodes. */
+function DragonIcon({ x, y, left }: { x: number; y: number; left: number }) {
   return (
     <g className="dragon" transform={`translate(${x} ${y})`} pointerEvents="none">
-      <title>{`The dragon — it moves with every roll, up home columns too, and eats what it stops on. Land on it for +${DRAGON_PRIZE}. ${rounds === 1 ? 'It explodes after this round' : `${rounds} rounds left`}.`}</title>
+      <title>{`The dragon — it moves with every roll, up home columns too, eats what it stops on, and two sixes in a row leave a bomb. Land on it with your king for +${DRAGON_PRIZE.king} and it's gone for good; any other piece gets +${DRAGON_PRIZE.piece}. ${left} squares until it has been round the board and explodes.`}</title>
       {/* Bigger than a square, so it stands out wherever it is. */}
       <g className="dragon-body">
         <circle className="dragon-fire" r={CELL * 0.72} />
@@ -466,8 +481,8 @@ function DragonIcon({ x, y, rounds }: { x: number; y: number; rounds: number }) 
       </g>
       <g transform={`translate(${CELL * 0.5} ${-CELL * 0.5})`}>
         <circle r={CELL * 0.2} fill="#bf360c" stroke="#fff" strokeWidth={2} />
-        <text textAnchor="middle" dy="0.35em" fontSize={CELL * 0.24} fontWeight={700} fill="#fff">
-          {rounds}
+        <text textAnchor="middle" dy="0.35em" fontSize={CELL * (left > 9 ? 0.19 : 0.24)} fontWeight={700} fill="#fff">
+          {left}
         </text>
       </g>
     </g>
@@ -565,10 +580,13 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
     setBombHover(null);
   }, [game.seq]);
 
-  const preview = useMemo(
-    () => (hovered !== null && game.dice ? planMove(game, game.turn, hovered, game.dice) : null),
-    [game, hovered],
-  );
+  // Fog hides bombs, boxes and bridges, from the move preview too.
+  const fog = game.event?.kind === 'fog';
+  const preview = useMemo(() => {
+    if (hovered === null || !game.dice) return null;
+    const seen = asSeen(game);
+    return planMove(seen, seen.turn, hovered, game.dice);
+  }, [game, hovered]);
 
   // Planes of one colour on one square are drawn as a single piece with a count, so one leaving never shifts the other.
   // A king, or a piece wearing a vest, stands beside the rest instead, so each can be picked on its own.
@@ -758,22 +776,20 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           </g>
         )}
 
-        {/* Fog hides the boxes. */}
-        {game.event?.kind !== 'fog' &&
+        {!fog &&
           (game.boxes ?? []).map((b) => {
             const p = toPx(TRACK[b.square].spot, rot);
             return <BoxIcon key={`box${b.square}`} x={p.x} y={p.y} owner={b.owner} />;
           })}
-        {game.bombs.map((b) => {
-          const p = toPx(TRACK[b.square].spot, rot);
-          return <BombIcon key={b.square} x={p.x} y={p.y} owner={b.owner} big={b.super} />;
-        })}
+        {!fog &&
+          game.bombs.map((b) => {
+            const p = toPx(TRACK[b.square].spot, rot);
+            return <BombIcon key={b.square} x={p.x} y={p.y} owner={b.owner} big={b.super} />;
+          })}
         {(game.power ?? []).map((sq) => (
           <PowerSquare key={`power${sq}`} square={sq} rounds={powerRounds} />
         ))}
-        {(game.bridges ?? []).map((b) => (
-          <BridgeMarks key={`bridge${b.square}`} from={b.square} kind={b.kind} />
-        ))}
+        {!fog && (game.bridges ?? []).map((b) => <BridgeMarks key={`bridge${b.square}`} from={b.square} kind={b.kind} />)}
         {(game.safe ?? []).map((x) => (
           <SafeMark key={`safe${x.square}`} square={x.square} owner={x.owner} rounds={roundsUntil(x.until)} />
         ))}
@@ -816,7 +832,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           (() => {
             const at = anim?.pieces.get('dragon') ?? dragonPoint(game.dragon.at);
             const p = toPx(at, rot);
-            return <DragonIcon x={p.x} y={p.y} rounds={roundsUntil(game.dragon.until)} />;
+            return <DragonIcon x={p.x} y={p.y} left={DRAGON_PATH.length - game.dragon.moved} />;
           })()}
 
         {/* A light tint for the dark night, a haze for fog. */}
@@ -846,29 +862,33 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 />
               </g>
             ))}
-            {bombHover !== null &&
-              (() => {
-                const p = toPx(TRACK[bombHover].spot, rot);
-                if (targetKind === 'heaven' || targetKind === 'hell') return <BridgeMarks from={bombHover} kind={targetKind} ghost />;
-                if (targetKind === 'safe') return <SafeMark square={bombHover} owner={game.turn} rounds={2} ghost />;
-                if (targetKind === 'superBomb') {
-                  // The squares its blast would reach.
-                  const reach = Array.from({ length: SUPER_BOMB_REACH * 2 + 1 }, (_, k) => (bombHover + k - SUPER_BOMB_REACH + TRACK.length) % TRACK.length);
-                  return (
-                    <>
-                      {reach.map((sq) => (
-                        <ShapeEl key={sq} s={rotateShape(TRACK[sq].shape, rot)} fill="rgba(213,0,0,0.16)" stroke="#d50000" strokeWidth={2.5} inset={2.5} />
-                      ))}
-                      <BombIcon x={p.x} y={p.y} owner={game.turn} ghost big />
-                    </>
+            {/* The preview lets taps through to the square under it, for the second tap that confirms. */}
+            {bombHover !== null && (
+              <g pointerEvents="none">
+                {(() => {
+                  const p = toPx(TRACK[bombHover].spot, rot);
+                  if (targetKind === 'heaven' || targetKind === 'hell') return <BridgeMarks from={bombHover} kind={targetKind} ghost />;
+                  if (targetKind === 'safe') return <SafeMark square={bombHover} owner={game.turn} rounds={2} ghost />;
+                  if (targetKind === 'superBomb') {
+                    // The squares its blast would reach.
+                    const reach = Array.from({ length: SUPER_BOMB_REACH * 2 + 1 }, (_, k) => (bombHover + k - SUPER_BOMB_REACH + TRACK.length) % TRACK.length);
+                    return (
+                      <>
+                        {reach.map((sq) => (
+                          <ShapeEl key={sq} s={rotateShape(TRACK[sq].shape, rot)} fill="rgba(213,0,0,0.16)" stroke="#d50000" strokeWidth={2.5} inset={2.5} />
+                        ))}
+                        <BombIcon x={p.x} y={p.y} owner={game.turn} ghost big />
+                      </>
+                    );
+                  }
+                  return targetKind === 'box' ? (
+                    <BoxIcon x={p.x} y={p.y} owner={game.turn} ghost />
+                  ) : (
+                    <BombIcon x={p.x} y={p.y} owner={game.turn} ghost />
                   );
-                }
-                return targetKind === 'box' ? (
-                  <BoxIcon x={p.x} y={p.y} owner={game.turn} ghost />
-                ) : (
-                  <BombIcon x={p.x} y={p.y} owner={game.turn} ghost />
-                );
-              })()}
+                })()}
+              </g>
+            )}
           </g>
         )}
 

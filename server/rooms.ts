@@ -110,8 +110,9 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
   const q = {
     save: db.prepare(`
       INSERT INTO games (code, status, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(code) DO UPDATE SET status = excluded.status, data = excluded.data, updated_at = excluded.updated_at
+      ON CONFLICT(code) DO UPDATE SET status = excluded.status, data = excluded.data, updated_at = excluded.updated_at, summary = NULL
     `),
+    taken: db.prepare('SELECT 1 FROM games WHERE code = ?'),
     remove: db.prepare('DELETE FROM games WHERE code = ?'),
     load: db.prepare("SELECT * FROM games WHERE status != 'finished' OR updated_at > ?"),
   };
@@ -295,7 +296,8 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     for (;;) {
       let code = '';
       for (let i = 0; i < 5; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
-      if (!rooms.has(code)) return code;
+      // Finished games stay in the database for the history, so their codes stay taken.
+      if (!rooms.has(code) && !q.taken.get(code)) return code;
     }
   }
 
@@ -528,6 +530,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     socket.on(
       'room:create',
       handler((req) => {
+        auth.requireActive(user.id);
         const hosting = [...rooms.values()].filter((r) => r.hostId === user.id && r.status === 'waiting').length;
         if (hosting >= MAX_WAITING_PER_HOST) {
           throw new InputError(`You already have ${hosting} games waiting for players. Start or leave one first.`);
@@ -574,7 +577,8 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       'room:join',
       handler((req) => {
         const room = getRoom(req?.code);
-        if (room.status === 'waiting' && seatOf(room, user.id) === -1) {
+        // An account waiting for approval, or disabled, can watch but not take a seat.
+        if (room.status === 'waiting' && seatOf(room, user.id) === -1 && auth.accountStatus(user.id) === 'active') {
           const open = room.seats.findIndex((s) => s.kind === 'open');
           if (open !== -1) {
             room.seats[open] = { kind: 'human', userId: user.id, name: user.username };
@@ -612,6 +616,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         const target = room.seats[seat];
 
         if (req?.action === 'take') {
+          auth.requireActive(user.id);
           if (target.kind !== 'open') throw new InputError('That seat is not free');
           const mine = seatOf(room, user.id);
           if (mine !== -1) room.seats[mine] = { kind: 'open' };
@@ -637,6 +642,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       handler((req) => {
         const room = getRoom(req?.code);
         requireWaiting(room);
+        auth.requireActive(user.id);
         const seat = parseSeat(req?.seat);
         if (seatOf(room, user.id) === -1) throw new InputError('Take a seat yourself first');
         const target = room.seats[seat];
@@ -650,6 +656,8 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
           throw new InputError(`${username} is already in this game`);
         }
         if (!allowPairing(String(user.id))) throw new InputError('Too many tries. Wait a few minutes and try again.');
+        // Checked before the code is used up, like the name above.
+        auth.requireActive(username, `${username}'s account`);
         const player = auth.consumePairCode(username, pairCode);
         room.seats[seat] = {
           kind: 'human',

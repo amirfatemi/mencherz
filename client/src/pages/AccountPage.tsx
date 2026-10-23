@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { MEDALS, TITLES, titleFor } from '../../../shared/awards.ts';
 import type { PairCode, PublicUser } from '../../../shared/protocol.ts';
 import { api } from '../api.ts';
@@ -7,6 +7,7 @@ import { getSocket } from '../socket.ts';
 
 function RecordCard({ user }: { user: PublicUser }) {
   const rate = user.gamesPlayed ? Math.round((user.wins / user.gamesPlayed) * 100) : 0;
+  const average = user.gamesPlayed ? user.points / user.gamesPlayed : 0;
   return (
     <section className="card">
       <h2>Your record</h2>
@@ -22,6 +23,10 @@ function RecordCard({ user }: { user: PublicUser }) {
         <div className="stat-tile">
           <b>{user.wins}</b>
           <span>🏆 wins</span>
+        </div>
+        <div className="stat-tile">
+          <b>{average.toLocaleString(undefined, { maximumFractionDigits: 1 })}</b>
+          <span>⌀ points a game</span>
         </div>
         <div className="stat-tile">
           <b>{rate}%</b>
@@ -141,6 +146,59 @@ function PairCodeCard({ user }: { user: PublicUser }) {
   );
 }
 
+function PasswordCard() {
+  const [current, setCurrent] = useState('');
+  const [password, setPassword] = useState('');
+  const [again, setAgain] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const mismatch = again.length > 0 && again !== password;
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (password !== again) return;
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    api('/password', { current, password })
+      .then(() => {
+        setDone(true);
+        setCurrent('');
+        setPassword('');
+        setAgain('');
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <section className="card">
+      <h2>🔑 Change password</h2>
+      <form className="password-form" onSubmit={submit}>
+        <label className="field">
+          <span>Current password</span>
+          <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
+        </label>
+        <label className="field">
+          <span>New password</span>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} maxLength={128} autoComplete="new-password" required />
+        </label>
+        <label className="field">
+          <span>New password again</span>
+          <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" required />
+        </label>
+        {mismatch && <div className="error small">The two new passwords don't match.</div>}
+        {error && <div className="error small">{error}</div>}
+        {done && <div className="success">✓ Password changed. Your other devices have been signed out.</div>}
+        <button className="btn primary" disabled={busy || !current || password.length < 6 || password !== again}>
+          Change password
+        </button>
+      </form>
+    </section>
+  );
+}
+
 export function AccountPage({ user, onVisible }: { user: PublicUser; onVisible: () => void }) {
   useEffect(onVisible, [onVisible]);
   return (
@@ -154,6 +212,7 @@ export function AccountPage({ user, onVisible }: { user: PublicUser; onVisible: 
       <RecordCard user={user} />
       <MedalsCard user={user} />
       <PairCodeCard user={user} />
+      <PasswordCard />
     </div>
   );
 }

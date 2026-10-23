@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import WebSocket from 'ws';
 import { botAction } from '../shared/ai.ts';
-import type { AdminUserRow, Captcha, LeaderRow, PublicUser, RoomUpdate, RoomView } from '../shared/protocol.ts';
+import type { AdminUserRow, Captcha, HistoryPage, LeaderRow, PublicUser, RoomUpdate, RoomView } from '../shared/protocol.ts';
 import type { GameState } from '../shared/rules.ts';
 import { REACTION_BY_ID } from '../shared/reactions.ts';
 import { GameSocket, type WsLike } from '../shared/socket-client.ts';
@@ -29,6 +29,7 @@ async function boot() {
     clientDir: null,
     timeScale: 0.01,
     admins: ['boss'],
+    signInTries: 1000,
   });
   base = `http://127.0.0.1:${server.port}`;
 }
@@ -48,10 +49,30 @@ async function post(path: string, body: unknown, cookie?: string) {
   });
 }
 
-async function signUp(username: string, password = 'secret123') {
+/** A new account, as it is before an admin has looked at it. */
+async function register(username: string, password = 'secret123') {
   const res = await post('/register', { username, password, ...(await solved()) });
   assert.equal(res.status, 201, await res.clone().text());
   return res.headers.get('set-cookie')!.split(';')[0];
+}
+
+/** The admin's session ('boss' is named an admin in boot), made the first time it's needed. */
+let boss: Promise<string> | null = null;
+const bossCookie = () => (boss ??= register('boss'));
+
+/** Sets an account's status as the admin. */
+async function setStatus(username: string, status: 'active' | 'disabled') {
+  const cookie = await bossCookie();
+  const users = (await (await fetch(`${base}/api/admin/users`, { headers: { cookie } })).json()) as AdminUserRow[];
+  const res = await post('/admin/status', { userId: users.find((u) => u.username === username)!.id, status }, cookie);
+  assert.equal(res.status, 200, await res.clone().text());
+}
+
+/** A new account the admin has approved, ready to play. */
+async function signUp(username: string, password = 'secret123') {
+  const cookie = await register(username, password);
+  await setStatus(username, 'active');
+  return cookie;
 }
 
 /** A game socket signed in with this cookie, as the browser client uses it. */
@@ -162,7 +183,7 @@ describe('sign-in sum', () => {
 
 describe('admin', () => {
   test('an admin lists every player and sets a password; others may not', async () => {
-    const boss = await signUp('boss');
+    const boss = await bossCookie();
     const frank = await signUp('frank');
     const me = (await (await fetch(`${base}/api/me`, { headers: { cookie: boss } })).json()) as PublicUser;
     assert.equal(me.isAdmin, true);
@@ -180,6 +201,57 @@ describe('admin', () => {
     assert.equal((await fetch(`${base}/api/me`, { headers: { cookie: frank } })).status, 401, 'signed out everywhere');
     assert.equal((await post('/login', { username: 'frank', password: 'secret123', ...(await solved()) })).status, 401);
     assert.equal((await post('/login', { username: 'frank', password: 'fresh-pass', ...(await solved()) })).status, 200);
+  });
+});
+
+describe('password', () => {
+  test('a player changes their own password with the current one, and their other devices are signed out', async () => {
+    const phone = await signUp('gina');
+    const login = await post('/login', { username: 'gina', password: 'secret123', ...(await solved()) });
+    const laptop = login.headers.get('set-cookie')!.split(';')[0];
+    assert.equal((await post('/password', { current: 'wrong-one', password: 'brand-new' }, phone)).status, 400);
+    assert.equal((await post('/password', { current: 'secret123', password: '123' }, phone)).status, 400);
+    assert.equal((await post('/password', { current: 'secret123', password: 'brand-new' })).status, 401);
+    assert.equal((await post('/password', { current: 'secret123', password: 'brand-new' }, phone)).status, 200);
+    assert.equal((await fetch(`${base}/api/me`, { headers: { cookie: phone } })).status, 200, 'this device stays signed in');
+    assert.equal((await fetch(`${base}/api/me`, { headers: { cookie: laptop } })).status, 401, 'the others are signed out');
+    assert.equal((await post('/login', { username: 'gina', password: 'secret123', ...(await solved()) })).status, 401);
+    assert.equal((await post('/login', { username: 'gina', password: 'brand-new', ...(await solved()) })).status, 200);
+  });
+});
+
+describe('account approval', () => {
+  test("a new account can't create or join games until an admin approves it, nor once it's disabled", async () => {
+    const cookie = await register('newbie');
+    const me = (await (await fetch(`${base}/api/me`, { headers: { cookie } })).json()) as PublicUser;
+    assert.equal(me.status, 'pending');
+    const host = await socketFor(await signUp('hostess'));
+    const { code } = await call<{ code: string }>(host, 'room:create', {
+      settings: { name: 'Approval table', isPublic: true, turnSeconds: 0 },
+      seats: [{ kind: 'host' }, { kind: 'open' }, { kind: 'closed' }, { kind: 'closed' }],
+    });
+    const s = await socketFor(cookie);
+    const seats = [{ kind: 'host' }, { kind: 'bot', botLevel: 'easy' }, { kind: 'closed' }, { kind: 'closed' }];
+    await assert.rejects(call(s, 'room:create', { settings: { name: 'Mine', isPublic: false, turnSeconds: 0 }, seats }), /waiting for an admin/);
+    const watching = await call<RoomView>(s, 'room:join', { code });
+    assert.equal(watching.seats[1].kind, 'open', 'it may watch, but gets no seat');
+    await assert.rejects(call(s, 'room:seat', { code, seat: 1, action: 'take' }), /waiting for an admin/);
+
+    const statuses: string[] = [];
+    s.on('account:status', ({ status }: { status: string }) => statuses.push(status));
+    await setStatus('newbie', 'active');
+    assert.equal(((await (await fetch(`${base}/api/me`, { headers: { cookie } })).json()) as PublicUser).status, 'active');
+    await call(s, 'room:seat', { code, seat: 1, action: 'take' });
+    await setStatus('newbie', 'disabled');
+    await assert.rejects(call(s, 'room:create', { settings: { name: 'Mine', isPublic: false, turnSeconds: 0 }, seats }), /disabled/);
+    assert.deepEqual(statuses, ['active', 'disabled'], 'told at once');
+    // Nobody can disable an admin.
+    const users = (await (await fetch(`${base}/api/admin/users`, { headers: { cookie: await bossCookie() } })).json()) as AdminUserRow[];
+    assert.equal(users.find((u) => u.username === 'boss')!.status, 'active');
+    assert.equal((await post('/admin/status', { userId: users.find((u) => u.username === 'boss')!.id, status: 'disabled' }, await bossCookie())).status, 400);
+    assert.equal((await post('/admin/status', { userId: me.id, status: 'active' }, cookie)).status, 403);
+    s.disconnect();
+    host.disconnect();
   });
 });
 
@@ -251,6 +323,22 @@ describe('online game', () => {
 
     const me = (await (await fetch(`${base}/api/me`, { headers: { cookie: aliceCookie } })).json()) as { gamesPlayed: number };
     assert.equal(me.gamesPlayed, 1);
+
+    // The game history has it, with its end-of-game report, for anyone signed in.
+    assert.equal((await fetch(`${base}/api/history`)).status, 401);
+    for (let pass = 0; pass < 2; pass++) {
+      const history = (await (await fetch(`${base}/api/history`, { headers: { cookie: bobCookie } })).json()) as HistoryPage;
+      const record = history.games.find((r) => r.code === code)!;
+      assert.ok(record, 'listed in the history');
+      assert.deepEqual([record.name, record.hostName, record.ranked, record.stopped], ['Test table', 'alice', true, false]);
+      assert.deepEqual(record.players.map((p) => p.seat), final.game!.standings);
+      assert.deepEqual(record.players.map((p) => p.place), [1, 2, 3]);
+      assert.deepEqual(
+        record.players.map((p) => [p.name, p.kind, p.points]),
+        final.game!.standings.map((seat) => [['alice', 'bob', 'Green bot'][seat], seat === 2 ? 'bot' : 'human', final.game!.stats[seat].points]),
+      );
+      assert.ok(record.finishedAt >= record.startedAt && record.awards.length > 0);
+    }
 
     alice.disconnect();
     bob.disconnect();
@@ -363,6 +451,7 @@ describe('local players', () => {
       ['games', (r: LeaderRow) => r.gamesPlayed],
       ['captures', (r: LeaderRow) => r.captures],
       ['minutes', (r: LeaderRow) => r.minutes],
+      ['average', (r: LeaderRow) => r.points / r.gamesPlayed],
     ] as const) {
       const sorted = await getJson<LeaderRow[]>(`/leaderboard?sort=${sort}`, kidCookie);
       assert.ok(sorted.every((r, i) => i === 0 || value(sorted[i - 1]) >= value(r)), `sorted by ${sort}`);

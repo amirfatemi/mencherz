@@ -17,6 +17,7 @@ import {
   SUPER_BOMB_REACH,
   availablePowers,
   ambushTargets,
+  asSeen,
   bridgeTarget,
   distinctMoves,
   freeSquares,
@@ -148,7 +149,9 @@ export function chooseMove(state: GameState, level: BotLevel, rand: () => number
   if (level === 'easy' && rand() < 0.6) return options[Math.floor(rand() * options.length)];
 
   const careful = level === 'hard';
-  const plans = options.map((j) => planMove(state, state.turn, j, state.dice!));
+  // Bots don't see through fog either.
+  const seen = asSeen(state);
+  const plans = options.map((j) => planMove(seen, seen.turn, j, seen.dice!));
   // Bots hunt first: any move that knocks a piece out beats the rest; then any move that brings one home.
   const hits = options.filter((_, i) => plans[i]?.captures.length);
   const homes = options.filter((_, i) => plans[i]?.to === GOAL);
@@ -158,7 +161,7 @@ export function chooseMove(state: GameState, level: BotLevel, rand: () => number
   for (const j of pool) {
     const plan = plans[options.indexOf(j)];
     if (!plan) continue;
-    const sc = score(state, plan, careful) + rand() * 0.5;
+    const sc = score(seen, plan, careful) + rand() * 0.5;
     if (sc > bestScore) {
       bestScore = sc;
       best = j;

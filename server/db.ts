@@ -55,7 +55,13 @@ export function initSchema(db: Db) {
     total_minutes: 'INTEGER NOT NULL DEFAULT 0',
     // Medal id → how many times won, as JSON.
     medals: "TEXT NOT NULL DEFAULT '{}'",
+    // 'pending' until an admin approves a new account, 'active', or 'disabled' by an admin. Accounts from
+    // before approvals existed are active.
+    status: "TEXT NOT NULL DEFAULT 'active'",
   });
+  // A finished game's report for the game history (a GameRecord as JSON), worked out the first time it's asked for.
+  addColumns(db, 'games', { summary: 'TEXT' });
+  db.exec('CREATE INDEX IF NOT EXISTS games_by_status ON games (status, updated_at)');
 }
 
 /** Adds columns that databases created by older versions lack. */

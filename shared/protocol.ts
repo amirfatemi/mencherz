@@ -1,4 +1,5 @@
 import type { BotLevel } from './ai.ts';
+import type { Award } from './awards.ts';
 import type { Seat } from './board.ts';
 import type { ShownReaction } from './reactions.ts';
 import type { GameEvent, GameState, PowerChoice, Rules } from './rules.ts';
@@ -97,9 +98,16 @@ export type SeatAction =
   | { action: 'close' }
   | { action: 'bot'; botLevel: BotLevel };
 
+/**
+ * A new account waits for an admin to approve it before it can create or join games; an admin can also
+ * disable an account, which then can't either.
+ */
+export type AccountStatus = 'pending' | 'active' | 'disabled';
+
 export interface PublicUser {
   id: number;
   username: string;
+  status: AccountStatus;
   gamesPlayed: number;
   wins: number;
   /** Points from every finished game. */
@@ -120,6 +128,7 @@ export interface Captcha {
 export interface AdminUserRow {
   id: number;
   username: string;
+  status: AccountStatus;
   createdAt: number;
   gamesPlayed: number;
   wins: number;
@@ -143,8 +152,51 @@ export interface LeaderRow {
 }
 
 /** What the leaderboard can be ordered by. */
-export const LEADER_SORTS = ['points', 'wins', 'games', 'captures', 'lost', 'minutes'] as const;
+export const LEADER_SORTS = ['points', 'average', 'wins', 'games', 'captures', 'lost', 'minutes'] as const;
 export type LeaderSort = (typeof LEADER_SORTS)[number];
+
+/** A player in a finished game, for the game history. */
+export interface GameRecordPlayer {
+  seat: Seat;
+  name: string;
+  kind: 'human' | 'bot';
+  botLevel?: BotLevel;
+  /** Left during the game: a computer played on for them. */
+  left: boolean;
+  /** Final place, from 1; null when the game was stopped because everyone left. */
+  place: number | null;
+  points: number;
+  home: number;
+  captures: number;
+  lost: number;
+  /** Medal ids won this game (games that count only). */
+  medals: string[];
+}
+
+/** A finished game, as the game history shows it: everything its end-of-game report had. */
+export interface GameRecord {
+  code: string;
+  name: string;
+  hostName: string;
+  startedAt: number;
+  finishedAt: number;
+  /** Time played, pauses left out. */
+  playedMs: number;
+  /** Counted on the leaderboard: two people or more. */
+  ranked: boolean;
+  /** Everyone left before the end, so there are no places. */
+  stopped: boolean;
+  winBy: 'points' | 'race';
+  /** In final order. */
+  players: GameRecordPlayer[];
+  awards: Award[];
+}
+
+/** A page of the game history, newest first; `next` asks for the page after it. */
+export interface HistoryPage {
+  games: GameRecord[];
+  next: number | null;
+}
 
 export interface PairCode {
   code: string;
@@ -186,4 +238,6 @@ export interface ServerToClient {
   'lobby:changed': () => void;
   /** Your one-time code was used: `by` seated you in their game. */
   'account:paired': (info: { by: string; game: string; code: string }) => void;
+  /** An admin approved or disabled your account. */
+  'account:status': (info: { status: AccountStatus }) => void;
 }

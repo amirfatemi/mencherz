@@ -1,20 +1,11 @@
 import type { CSSProperties } from 'react';
 import { COLOR_HEX, PIECES_PER_SEAT, type Seat } from '../../../shared/board.ts';
 import type { SeatView } from '../../../shared/protocol.ts';
-import type { GameEvent, GameState } from '../../../shared/rules.ts';
+import { DRAGON_PATH, type GameEvent, type GameState } from '../../../shared/rules.ts';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { describe, seatName } from '../events.ts';
 
 export const MEDALS = ['🥇', '🥈', '🥉', '4th'];
-
-const EVENT_CHIPS = { storm: '🌪 Storm', goldRain: '💰 Gold rain', earthquake: '🌋 Earthquake', darkNight: '🌙 Dark night', fog: '🌫 Fog' };
-
-/** "1 round" or "2 rounds" left until turn `until`. */
-function roundsLeft(game: GameState, until: number): string {
-  const playing = Math.max(1, game.active.filter((s) => !game.ranking.includes(s)).length);
-  const n = Math.max(1, Math.ceil((until - game.turnNo) / playing));
-  return n === 1 ? 'last round' : `${n} rounds`;
-}
 
 interface Props {
   game: GameState;
@@ -67,7 +58,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
   if (last?.type === 'move') {
     if (last.points || last.bonus) gains.set(last.seat, last.points + (last.bonus ?? 0));
     for (const hit of [last.bombed, last.box]) {
-      if (hit?.points) gains.set(hit.owner, (gains.get(hit.owner) ?? 0) + hit.points);
+      if (hit?.points && hit.owner !== null) gains.set(hit.owner, (gains.get(hit.owner) ?? 0) + hit.points);
     }
   }
 
@@ -81,14 +72,14 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
           {spectators > 0 && ` · 👀 ${spectators}`}
         </span>
       </div>
-      {(game.event || game.dragon || (game.rules.bounty && game.bounty)) && game.phase !== 'over' && (
+      {/* The surprise event has its own card (EventCard). */}
+      {(game.dragon || (game.rules.bounty && game.bounty)) && game.phase !== 'over' && (
         <div className="scoreboard-chips">
-          {game.event && game.event.kind !== 'earthquake' && (
-            <span className="pill">
-              {EVENT_CHIPS[game.event.kind]} · {roundsLeft(game, game.event.until)}
+          {game.dragon && (
+            <span className="pill" title="Squares until it has been round the board and explodes">
+              🐉 Dragon · {DRAGON_PATH.length - game.dragon.moved} squares left
             </span>
           )}
-          {game.dragon && <span className="pill">🐉 Dragon · {roundsLeft(game, game.dragon.until)}</span>}
           {game.rules.bounty && game.bounty && (
             <span className="pill" title="Knock out one of their pieces for this on top">
               🎯 {seatName(seats, game.bounty.seat)} +{game.bounty.value}

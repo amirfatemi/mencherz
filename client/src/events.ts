@@ -1,7 +1,6 @@
 import { COLOR_NAMES, GOAL, TAKEOFF, type Seat } from '../../shared/board.ts';
 import type { SeatView } from '../../shared/protocol.ts';
 import type { GameEvent, RollEvent } from '../../shared/rules.ts';
-import { DRAGON_PRIZE } from '../../shared/rules.ts';
 import { POINTS, killStreakName } from '../../shared/scoring.ts';
 
 export function seatName(seats: SeatView[], seat: Seat): string {
@@ -11,10 +10,14 @@ export function seatName(seats: SeatView[], seat: Seat): string {
   return COLOR_NAMES[seat];
 }
 
-/** What the dragon did with a roll, if it ate anyone. */
+/** What the dragon did with a roll: ate someone, left a bomb, or came round and exploded. */
 function dragonText(ev: RollEvent, seats: SeatView[]): string {
-  const eaten = ev.dragon?.eaten ?? [];
-  return eaten.length ? ` · the dragon 🐉 ate ${eaten.map((e) => `${seatName(seats, e.seat)}'s piece`).join(' and ')}` : '';
+  const d = ev.dragon;
+  if (!d) return '';
+  if (d.exploded) return ' · the dragon 🐉 came full circle and exploded 💥';
+  const bits = d.eaten.length ? [`the dragon 🐉 ate ${d.eaten.map((e) => `${seatName(seats, e.seat)}'s piece`).join(' and ')}`] : [];
+  if (d.bomb !== undefined) bits.push('two sixes: the dragon 🐉 left a bomb 💣');
+  return bits.map((b) => ` · ${b}`).join('');
 }
 
 export function describe(ev: GameEvent, seats: SeatView[]): string {
@@ -24,7 +27,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
       case 'pass':
         return `${who} rolled ${ev.dice} — no move${dragonText(ev, seats)}`;
       case 'again':
-        return `${who} rolled 6 — no move, rolls again`;
+        return `${who} rolled 6 — no move, rolls again${dragonText(ev, seats)}`;
       case 'forfeit':
         return `${who} rolled a third 6 — turn over`;
       case 'penalty':
@@ -59,10 +62,11 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
   }
   if (ev.bombed) {
     const b = ev.bombed;
-    const whose = b.owner === ev.seat ? 'their own' : `${seatName(seats, b.owner)}'s`;
+    const whose = b.owner === null ? "the dragon's" : b.owner === ev.seat ? 'their own' : `${seatName(seats, b.owner)}'s`;
     const kind = b.blast ? 'super bomb 💥' : 'bomb 💣';
     if (b.saved) bits.push(`stepped on ${whose} ${kind} — the vest saved it 🦺`);
-    else bits.push(b.owner === ev.seat ? `stepped on their own ${kind}` : `stepped on ${whose} ${kind} +${b.points} for ${seatName(seats, b.owner)}`);
+    else if (b.owner === null || b.owner === ev.seat) bits.push(`stepped on ${whose} ${kind}`);
+    else bits.push(`stepped on ${whose} ${kind} +${b.points} for ${seatName(seats, b.owner)}`);
     const caught = (b.blast ?? []).filter((v) => !v.saved);
     if (caught.length) bits.push(`the blast took ${caught.map((v) => seatName(seats, v.seat)).join(', ')} with it`);
   }
@@ -83,7 +87,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     bits.push(ev.bridge.kind === 'heaven' ? `crossed ${whose} heaven bridge 🌈 +10` : `fell through ${whose} hell bridge 🔥`);
   }
   if (ev.power) bits.push('landed on a power square ⚡');
-  if (ev.dragon) bits.push(`slew the dragon 🐉 +${DRAGON_PRIZE}`);
+  if (ev.dragon) bits.push(ev.dragon.king ? `👑 the king slew the dragon 🐉 for good +${ev.dragon.points}` : `slew the dragon 🐉 +${ev.dragon.points}`);
   if (ev.to === GOAL) bits.push(`piece home 🏁 +${POINTS.home}`);
   let text = bits.join(' · ');
   if (ev.seatFinished) text += ev.bonus ? ` — ${who} brought all pieces home first! 🏆 +${ev.bonus}` : ` — ${who} brought all pieces home!`;

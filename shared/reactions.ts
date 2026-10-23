@@ -1,7 +1,7 @@
 import { GOAL, type Seat } from './board.ts';
 import { blastOf, type GameEvent, type Rand } from './rules.ts';
 import { EARLY_UNTIL } from './scoring.ts';
-import { ROLL_MS, arrivalAt, blastAt, boxOpenAt, captureAt } from './timing.ts';
+import { ROLL_MS, arrivalAt, blastAt, boxOpenAt, captureAt, dragonStopsAt } from './timing.ts';
 
 // Reactions are short GIFs shown over a player's hangar after a big moment, picked at random:
 //   happy — one of your pieces reaches the centre, or you knock out (or bomb) a piece past the middle of its route,
@@ -132,7 +132,7 @@ export function reactionsFor(ev: GameEvent, pick: (group: ReactionGroup) => stri
   // A third six is bad luck: sad as soon as the dice stops.
   if (ev.type === 'roll' && (ev.outcome === 'penalty' || ev.outcome === 'forfeit')) show(ev.seat, 'sad', ROLL_MS);
   // The dragon eating a piece is bad luck too.
-  if (ev.type === 'roll') for (const e of ev.dragon?.eaten ?? []) show(e.seat, 'sad', ROLL_MS);
+  if (ev.type === 'roll') for (const e of ev.dragon?.eaten ?? []) show(e.seat, 'sad', dragonStopsAt(ev));
   // So is a third lost turn in a row with everything still in the hangar.
   if (ev.type === 'roll' && ev.stuck) show(ev.seat, 'sad', ROLL_MS);
   if (ev.type !== 'move') return out;
@@ -147,14 +147,15 @@ export function reactionsFor(ev: GameEvent, pick: (group: ReactionGroup) => stri
   if (blast && blast.pos >= HURT_FROM) {
     const at = blastAt(ev);
     show(ev.seat, 'sad', at);
-    if (blast.owner !== ev.seat) show(blast.owner, 'happy', at);
+    if (blast.owner !== null && blast.owner !== ev.seat) show(blast.owner, 'happy', at);
   }
   // A super bomb's blast: its owner is happy whenever it catches someone else; anyone caught past halfway is sad.
   const caught = (ev.bombed?.blast ?? []).filter((v) => !v.saved);
+  const bomber = ev.bombed?.owner ?? null;
   if (caught.length) {
     const at = blastAt(ev);
     for (const v of caught) if (v.from >= HURT_FROM) show(v.seat, 'sad', at);
-    if (caught.some((v) => v.seat !== ev.bombed!.owner)) show(ev.bombed!.owner, 'happy', at);
+    if (bomber !== null && caught.some((v) => v.seat !== bomber)) show(bomber, 'happy', at);
   }
   const late = ev.captures.filter((c) => c.from >= HURT_FROM);
   if (late.length) {

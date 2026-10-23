@@ -1,5 +1,14 @@
 import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto';
-import { LEADER_SORTS, type AdminUserRow, type Captcha, type LeaderRow, type LeaderSort, type PairCode, type PublicUser } from '../shared/protocol.ts';
+import {
+  LEADER_SORTS,
+  type AccountStatus,
+  type AdminUserRow,
+  type Captcha,
+  type LeaderRow,
+  type LeaderSort,
+  type PairCode,
+  type PublicUser,
+} from '../shared/protocol.ts';
 import type { Db } from './db.ts';
 import { InputError } from './validate.ts';
 
@@ -58,12 +67,15 @@ interface UserRow {
   total_lost: number;
   total_minutes: number;
   medals: string;
+  status: AccountStatus;
   created_at: number;
 }
 
 // Each order breaks ties by points, then wins, then fewer games.
 const LEADER_ORDER: Record<LeaderSort, string> = {
   points: 'total_points DESC, wins DESC, games_played ASC',
+  // Points per game played (every listed player has played one).
+  average: 'CAST(total_points AS REAL) / games_played DESC, total_points DESC, wins DESC',
   wins: 'wins DESC, total_points DESC, games_played ASC',
   games: 'games_played DESC, total_points DESC, wins DESC',
   captures: 'total_captures DESC, total_points DESC, wins DESC',
@@ -107,13 +119,18 @@ export function limiter(max: number, windowMs: number) {
   };
 }
 
-export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: string[] }) {
-  // Admins are named in config (ADMINS), so the account is an admin as soon as it's created.
+export function createAuth(
+  db: Db,
+  opts: { secureCookies: boolean; admins?: string[]; onStatus?: (userId: number, status: AccountStatus) => void; signInTries?: number },
+) {
+  // Admins are named in config (ADMINS), so the account is an admin, and active, as soon as it's created.
   const admins = new Set((opts.admins ?? []).map((name) => name.toLowerCase()));
   const isAdmin = (username: string) => admins.has(username.toLowerCase());
+  const statusOf = (u: UserRow): AccountStatus => (isAdmin(u.username) ? 'active' : (u.status ?? 'active'));
   const toPublic = (u: UserRow): PublicUser => ({
     id: u.id,
     username: u.username,
+    status: statusOf(u),
     gamesPlayed: u.games_played,
     wins: u.wins,
     points: u.total_points,
@@ -124,7 +141,8 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
   const q = {
     userByName: db.prepare('SELECT * FROM users WHERE username = ?'),
     userById: db.prepare('SELECT * FROM users WHERE id = ?'),
-    insertUser: db.prepare('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?) RETURNING id'),
+    insertUser: db.prepare('INSERT INTO users (username, password_hash, created_at, status) VALUES (?, ?, ?, ?) RETURNING id'),
+    setStatus: db.prepare('UPDATE users SET status = ? WHERE id = ?'),
     insertSession: db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)'),
     sessionUser: db.prepare(
       'SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?',
@@ -158,6 +176,7 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     allUsers: db.prepare('SELECT * FROM users ORDER BY created_at'),
     setPassword: db.prepare('UPDATE users SET password_hash = ? WHERE id = ?'),
     deleteSessionsOf: db.prepare('DELETE FROM sessions WHERE user_id = ?'),
+    deleteOtherSessions: db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?'),
   };
 
   // One-time sums for the sign-in and sign-up forms, kept in memory: a restart just asks for a new one.
@@ -181,7 +200,8 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
   }
   const CAPTCHA_WRONG = { error: "That sum isn't right — try the new one", captcha: true };
 
-  const allow = limiter(20, 10 * 60 * 1000);
+  const allow = limiter(opts.signInTries ?? 20, 10 * 60 * 1000);
+  const allowPasswordChange = limiter(10, 10 * 60 * 1000);
   const allowPairCode = limiter(10, 10 * 60 * 1000);
   const pairHash = (userId: number, code: string) => sha256(`${userId}:${code}`);
 
@@ -230,7 +250,8 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     const hash = await hashPassword(c.password);
     let id: number;
     try {
-      id = Number((q.insertUser.get(c.username, hash, Date.now()) as { id: number }).id);
+      // A new account waits for an admin to approve it before it can play.
+      id = Number((q.insertUser.get(c.username, hash, Date.now(), isAdmin(c.username) ? 'active' : 'pending') as { id: number }).id);
     } catch {
       return json({ error: 'That username is taken' }, 409);
     }
@@ -293,6 +314,7 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
       rows.map((u): AdminUserRow => ({
         id: u.id,
         username: u.username,
+        status: statusOf(u),
         createdAt: u.created_at,
         gamesPlayed: u.games_played,
         wins: u.wins,
@@ -316,6 +338,35 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     return json({ ok: true });
   }
 
+  /** A player changes their own password: the current one first. Their other sessions are signed out. */
+  async function changePassword(req: Request, user: PublicUser): Promise<Response> {
+    if (!allowPasswordChange(String(user.id))) return json({ error: 'Too many attempts, try again later' }, 429);
+    const { current, password } = ((await readJson(req)) ?? {}) as Record<string, unknown>;
+    const row = q.userById.get(user.id) as UserRow | undefined;
+    if (!row || typeof current !== 'string' || !(await verifyPassword(current, row.password_hash))) {
+      return json({ error: 'Your current password is wrong' }, 400);
+    }
+    if (typeof password !== 'string' || password.length < 6 || password.length > 128) {
+      return json({ error: 'The new password must be 6–128 characters' }, 400);
+    }
+    q.setPassword.run(await hashPassword(password), row.id);
+    const token = readCookie(req.headers.get('cookie'));
+    q.deleteOtherSessions.run(row.id, sha256(token ?? ''));
+    return json({ ok: true });
+  }
+
+  /** Approves, disables or re-enables an account. Admins named in config can't be disabled. */
+  async function adminSetStatus(req: Request, admin: PublicUser): Promise<Response> {
+    const { userId, status } = ((await readJson(req)) ?? {}) as Record<string, unknown>;
+    const row = typeof userId === 'number' ? (q.userById.get(userId) as UserRow | undefined) : undefined;
+    if (!row) return json({ error: 'No such player' }, 404);
+    if (status !== 'active' && status !== 'disabled') return json({ error: 'Unknown status' }, 400);
+    if (isAdmin(row.username) || row.id === admin.id) return json({ error: "An admin's account can't be disabled" }, 400);
+    q.setStatus.run(status, row.id);
+    opts.onStatus?.(row.id, status);
+    return json({ ok: true });
+  }
+
   /** Answers the account endpoints under /api, or returns null for any other path. */
   async function handle(req: Request, ip: string): Promise<Response | null> {
     const path = new URL(req.url).pathname.replace(/^\/api/, '');
@@ -324,16 +375,23 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     if (route === 'POST /register') return register(req, ip);
     if (route === 'POST /login') return login(req, ip);
     if (route === 'POST /logout') return logout(req);
-    const signedInRoutes = ['GET /me', 'GET /leaderboard', 'POST /pair-code', 'GET /admin/users', 'POST /admin/password'];
+    const signedInRoutes = ['GET /me', 'GET /leaderboard', 'POST /pair-code', 'POST /password', 'GET /admin/users', 'POST /admin/password', 'POST /admin/status'];
     if (!signedInRoutes.includes(route)) return null;
     const user = userFromToken(readCookie(req.headers.get('cookie')));
     if (!user) return json({ error: 'Not signed in' }, 401);
     if (route === 'GET /me') return json(user);
     if (route === 'GET /leaderboard') return leaderboard(req);
     if (route === 'POST /pair-code') return pairCode(user);
+    if (route === 'POST /password') return changePassword(req, user);
     if (!user.isAdmin) return json({ error: 'Admins only' }, 403);
     if (route === 'GET /admin/users') return adminUsers();
+    if (route === 'POST /admin/status') return adminSetStatus(req, user);
     return adminSetPassword(req);
+  }
+
+  function accountStatus(userId: number): AccountStatus {
+    const row = q.userById.get(userId) as UserRow | undefined;
+    return row ? statusOf(row) : 'disabled';
   }
 
   const purge = setInterval(() => {
@@ -347,6 +405,18 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     json,
     stop: () => clearInterval(purge),
     userFromCookieHeader: (header: string | null | undefined) => userFromToken(readCookie(header)),
+    accountStatus,
+    /**
+     * Throws unless the account (by id, or by name) may create and join games: it has been approved and not
+     * disabled. Read fresh, so an approval counts at once, without signing in again. Unknown names pass.
+     */
+    requireActive(user: number | string, who = 'Your account') {
+      const row = (typeof user === 'number' ? q.userById.get(user) : q.userByName.get(user.trim())) as UserRow | undefined;
+      if (!row && typeof user === 'string') return;
+      const status = row ? statusOf(row) : 'disabled';
+      if (status === 'pending') throw new InputError(`${who} is waiting for an admin to approve it. Until then it can't create or join games.`);
+      if (status === 'disabled') throw new InputError(`${who} has been disabled by an admin, so it can't create or join games.`);
+    },
     recordGame(userId: number, won: boolean, stats: { points: number; captures: number; lost: number; minutes: number; medals: string[] }) {
       q.recordGame.run(won ? 1 : 0, Math.max(0, Math.round(stats.points)), stats.captures, stats.lost, stats.minutes, userId);
       if (!stats.medals.length) return;

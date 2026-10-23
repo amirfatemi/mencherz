@@ -40,12 +40,15 @@ export function App() {
     s.on('connect', onConnect);
     s.on('disconnect', onDisconnect);
     s.on('connect_error', onError);
+    // An admin approved or disabled this account.
+    s.on('account:status', refreshUser);
     return () => {
       s.off('connect', onConnect);
       s.off('disconnect', onDisconnect);
       s.off('connect_error', onError);
+      s.off('account:status', refreshUser);
     };
-  }, [user]);
+  }, [user, refreshUser]);
 
   const logout = async () => {
     await api('/logout', {}).catch(() => {});

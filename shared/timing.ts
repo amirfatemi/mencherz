@@ -38,10 +38,19 @@ export function eventDuration(event: GameEvent | null | undefined, holdPasses = 
   return ms;
 }
 
-/** The dragon stepping along with a roll, square by square, and anything it ate flying home. */
+/** How long the dice shows its number before the dragon moves with it. */
+export const DRAGON_PAUSE_MS = 450;
+
+/** When the dragon stops after a roll, in ms from the start of the roll. */
+export function dragonStopsAt(event: RollEvent): number {
+  return ROLL_MS + DRAGON_PAUSE_MS + (event.dragon?.steps ?? 0) * STEP_MS.step;
+}
+
+/** The dragon stepping along with a roll, square by square, then anything it ate, or its blast, flying home. */
 export function dragonMs(event: RollEvent): number {
-  if (!event.dragon) return 0;
-  return event.dice * STEP_MS.step + (event.dragon.eaten.length ? CAPTURE_MS : 0);
+  const d = event.dragon;
+  if (!d) return 0;
+  return DRAGON_PAUSE_MS + d.steps * STEP_MS.step + (d.eaten.length || d.exploded ? CAPTURE_MS : 0);
 }
 
 /** When step `i` of a move's path ends, in ms from the start of the move. Steps after an opened box wait for its reveal. */

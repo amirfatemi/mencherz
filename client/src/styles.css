@@ -1050,6 +1050,62 @@ select:focus {
 
 .board-banner.event {
   background: linear-gradient(90deg, #283593, #5c6bc0);
+  animation-duration: 3.2s;
+}
+
+/* The surprise event in play, under the dice card while it lasts. */
+.event-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-inline-start: 6px solid var(--event, #5c6bc0);
+  background: linear-gradient(90deg, var(--event-soft, #e8eaf6), var(--card) 70%);
+  animation: event-card-in 0.4s ease-out;
+}
+.event-card.storm {
+  --event: #546e7a;
+  --event-soft: #eceff1;
+}
+.event-card.goldRain {
+  --event: #f9a825;
+  --event-soft: #fff8e1;
+}
+.event-card.earthquake {
+  --event: #bf360c;
+  --event-soft: #fbe9e7;
+}
+.event-card.darkNight {
+  --event: #283593;
+  --event-soft: #e8eaf6;
+}
+.event-card.fog {
+  --event: #78909c;
+  --event-soft: #f1f4f6;
+}
+.event-card-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+.event-card-text {
+  min-width: 0;
+}
+.event-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.05rem;
+}
+.event-card-body {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+@keyframes event-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 }
 
 @keyframes banner {
@@ -1100,7 +1156,8 @@ select:focus {
 
 @media (prefers-reduced-motion: reduce) {
   .board-frame.shake,
-  .board-banner {
+  .board-banner,
+  .event-card {
     animation: none;
   }
 }
@@ -1861,11 +1918,17 @@ select:focus {
   .side {
     display: contents;
   }
-  .turn-card {
+  .turn-card,
+  .event-card {
     order: -1;
   }
-  .side > :not(.turn-card) {
+  .side > :not(.turn-card):not(.event-card) {
     order: 1;
+  }
+  /* The event card sits between the dice and the board: the board gives up the room. */
+  .game.with-event .board-frame {
+    width: min(100%, 720px, calc(100vh - 320px));
+    width: min(100%, 720px, calc(100dvh - 320px));
   }
   .turn-card .turn-status {
     margin-bottom: 8px;
@@ -2659,4 +2722,144 @@ svg.board {
   width: 64px;
   text-align: center;
   font-weight: 700;
+}
+
+/* ---------- account approval ---------- */
+
+.account-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-inline-start: 6px solid #ffb300;
+  background: #fff8e1;
+}
+.account-notice.disabled {
+  border-color: var(--danger);
+  background: #ffebee;
+}
+.account-notice.admin {
+  border-color: var(--secondary);
+  background: #e3f2fd;
+}
+.account-notice p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.pill.account-status.pending {
+  background: #ffe0b2;
+  color: #8d4b00;
+  box-shadow: none;
+}
+.pill.account-status.disabled {
+  background: #ffcdd2;
+  color: #b71c1c;
+  box-shadow: none;
+}
+.admin-users tr.status-disabled td:not(.admin-actions) {
+  opacity: 0.6;
+}
+.admin-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* ---------- game history ---------- */
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.history-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--card-soft);
+  text-align: start;
+  cursor: pointer;
+}
+.history-row:hover,
+.history-row:focus-visible {
+  background: #eaf2fb;
+}
+.history-when,
+.history-time {
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.history-when {
+  width: 9.5em;
+  flex-shrink: 0;
+}
+.history-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.history-name {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.history-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: 0.85rem;
+}
+.history-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.history-more {
+  margin-top: 10px;
+}
+.history-meta {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+@media (max-width: 560px) {
+  .history-row {
+    flex-wrap: wrap;
+  }
+  .history-when {
+    width: auto;
+  }
+  .history-main {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+
+.password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 360px;
+}
+.password-form .btn {
+  align-self: flex-start;
+}
+.password-form .field {
+  margin-bottom: 0;
 }

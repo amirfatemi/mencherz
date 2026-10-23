@@ -56,13 +56,16 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 
 - **Accounts:** username + password (scrypt-hashed), with sessions in an httpOnly cookie.
   - Signing in and signing up ask a small sum ("What is 3 + 5?"). Each sum works once.
-  - **Admins** (named in `ADMINS`) get an Admin page. It lists every player and can set a new password for any of them, which signs that player out everywhere.
+  - **Approval:** a new account waits for an admin to approve it. Until then it can sign in, look around and watch games, but not create or join one (nor be seated at someone's device); the lobby says so, in English and Persian. Accounts from before approvals existed are active.
+  - **Admins** (named in `ADMINS`) get an Admin page. It lists every player, new ones waiting for approval first, and can approve, disable or re-enable an account, and set a new password for anyone, which signs that player out everywhere. A disabled account can't create or join games either. The lobby tells an admin when new players are waiting. Admins themselves can't be disabled.
+  - **Change password:** in Settings, with the current password. Other devices are signed out.
 - **Lobby:**
   - Create an online game, or play together on one device. Any seat can be a computer player.
   - Join by code or invite link.
   - A list of open public games, which can be joined, or watched once they're in progress.
   - "Your games", which lets you resume any game and flags the ones where it's your turn.
-  - A leaderboard of every player's total points, games and wins.
+  - A leaderboard of every player's total points, average points per game, games and wins.
+  - **Game history:** every finished game, newest first, 20 at a time. Tapping one shows when it started and ended, how long it took, who played (bots too, and who left), the final table, the highlights and the medals won: its whole end-of-game report. Each report is worked out once, the first time it's asked for, and kept with the game (`server/history.ts`).
 - **Waiting room:** four seats (Red, Blue, Green, Yellow). The host sets each seat to *open*, *computer (easy / normal / hard)* or *nobody*, and can remove players, change settings and start the game. Players can switch to any free seat.
 - **Game:**
   - The server decides every roll and move. Everyone sees the board the same way round: yellow top-left, blue top-right, green bottom-right, red bottom-left.
@@ -90,7 +93,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 - **Sounds:** short sounds for the dice, steps, jumps, flights, knock-outs, bombs, boxes, pieces home and wins, made with the Web Audio API (no files). The 🔊 button turns them off.
 - **Version:** the top bar (and the sign-in page) shows the version, build date and commit, e.g. `v1.0.0 · 2026-10-23 · 5d3749c`.
 - **Full screen:** the ⛶ button in the top bar fills the screen with the game. On an iPad or phone, *Add to Home Screen* installs it as an app that always opens full screen (iPhones only allow full screen this way).
-- **Stats:** points, games played, wins, hits made and taken, and minutes played per user, on the leaderboard (sortable by any of them) and on the Settings page. A game counts only if at least two people played it (`RANKED_MIN_PEOPLE` in `shared/scoring.ts`), so games against computers alone are practice.
+- **Stats:** points, average points per game (points ÷ games), games played, wins, hits made and taken, and minutes played per user, on the leaderboard (sortable by any of them) and on the Settings page. A game counts only if at least two people played it (`RANKED_MIN_PEOPLE` in `shared/scoring.ts`), so games against computers alone are practice.
 
 ### Rules (defaults are the classic ones)
 
@@ -124,9 +127,14 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
     The heaven bridge, hell bridge, ambush and super bomb can each be picked once a game: whoever picks one first uses it up for everyone. Magic boxes and safe squares can be picked any number of times.
 
     A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on the power square.
-13. **Surprise events 🌪:** every 10 rounds one happens at random, announced with a banner and a sound: a storm (no flights, 1 round), gold rain (pieces reaching the centre score ×1.2, 2 rounds), an earthquake (every bomb jumps to another free square), a dark night (knock-outs score ×1.2, 2 rounds) or fog (magic boxes hidden, 1 round).
+13. **Surprise events 🌪:** every 15 rounds one happens at random, announced with a banner and a sound: a storm (no flights and no colour jumps, 1 round), gold rain (pieces reaching the centre score ×1.2, 2 rounds), an earthquake (every bomb jumps to another free square), a dark night (knock-outs score ×1.2, 2 rounds) or fog (3 rounds: bombs, super bombs, magic boxes and bridges can't be seen, by bots either, though they still work). While one lasts, a card between the dice and the board (the scoreboard, on a wide screen) says in Persian what it is, what it does and how many rounds are left.
 14. **Bounty on the leader 🎯:** whoever leads on points (alone) gets a MOST WANTED poster by their hangar. Knocking out one of their pieces, bombs included, pays the bounty on top: it starts at 3, grows by 1 each time their turn comes round in the lead (up to 8), and starts again at 3 once claimed. It's meant to make the leader a little juicier, not to outweigh the knock-out itself.
-15. **Dragon 🐉:** 5 rounds after the last one went, a dragon appears on a random free square for one round. It belongs to nobody and moves with every roll, as far as the dice says, along the track and, at each arrow square, up that home column to the end and back. Any piece where it stops is eaten (back to the hangar), unless on its own safe square. It sets off no bomb or box and takes no bridge. A piece that lands on it, in a home column too, slays it for 40 points. If nobody does, it explodes at the end of its round, taking the pieces on its square and one square either side (a vest or safe square saves them).
+15. **Dragon 🐉:** after 10 rounds a dragon appears on a random free square and goes once round its route (88 squares). It belongs to nobody and moves with every roll, as far as the dice says: the dice shows its number first, then the dragon moves, then the player moves. Its route is the track and, at each arrow square, up that home column to the end and back. A number by it shows the squares left of its lap.
+    - Any piece where it stops is eaten (back to the hangar), unless on its own safe square. It sets off no bomb or box and takes no bridge.
+    - Two sixes in a row: it leaves a bomb where the second one takes it (not in a home column). The dragon's bomb blows up whoever lands on it and scores for nobody.
+    - A king that lands on it, in a home column too, slays it for 40 points, and no dragon comes again that game. Any other piece slays it for 5. With kings off, every piece counts as a king.
+    - If nobody slays it, it explodes when its lap is done, back where it started, taking the pieces on its square and one square either side (a vest or safe square saves them).
+    - After it explodes or a piece other than a king slays it, the next one comes 20 rounds later.
 16. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
 
 ### Points
@@ -206,7 +214,8 @@ shared/     game logic, used by both server and browser
 server/     the game server, independent of where it runs
   core.ts     puts it together: /api requests and /ws connections
   hub.ts      rooms, broadcasts and acks over plain WebSockets
-  auth.ts     sign-up/in, sessions, login rate limit, one-time codes, leaderboard
+  auth.ts     sign-up/in, sessions, login rate limit, one-time codes, account approval, leaderboard
+  history.ts  the game history: each finished game's end-of-game report
   rooms.ts    lobby, seats, turn flow, bots, timers, persistence
   db.ts       SQLite schema, behind an interface both runtimes implement
   app.ts, index.ts, sqlite.ts   the Node runtime: Express for the client, `ws`, node:sqlite

@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { MEDALS, titleFor } from '../../../shared/awards.ts';
-import { LEADER_SORTS, type LeaderRow, type LeaderSort, type LobbyData, type PublicUser, type RoomSummary } from '../../../shared/protocol.ts';
+import {
+  LEADER_SORTS,
+  type AdminUserRow,
+  type LeaderRow,
+  type LeaderSort,
+  type LobbyData,
+  type PublicUser,
+  type RoomSummary,
+} from '../../../shared/protocol.ts';
 import { api } from '../api.ts';
 import { CreateGameDialog, type CreateMode } from '../components/CreateGameDialog.tsx';
+import { GameHistory } from '../components/GameHistory.tsx';
 import { HowToPlay } from '../components/HowToPlay.tsx';
 import { navigate } from '../router.ts';
 import { call, getSocket } from '../socket.ts';
@@ -44,6 +53,7 @@ function RoomRow({ room }: { room: RoomSummary }) {
 
 const SORT_COLUMNS: { sort: LeaderSort; label: string; title: string; value: (r: LeaderRow) => number }[] = [
   { sort: 'points', label: '⭐ Points', title: 'Total points', value: (r) => r.points },
+  { sort: 'average', label: '⌀ Avg', title: 'Average points per game: total points ÷ games played', value: (r) => (r.gamesPlayed ? r.points / r.gamesPlayed : 0) },
   { sort: 'games', label: 'Games', title: 'Games played', value: (r) => r.gamesPlayed },
   { sort: 'wins', label: 'Wins', title: 'Games won', value: (r) => r.wins },
   { sort: 'captures', label: '💥', title: 'Hits made: opponent pieces knocked out, in all games', value: (r) => r.captures },
@@ -65,8 +75,8 @@ function Leaderboard({ rows, me, sort, onSort }: { rows: LeaderRow[] | null; me:
     <section className="card leaderboard">
       <h2>🏆 Leaderboard</h2>
       <p className="muted small">
-        Totals over every game with at least two people (games against computers alone don't count). 💥 hits made · 🤕 hits taken · ⏱ minutes
-        played. Tap a column to sort by it.
+        Totals over every game with at least two people (games against computers alone don't count). ⌀ average points per game · 💥 hits
+        made · 🤕 hits taken · ⏱ minutes played. Tap a column to sort by it.
       </p>
       {!rows ? (
         <p className="muted">Loading…</p>
@@ -105,7 +115,7 @@ function Leaderboard({ rows, me, sort, onSort }: { rows: LeaderRow[] | null; me:
                 </td>
                 {SORT_COLUMNS.map((c) => (
                   <td key={c.sort} className={`num${sort === c.sort ? ' points' : ''}`}>
-                    {c.value(r).toLocaleString()}
+                    {c.value(r).toLocaleString(undefined, { maximumFractionDigits: 1 })}
                   </td>
                 ))}
               </tr>
@@ -117,8 +127,43 @@ function Leaderboard({ rows, me, sort, onSort }: { rows: LeaderRow[] | null; me:
   );
 }
 
+/** Why an account can't play yet, or any more. */
+function AccountNotice({ user, onCheck }: { user: PublicUser; onCheck: () => void }) {
+  return (
+    <section className={`card account-notice ${user.status}`} role="status">
+      <div>
+        <b>{user.status === 'pending' ? '⏳ Waiting for approval' : '⛔ Account disabled'}</b>
+        <p>
+          {user.status === 'pending'
+            ? 'An admin needs to approve your account before you can create or join games. You can look around and watch games meanwhile.'
+            : 'An admin has disabled your account, so it can’t create or join games.'}
+        </p>
+        <p dir="rtl" lang="fa">
+          {user.status === 'pending'
+            ? 'حساب شما منتظر تأیید مدیر است. تا تأیید نشود نمی‌توانید بازی بسازید یا وارد بازی شوید، ولی می‌توانید بازی‌ها را تماشا کنید.'
+            : 'مدیر حساب شما را غیرفعال کرده است و نمی‌توانید بازی بسازید یا وارد بازی شوید.'}
+        </p>
+      </div>
+      {user.status === 'pending' && (
+        <button className="btn ghost small" onClick={onCheck}>
+          Check again
+        </button>
+      )}
+    </section>
+  );
+}
+
 export function LobbyPage({ user, onVisible }: { user: PublicUser; onVisible: () => void }) {
   const [data, setData] = useState<LobbyData | null>(null);
+  const active = user.status === 'active';
+  // Admins hear about new accounts waiting for them.
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    if (!user.isAdmin) return;
+    api<AdminUserRow[]>('/admin/users')
+      .then((rows) => setWaiting(rows.filter((u) => u.status === 'pending').length))
+      .catch(() => {});
+  }, [user.isAdmin]);
   const [leaders, setLeaders] = useState<LeaderRow[] | null>(null);
   const [sort, setSort] = useState<LeaderSort>(savedSort);
   const [dialog, setDialog] = useState<CreateMode | null>(null);
@@ -158,21 +203,34 @@ export function LobbyPage({ user, onVisible }: { user: PublicUser; onVisible: ()
     if (c) navigate(`/g/${c}`);
   };
 
-  const active = data?.mine.filter((r) => r.status !== 'finished') ?? [];
+  const ongoing = data?.mine.filter((r) => r.status !== 'finished') ?? [];
   const finished = data?.mine.filter((r) => r.status === 'finished') ?? [];
 
   return (
     <div className="lobby">
+      {!active && <AccountNotice user={user} onCheck={onVisible} />}
+      {waiting > 0 && (
+        <section className="card account-notice admin" role="status">
+          <div>
+            <b>
+              👤 {waiting} new {waiting === 1 ? 'player is' : 'players are'} waiting for your approval
+            </b>
+          </div>
+          <button className="btn primary small" onClick={() => navigate('/admin')}>
+            Review
+          </button>
+        </section>
+      )}
       <section className="hero card">
         <div className="hero-text">
           <h1>Hi {user.username} 👋</h1>
           <p>Launch on a six, jump on your colour, take the flight shortcuts, knock out the others and score the most points.</p>
         </div>
         <div className="hero-actions">
-          <button className="btn primary big" onClick={() => setDialog('online')}>
+          <button className="btn primary big" onClick={() => setDialog('online')} disabled={!active}>
             <span aria-hidden>🌍</span> Create online game
           </button>
-          <button className="btn secondary big" onClick={() => setDialog('local')}>
+          <button className="btn secondary big" onClick={() => setDialog('local')} disabled={!active}>
             <span aria-hidden>📱</span> Play on one device
           </button>
           <form className="join-form" onSubmit={join}>
@@ -192,11 +250,11 @@ export function LobbyPage({ user, onVisible }: { user: PublicUser; onVisible: ()
           <h2>Your games</h2>
           {!data ? (
             <p className="muted">Loading…</p>
-          ) : active.length === 0 ? (
+          ) : ongoing.length === 0 ? (
             <p className="muted">No games in progress. Create one, or join a game below.</p>
           ) : (
             <ul className="room-list">
-              {active.map((r) => (
+              {ongoing.map((r) => (
                 <RoomRow key={r.code} room={r} />
               ))}
             </ul>
@@ -230,6 +288,8 @@ export function LobbyPage({ user, onVisible }: { user: PublicUser; onVisible: ()
       </div>
 
       <Leaderboard rows={leaders} me={user.username} sort={sort} onSort={sortBy} />
+
+      <GameHistory me={user.username} />
 
       {dialog && <CreateGameDialog mode={dialog} user={user} onClose={() => setDialog(null)} />}
       {rules && <HowToPlay onClose={() => setRules(false)} />}

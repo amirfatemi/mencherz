@@ -25,6 +25,8 @@ export interface ServerConfig {
   timeScale?: number;
   /** Usernames that are admins. */
   admins?: string[];
+  /** Sign-in and sign-up tries allowed per address every 10 minutes. Tests, all from one address, use more. */
+  signInTries?: number;
 }
 
 /** Turns a Node request into a fetch Request for the shared API handler. */
@@ -51,6 +53,7 @@ export async function startServer(config: ServerConfig) {
     allowedOrigins: config.allowedOrigins,
     timeScale: config.timeScale,
     admins: config.admins,
+    signInTries: config.signInTries,
   });
 
   const app = express();

@@ -14,6 +14,7 @@ import { Board, TOUCH } from './Board.tsx';
 import { BoxRevealCard } from './BoxReveal.tsx';
 import type { PieceStyle } from './Piece.tsx';
 import { BombBadge, BoxBadge, Dice, EmojiBadge } from './Dice.tsx';
+import { EventCard } from './EventCard.tsx';
 import { HowToPlay } from './HowToPlay.tsx';
 import { preloadReactions } from './Reaction.tsx';
 import { Modal } from './Modal.tsx';
@@ -30,13 +31,13 @@ const POWER_BUTTONS: { choice: PowerChoice; label: string; className: string; ti
     choice: 'ambush',
     label: '🏹 Ambush · شبیخون',
     className: 'btn ghost',
-    title: "For two rounds a second flight line crosses another player's home column, and any flight over it knocks out the whole column. Once a game.",
+    title: "For five rounds a second flight line crosses another player's home column, and any flight over it knocks out the whole column. Once a game.",
   },
   {
     choice: 'superBomb',
     label: '💥 Super bomb',
     className: 'btn danger',
-    title: 'Whoever lands on it blows up, with every piece within two squares ahead or behind. Once a game.',
+    title: 'Whoever lands on it blows up, with every piece within three squares ahead or behind. Once a game.',
   },
 ];
 
@@ -222,13 +223,16 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   // Among people a missed roll doesn't hold anyone up: it stays on the dice while the next player goes.
   if (heldText && !held?.wait && !paused) status = `${heldText} · ${status}`;
 
-  // The dice shows a roll until its move is made, then goes blank for the next roll. A roll that
-  // couldn't be played stays up for a few seconds (held) in the colour of whoever rolled it.
-  const diceSeat = stream.rolling && stream.lastRoll ? stream.lastRoll.seat : (held?.seat ?? game.turn);
-  const diceValue = game.phase === 'move' ? game.dice : (held?.value ?? null);
+  // The dice shows a roll as soon as it stops (while the dragon moves with it) and until its move is made,
+  // then goes blank for the next roll. A roll that couldn't be played stays up for a few seconds (held) in
+  // the colour of whoever rolled it.
+  const rolled = (stream.rolling || stream.landed) && stream.lastRoll ? stream.lastRoll : null;
+  const diceSeat = rolled ? rolled.seat : (held?.seat ?? game.turn);
+  const diceValue = stream.landed && rolled ? rolled.value : game.phase === 'move' ? game.dice : (held?.value ?? null);
+  const event = game.event && !over ? game.event : null;
 
   return (
-    <div className="game">
+    <div className={`game${event ? ' with-event' : ''}`}>
       <div className="board-area">
         <div className={`board-frame${stream.shake ? ' shake' : ''}`}>
           <Board
@@ -329,7 +333,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                 </div>
               ) : placing === 'superBomb' ? (
                 <span>
-                  {TOUCH ? 'Tap an empty square, then tap it again.' : 'Click any empty square.'} Whoever lands on it blows up, with every piece within two
+                  {TOUCH ? 'Tap an empty square, then tap it again.' : 'Click any empty square.'} Whoever lands on it blows up, with every piece within three
                   squares ahead or behind — yours too.
                 </span>
               ) : placing === 'box' ? (
@@ -368,6 +372,8 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
           )}
           {error && <div className="error small">{error}</div>}
         </section>
+
+        {event && <EventCard game={game} />}
 
         <Scoreboard
           game={game}
