@@ -475,19 +475,13 @@ function DragonIcon({ x, y, rounds }: { x: number; y: number; rounds: number }) 
   );
 }
 
-/** A wanted poster on the edge of the hangar of whoever has the bounty on them. */
-function WantedPoster({ x, y, value }: { x: number; y: number; value: number }) {
-  const text = `🎯 MOST WANTED · +${value}`;
-  const w = text.length * 6.3 + 14;
-  const h = CELL * 0.48;
+/** "MOST WANTED", written in the hangar's border like the name, for whoever has the bounty on them. */
+function WantedLabel({ x, y, value }: { x: number; y: number; value: number }) {
   return (
-    <g className="wanted" transform={`translate(${x} ${y})`} pointerEvents="none">
+    <text x={x} y={y} className="hangar-label wanted-label" textAnchor="middle" dominantBaseline="central">
       <title>{`Most wanted: knocking out one of these pieces pays +${value} on top`}</title>
-      <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={4} />
-      <text textAnchor="middle" dominantBaseline="central">
-        {text}
-      </text>
-    </g>
+      MOST WANTED +{value}
+    </text>
   );
 }
 
@@ -654,10 +648,10 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           const rank = game.standings.indexOf(s);
           const medal = game.phase === 'over' && rank >= 0 ? `${['🥇', '🥈', '🥉', '4th'][rank]} ` : '';
           const name = seat?.name ?? (seat?.kind === 'bot' ? `Bot · ${seat.botLevel}` : '');
-          // The leader gets a wanted poster on the hangar's edge facing the middle, away from the name.
+          // The leader's hangar says MOST WANTED in its border, on the side facing the middle, opposite the name.
           const wanted = game.rules.bounty && game.bounty?.seat === s && game.phase !== 'over' ? game.bounty.value : 0;
-          const h = rotateShape(HANGARS[s], rot);
-          const edge = h.kind === 'rect' ? (y < BOARD_PX / 2 ? h.y1 : h.y0) * CELL : y;
+          const centre = toPx(HANGAR_CENTERS[s], rot);
+          const opposite = 2 * centre.y - y;
           return (
             <g key={s}>
               <text x={x} y={y} className="hangar-label" textAnchor="middle" dominantBaseline="central">
@@ -665,7 +659,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 {name.length > 13 ? `${name.slice(0, 12)}…` : name}
                 {seat?.kind === 'bot' && !seat.left ? ' 🤖' : ''}
               </text>
-              {wanted > 0 && <WantedPoster x={x} y={edge} value={wanted} />}
+              {wanted > 0 && <WantedLabel x={x} y={opposite} value={wanted} />}
             </g>
           );
         })}

@@ -1141,17 +1141,12 @@ select:focus {
   margin: 0 0 6px;
 }
 
-.wanted rect {
-  fill: #f6e7c1;
-  stroke: #9b1c1c;
-  stroke-width: 1.5;
-}
-
-.wanted text {
-  font-size: 10.5px;
+.hangar-label.wanted-label {
+  font-size: 12px;
   font-weight: 800;
-  fill: #9b1c1c;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.8px;
+  fill: #ffe082;
+  stroke: rgba(120, 0, 0, 0.75);
 }
 
 .power-star {
