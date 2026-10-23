@@ -1,6 +1,6 @@
 {
   "name": "mencherz",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Online Aeroplane Chess (Flying Chess / Battle Ludo) for the browser",
   "type": "module",

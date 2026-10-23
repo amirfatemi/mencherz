@@ -83,7 +83,10 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 - **Turn timer:** off, or 10–90 s. When time runs out, the move is made for the player. The host can **pause** the game, which stops the clock and all turns, bots included, and resume it later.
 - **Absent players:** a player who closes the tab has their turns played for them, so the others can carry on. A game where no human is present pauses.
 - **Auto-save:** every change is written to SQLite, and games survive a server restart. Leaving mid-game hands your seat to a computer player.
-- **Stats:** points, games played and wins per user, on the leaderboard and on the Settings page. A game counts only if at least two people played it (`RANKED_MIN_PEOPLE` in `shared/scoring.ts`), so games against computers alone are practice.
+- **Game clock:** the scoreboard shows the time played (pauses left out), and the results the whole game's length.
+- **Version:** the top bar (and the sign-in page) shows the version, build date and commit, e.g. `v1.0.0 · 2026-10-23 · 5d3749c`.
+- **Full screen:** the ⛶ button in the top bar fills the screen with the game. On an iPad or phone, *Add to Home Screen* installs it as an app that always opens full screen (iPhones only allow full screen this way).
+- **Stats:** points, games played, wins, hits made and taken, and minutes played per user, on the leaderboard (sortable by any of them) and on the Settings page. A game counts only if at least two people played it (`RANKED_MIN_PEOPLE` in `shared/scoring.ts`), so games against computers alone are practice.
 
 ### Rules (defaults are the classic ones)
 
@@ -104,17 +107,17 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 
    What was inside shows on a card for 3 seconds while the game waits.
 10. **Walls 🧱:** two or more pieces of one colour on a track square make a wall. Other colours can't pass it by stepping or with a colour jump (a move that would is not allowed, and a colour jump that would just doesn't happen). Flights ✈ and bridges go over it. Landing exactly on a wall knocks out every piece in it, each scored. Your own pieces pass your own walls.
-11. **Kings 👑:** each colour's first piece wears a crown. Knocking out a king, or knocking out with your king, counts ×1.5; a king knocking out a king, ×2.25.
+11. **Kings 👑:** each colour's first piece wears a crown. Knocking out a king counts ×1.5. A king knocking others out scores like any piece: only losing it costs more.
 12. **Power square ⚡:** one track square moves to a random free square every 5 rounds (never a flight square). It's painted purple with a gold sparkle: nobody's colour, so nobody jumps from it. A number on it shows the rounds left before it moves. Ending a move on it lets you pick:
-    - **Heaven bridge 🌈:** you pick a free start square; the bridge leads 10 squares ahead. The first piece to land on its start, yours included, is carried there, and the bridge is gone. It does nothing for a piece whose route turns home before its end.
+    - **Heaven bridge 🌈:** you pick a free start square; the bridge leads 10 squares ahead. The first piece to land on its start, yours included, is carried there, and the bridge is gone. It does nothing for a piece whose route turns home before its end. On the board a bridge shows only its two ends: its icon in a solid ring at the start, smaller in a dashed ring at the end.
     - **Hell bridge 🔥:** the same, but 20 squares back (or to the piece's takeoff spot, if it hasn't come that far).
     - **Magic box 🎁:** hide a new magic box on any free square. Whoever lands on it first opens it, you included.
     - **Safe square 🛡:** pick a track square (not a home column), even one your piece stands on. For 2 rounds your pieces there can't be knocked out; others can still land there and share it.
-    - **Sirat bridge 🌉 (پل صراط):** pick another player. For 2 rounds a second flight line crosses their home column. The corner square holding the ✈ that flies over it is two triangles of two colours, and the second colour now flies too, from its triangle to the square of its colour on the far side (if that doesn't take it past its own turn home). Every flight over the column knocks out every piece in it, not only the middle one.
+    - **Ambush 🏹 (شبیخون, once called the Sirat bridge):** pick another player. For 5 rounds a second flight line crosses their home column. The corner square holding the ✈ that flies over it is two triangles of two colours, and the second colour now flies too, from its triangle to the square of its colour on the far side (if that doesn't take it past its own turn home). Every flight over the column knocks out every piece in it, not only the middle one.
 
     - **Super bomb 💥:** put a big bomb on a free track square. The first piece to land on it blows up, and so does every piece within 2 squares ahead or behind, whatever its colour, the owner's included. Home columns are out of reach; a vest or the piece's own safe square saves it. The owner scores each opponent piece blown up as a knock-out.
 
-    The heaven bridge, hell bridge, Sirat bridge and super bomb can each be picked once a game: whoever picks one first uses it up for everyone. Magic boxes and safe squares can be picked any number of times.
+    The heaven bridge, hell bridge, ambush and super bomb can each be picked once a game: whoever picks one first uses it up for everyone. Magic boxes and safe squares can be picked any number of times.
 
     A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on the power square.
 13. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
@@ -127,20 +130,20 @@ By default the game is scored, so knocking pieces out pays as well as racing:
 | --- | --- |
 | The first player to bring all four pieces home | 100 |
 | A piece reaches the centre | 20 |
-| Knock out a piece in the first half of its track (squares 1–25) | 5 |
-| …between halfway and the last 15% (26–42) | 7 |
-| …in the last 15% (43–50) | 10 |
-| Fly over a piece in its home column (only the opposite player's flight can) | 20 |
+| Knock out a piece in the first half of its track (squares 1–25) | 4 |
+| …between halfway and the last 15% (26–42) | 6 |
+| …in the last 15% (43–50) | 8 |
+| Fly over a piece in its home column (only the opposite player's flight can) | 15 |
 | **Revenge:** knock out whoever last knocked out one of yours | ×1.5 (once per knock-out received) |
-| **Double kill:** a piece's second knock-out since it left the hangar | ×1.5 |
-| **Triple kill** and later: its third knock-out and each one after | ×2 |
-| **King:** knock out a king, or knock out with your king | ×1.5 each |
+| **Double kill:** a piece's second knock-out since it left the hangar | ×1.25 |
+| **Triple kill** and later: its third knock-out and each one after | ×1.5 |
+| **King:** knock out a king | ×1.5 |
 | A magic box that gives points | +20 |
 | A magic box that takes points | −10 |
 
 Bonuses multiply, and a single knock-out is capped at 100.
 
-The numbers are kept small, with 100 the biggest award. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. At the old values (10/15/20/40) a busy hunter could collect close to the first-home bonus before anyone finished.
+The numbers are kept small, with 100 the biggest award. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. They have come down twice: from 10/15/20/40, when a busy hunter could collect close to the first-home bonus before anyone finished, and from 5/7/10/20 (with ×1.5/×2 streaks and a bonus for hitting with the king) after a game where the runner-up out-scored the first player home.
 
 The game goes on after the first player finishes, until third place is decided (only one player left). Places go by points, with ties broken by pieces home and then finishing order, so finishing first nearly always decides the winner, and knock-outs settle the places behind.
 

@@ -354,11 +354,15 @@ describe('local players', () => {
     assert.ok(board.every((r, i) => i === 0 || board[i - 1].points >= r.points), 'sorted by points');
     const kidRow = board.find((r) => r.username === 'kid')!;
     assert.deepEqual([kidRow.captures, kidRow.lost], [g.stats[1].captures, g.stats[1].lost], 'hits made and taken add up');
+    assert.ok(kidRow.minutes >= 1, 'every counted game adds at least a minute');
+    assert.equal(final.clockRunning, false);
+    assert.ok(final.playedMs > 0);
     for (const [sort, value] of [
       ['lost', (r: LeaderRow) => r.lost],
       ['wins', (r: LeaderRow) => r.wins],
       ['games', (r: LeaderRow) => r.gamesPlayed],
       ['captures', (r: LeaderRow) => r.captures],
+      ['minutes', (r: LeaderRow) => r.minutes],
     ] as const) {
       const sorted = await getJson<LeaderRow[]>(`/leaderboard?sort=${sort}`, kidCookie);
       assert.ok(sorted.every((r, i) => i === 0 || value(sorted[i - 1]) >= value(r)), `sorted by ${sort}`);

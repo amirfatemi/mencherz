@@ -49,6 +49,10 @@ export interface RoomView {
   spectators: number;
   /** The host has paused the game: no turns, no timers. */
   paused: boolean;
+  /** Time played so far, pauses left out, as of serverNow. */
+  playedMs: number;
+  /** Whether playedMs is still counting up. */
+  clockRunning: boolean;
 }
 
 export interface RoomUpdate {
@@ -128,10 +132,12 @@ export interface LeaderRow {
   captures: number;
   /** Own pieces knocked out, over all counted games. */
   lost: number;
+  /** Minutes played, over all counted games. */
+  minutes: number;
 }
 
 /** What the leaderboard can be ordered by. */
-export const LEADER_SORTS = ['points', 'wins', 'games', 'captures', 'lost'] as const;
+export const LEADER_SORTS = ['points', 'wins', 'games', 'captures', 'lost', 'minutes'] as const;
 export type LeaderSort = (typeof LEADER_SORTS)[number];
 
 export interface PairCode {
@@ -158,7 +164,7 @@ export interface ClientToServer {
   'game:bomb': (req: { code: string; square: number }, ack: Ack<null>) => void;
   /** Before the first roll: hide your magic box on this absolute track square. */
   'game:box': (req: { code: string; square: number }, ack: Ack<null>) => void;
-  /** On a power square: pick a power. A Sirat bridge names whose home column it opens (`over`). */
+  /** On a power square: pick a power. An ambush names whose home column it opens (`over`). */
   'game:power': (req: { code: string; choice: PowerChoice; over?: Seat }, ack: Ack<null>) => void;
   /** Put the vest from a magic box on this piece. */
   'game:vest': (req: { code: string; piece: number }, ack: Ack<null>) => void;

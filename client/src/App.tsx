@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PublicUser } from '../../shared/protocol.ts';
 import { api } from './api.ts';
+import { FullscreenButton } from './components/FullscreenButton.tsx';
 import { Logo } from './components/Logo.tsx';
 import { AccountPage } from './pages/AccountPage.tsx';
 import { AdminPage } from './pages/AdminPage.tsx';
@@ -59,7 +60,14 @@ export function App() {
       </div>
     );
   }
-  if (!user) return <AuthPage onSignedIn={setUser} />;
+  if (!user) {
+    return (
+      <>
+        <AuthPage onSignedIn={setUser} />
+        <p className="app-version auth-version">v{__APP_VERSION__}</p>
+      </>
+    );
+  }
 
   const room = path.match(/^\/g\/([A-Za-z0-9]{4,8})\/?$/);
   const settings = /^\/settings\/?$/.test(path);
@@ -68,11 +76,17 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <button className="brand" onClick={() => navigate('/')} aria-label="Lobby">
-          <Logo small />
-        </button>
+        <div className="brand-row">
+          <button className="brand" onClick={() => navigate('/')} aria-label="Lobby">
+            <Logo small />
+          </button>
+          <span className="app-version" title="Version · build date · commit">
+            v{__APP_VERSION__}
+          </span>
+        </div>
         <div className="topbar-right">
           {!online && <span className="pill warn">Reconnecting…</span>}
+          <FullscreenButton />
           {user.isAdmin && (
             <button className="btn ghost small" onClick={() => navigate('/admin')}>
               Admin

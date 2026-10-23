@@ -29,8 +29,8 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
   if (ev.type === 'bomb') return ev.super ? `${who} put down a super bomb 💥` : `${who} dropped a bomb 💣`;
   if (ev.type === 'box') return `${who} hid a magic box 🎁`;
   if (ev.type === 'power') {
-    if (ev.choice === 'sirat') {
-      return `${who} opened the Sirat bridge 🌉 over ${ev.over === undefined ? 'a' : `${seatName(seats, ev.over)}'s`} home column — every flight over it knocks out the whole column`;
+    if (ev.choice === 'ambush') {
+      return `${who} set an ambush 🏹 over ${ev.over === undefined ? 'a' : `${seatName(seats, ev.over)}'s`} home column — every flight over it knocks out the whole column`;
     }
     if (ev.choice === 'box') return `${who} picked a magic box 🎁`;
     if (ev.choice === 'safe') return `${who} picked a safe square 🛡`;
@@ -47,7 +47,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     if (step.kind === 'fly') bits.push('took the shortcut ✈');
   }
   for (const c of ev.captures) {
-    const extras = [c.king && "👑 a king", c.byKing && '👑 by the king', c.revenge && '⚔️ revenge', killStreakName(c.streak ?? 1)].filter(Boolean);
+    const extras = [c.king && '👑 a king', c.revenge && '⚔️ revenge', killStreakName(c.streak ?? 1)].filter(Boolean);
     bits.push(`sent ${seatName(seats, c.seat)} back 💥 +${c.points}${extras.length ? ` (${extras.join(', ')})` : ''}`);
   }
   if (ev.bombed) {

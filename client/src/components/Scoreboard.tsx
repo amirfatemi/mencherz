@@ -15,6 +15,8 @@ interface Props {
   over: boolean;
   userId: number;
   spectators: number;
+  /** Time played so far, already formatted. */
+  played: string;
 }
 
 /** Small marks after a name: computer, played at someone's device, away, wearing a vest. */
@@ -45,7 +47,7 @@ function Marks({ s, vests, userId }: { s: SeatView; vests: number; userId: numbe
   );
 }
 
-export function Scoreboard({ game, seats, events, mySeat, over, userId, spectators }: Props) {
+export function Scoreboard({ game, seats, events, mySeat, over, userId, spectators, played }: Props) {
   const rows: Seat[] =
     over && game.standings.length
       ? game.standings
@@ -66,6 +68,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
         <h3>Scoreboard</h3>
         <span className="muted small">
           {game.rules.winBy === 'points' ? 'Most points wins' : 'First home wins'}
+          {` · ⏱ ${played}`}
           {spectators > 0 && ` · 👀 ${spectators}`}
         </span>
       </div>
@@ -150,7 +153,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
           </li>
           {game.rules.kings && (
             <li>
-              👑 Knocking out a king, or with your king: <b>×{KING}</b> each
+              👑 Knocking out a king: <b>×{KING}</b>
             </li>
           )}
           <li>No single knock-out is worth more than {POINTS.firstHome}</li>

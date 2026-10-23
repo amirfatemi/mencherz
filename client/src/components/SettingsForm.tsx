@@ -121,7 +121,7 @@ export function SettingsForm({ value, onChange }: Props) {
         <Toggle label="A 6 gives another roll" checked={rules.bonusRollOnSix} onChange={(v) => setRules({ bonusRollOnSix: v })} />
         <Toggle
           label="Power square ⚡"
-          hint="A square that moves every 5 rounds. End a move on it to pick a heaven bridge (+10), a hell bridge (−20), a magic box to hide, a safe square, the Sirat bridge or a super bomb. The bridges and the super bomb work once a game."
+          hint="A square that moves every 5 rounds. End a move on it to pick a heaven bridge (+10), a hell bridge (−20), a magic box to hide, a safe square, an ambush or a super bomb. The bridges and the super bomb work once a game."
           checked={rules.powerSquares}
           onChange={(v) => setRules({ powerSquares: v })}
         />
@@ -133,7 +133,7 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Kings 👑"
-          hint="Each colour's first piece is a king: knocking one out, or knocking out with one, counts 1.5 times."
+          hint="Each colour's first piece is a king: knocking one out counts 1.5 times."
           checked={rules.kings}
           onChange={(v) => setRules({ kings: v })}
         />

@@ -36,6 +36,9 @@ export function Dice({ value, rolling, color, canRoll, onRoll }: Props) {
   }, [rolling, value]);
 
   const edge = shade(color, -0.35);
+  // One gradient per colour: Safari doesn't repaint a shape when the stops of the gradient it uses change,
+  // so a single shared gradient kept showing the previous roller's colour.
+  const faceId = `die-face-${color.replace('#', '')}`;
   return (
     <button
       type="button"
@@ -47,7 +50,7 @@ export function Dice({ value, rolling, color, canRoll, onRoll }: Props) {
     >
       <svg viewBox="0 0 100 104" aria-hidden>
         <defs>
-          <linearGradient id="die-face" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={faceId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor={shade(color, 0.3)} />
             <stop offset="0.55" stopColor={color} />
             <stop offset="1" stopColor={shade(color, -0.12)} />
@@ -62,7 +65,7 @@ export function Dice({ value, rolling, color, canRoll, onRoll }: Props) {
         <g key={landed} className="dice-body">
           {/* The darker slab below gives the face some thickness; the band on top is the shine. */}
           <rect x={5} y={9} width={90} height={88} rx={22} fill={edge} />
-          <rect x={5} y={3} width={90} height={88} rx={22} fill="url(#die-face)" stroke={edge} strokeWidth={1.5} />
+          <rect x={5} y={3} width={90} height={88} rx={22} fill={`url(#${faceId})`} stroke={edge} strokeWidth={1.5} />
           <rect x={13} y={8} width={74} height={30} rx={14} fill="rgba(255,255,255,0.22)" />
           {face !== null &&
             PIPS[face].map(([cx, cy]) => {

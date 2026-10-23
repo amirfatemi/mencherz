@@ -2,7 +2,8 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { COLOR_HEX, type Seat } from '../../../shared/board.ts';
 import { peopleIn, type PublicUser, type SeatView } from '../../../shared/protocol.ts';
 import { RANKED_MIN_PEOPLE } from '../../../shared/scoring.ts';
-import { availablePowers, distinctMoves, freeSquares, placeOptions, siratTargets, vestOptions, type PowerChoice } from '../../../shared/rules.ts';
+import { availablePowers, distinctMoves, freeSquares, placeOptions, ambushTargets, vestOptions, type PowerChoice } from '../../../shared/rules.ts';
+import { formatDuration } from '../duration.ts';
 import { seatName } from '../events.ts';
 import { navigate } from '../router.ts';
 import { call } from '../socket.ts';
@@ -24,8 +25,8 @@ const POWER_BUTTONS: { choice: PowerChoice; label: string; className: string; ti
   { choice: 'box', label: '🎁 Magic box', className: 'btn ghost', title: 'Hide a magic box on any empty square. Whoever lands on it first opens it — you too.' },
   { choice: 'safe', label: '🛡 Safe square', className: 'btn ghost', title: "For two rounds, your pieces on that square can't be knocked out." },
   {
-    choice: 'sirat',
-    label: '🌉 Sirat bridge · پل صراط',
+    choice: 'ambush',
+    label: '🏹 Ambush · شبیخون',
     className: 'btn ghost',
     title: "For two rounds a second flight line crosses another player's home column, and any flight over it knocks out the whole column. Once a game.",
   },
@@ -73,8 +74,8 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [help, setHelp] = useState(false);
   const [dismissed, setDismissed] = useState(false);
-  // The Sirat bridge needs a second pick: whose home column it opens.
-  const [pickingSirat, setPickingSirat] = useState(false);
+  // The ambush needs a second pick: whose home column it opens.
+  const [pickingAmbush, setPickingAmbush] = useState(false);
   const [pieceStyle, setPieceStyle] = usePieceStyle();
   const gifs = view.settings.gifs;
   useEffect(() => {
@@ -106,6 +107,9 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
 
   const deadline = !over && view.turnDeadline ? view.turnDeadline : null;
   useTicker(deadline !== null);
+  // The game clock, pauses left out: counts on from the server's figure while the game runs.
+  useTicker(view.clockRunning, 15000);
+  const played = view.playedMs + (view.clockRunning ? Math.max(0, stream.now() - view.serverNow) : 0);
   const left = deadline ? Math.max(0, deadline - stream.now()) : 0;
   const total = (view.settings.turnSeconds || 6) * 1000;
 
@@ -123,7 +127,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
           : call(event, { code: view.code, square: n! }),
     );
   const pickPower = (choice: PowerChoice, over?: Seat) => {
-    setPickingSirat(false);
+    setPickingAmbush(false);
     send(call('game:power', { code: view.code, choice, over }));
   };
   const setPaused = (on: boolean) => call('game:pause', { code: view.code, paused: on }).catch((e: Error) => setError(e.message));
@@ -276,15 +280,15 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                   {TOUCH ? 'Tap one of your glowing pieces, then tap it again.' : 'Click one of your glowing pieces.'} It wears the vest — in the hangar or out —
                   until it stops a bomb.
                 </span>
-              ) : pickingPower && pickingSirat ? (
+              ) : pickingPower && pickingAmbush ? (
                 <div className="power-choices">
-                  <span>🌉 Open whose home column?</span>
-                  {siratTargets(game).map((seat) => (
-                    <button key={seat} className="btn seat-pick" style={{ '--seat': COLOR_HEX[seat] } as CSSProperties} onClick={() => pickPower('sirat', seat)}>
+                  <span>🏹 Ambush whose home column?</span>
+                  {ambushTargets(game).map((seat) => (
+                    <button key={seat} className="btn seat-pick" style={{ '--seat': COLOR_HEX[seat] } as CSSProperties} onClick={() => pickPower('ambush', seat)}>
                       {seatName(view.seats, seat)}
                     </button>
                   ))}
-                  <button className="btn ghost" onClick={() => setPickingSirat(false)}>
+                  <button className="btn ghost" onClick={() => setPickingAmbush(false)}>
                     ← Back
                   </button>
                 </div>
@@ -297,7 +301,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                         key={b.choice}
                         className={b.className}
                         disabled={used}
-                        onClick={() => (b.choice === 'sirat' ? setPickingSirat(true) : pickPower(b.choice))}
+                        onClick={() => (b.choice === 'ambush' ? setPickingAmbush(true) : pickPower(b.choice))}
                         title={used ? 'Already used this game: each bridge and the super bomb can be picked only once' : b.title}
                       >
                         {b.label}
@@ -320,7 +324,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                 </span>
               ) : placing ? (
                 <span>
-                  {TOUCH ? 'Tap a square to see where the bridge leads, then tap it again.' : 'Hover a square to see where the bridge leads, then click it.'} It works once, for
+                  {TOUCH ? 'Tap a square to see where the bridge ends, then tap it again.' : 'Hover a square to see where the bridge ends, then click it.'} It works once, for
                   whoever lands on its start first — you too.
                 </span>
               ) : forced && !busy ? (
@@ -348,7 +352,16 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
           {error && <div className="error small">{error}</div>}
         </section>
 
-        <Scoreboard game={game} seats={view.seats} events={view.events} mySeat={mySeat} over={over} userId={user.id} spectators={view.spectators} />
+        <Scoreboard
+          game={game}
+          seats={view.seats}
+          events={view.events}
+          mySeat={mySeat}
+          over={over}
+          userId={user.id}
+          spectators={view.spectators}
+          played={formatDuration(played)}
+        />
 
         <div className="side-actions">
           <div className="segmented" role="group" aria-label="Piece style">
@@ -395,6 +408,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
               </li>
             ))}
           </ol>
+          <p className="results-time">⏱ Game time: {formatDuration(played)}</p>
           {game.standings.length === 0 && <p className="muted">Everyone left, so the game was stopped.</p>}
           {peopleIn(view.seats) < RANKED_MIN_PEOPLE && (
             <p className="muted small">Practice game: with only one person playing, it doesn't count on the leaderboard.</p>

@@ -35,7 +35,7 @@ import {
 import type { SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
-import { BRIDGE_SPAN, KING_PIECE, SUPER_BOMB_REACH, isKing, planMove, siratStart, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
+import { BRIDGE_SPAN, KING_PIECE, SUPER_BOMB_REACH, isKing, planMove, ambushStart, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
 import { BOARD_PX, CELL, heading, restHeading, toPx } from '../geometry.ts';
 import type { ActiveReaction, AnimFrame, Popup } from '../useRoomStream.ts';
@@ -147,11 +147,6 @@ function Defs() {
       <filter id="piece-shadow" x="-50%" y="-50%" width="200%" height="200%">
         <feDropShadow dx="0" dy="1.5" stdDeviation="1.2" floodOpacity="0.32" />
       </filter>
-      {(['heaven', 'hell'] as const).map((kind) => (
-        <marker key={kind} id={`bridge-end-${kind}`} viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">
-          <path d="M0 0L10 5L0 10Z" fill={kind === 'heaven' ? '#00acc1' : '#d84315'} />
-        </marker>
-      ))}
       <PieceDefs />
     </defs>
   );
@@ -357,20 +352,22 @@ function PowerSquare({ square, rounds }: { square: number; rounds: number }) {
 }
 
 /**
- * A bridge: an arrow along the track from its start square to where it leads. It follows the track rather
- * than crossing the board, so it never looks like a flight over the home columns, which knocks pieces out.
+ * A bridge, marked only at its two ends so the board stays clear: its icon in a solid ring where it starts,
+ * and smaller in a dashed ring where it puts a piece down.
  */
-function BridgeArc({ from, kind, ghost }: { from: number; kind: BridgeKind; ghost?: boolean }) {
-  const span = BRIDGE_SPAN[kind];
-  const squares = Array.from({ length: Math.abs(span) + 1 }, (_, k) => (from + Math.sign(span) * k + TRACK.length) % TRACK.length);
-  const pts = squares.map((sq) => toPx(TRACK[sq].spot, 0));
-  const a = pts[0];
+function BridgeMarks({ from, kind, ghost }: { from: number; kind: BridgeKind; ghost?: boolean }) {
+  const a = px(TRACK[from].spot);
+  const b = px(TRACK[(from + BRIDGE_SPAN[kind] + TRACK.length) % TRACK.length].spot);
+  const icon = kind === 'heaven' ? '🌈' : '🔥';
   return (
     <g className={`bridge ${kind}${ghost ? ' ghost' : ''}`} pointerEvents="none">
-      <path className="bridge-arc" d={`M${pts.map((p) => `${p.x} ${p.y}`).join('L')}`} strokeLinejoin="round" markerEnd={`url(#bridge-end-${kind})`} />
+      <circle className="bridge-end" cx={b.x} cy={b.y} r={CELL * 0.3} />
+      <text x={b.x} y={b.y} className="bridge-end-icon" textAnchor="middle" dominantBaseline="central">
+        {icon}
+      </text>
       <circle className="bridge-start" cx={a.x} cy={a.y} r={CELL * 0.32} />
       <text x={a.x} y={a.y} textAnchor="middle" dominantBaseline="central">
-        {kind === 'heaven' ? '🌈' : '🔥'}
+        {icon}
       </text>
     </g>
   );
@@ -424,24 +421,24 @@ function FlightLine({ a, b, seat }: { a: Point; b: Point; seat: Seat }) {
 }
 
 /**
- * The Sirat bridge: the flight line over a seat's home column gets a second one beside it, from the other
+ * The ambush: the flight line over a seat's home column gets a second one beside it, from the other
  * triangle of that ✈ corner square to the square of the same colour on the far side.
  */
-function SiratMark({ over, rounds }: { over: Seat; rounds: number }) {
-  const start = siratStart(over);
+function AmbushMark({ over, rounds }: { over: Seat; rounds: number }) {
+  const start = ambushStart(over);
   const seat = trackColor(start);
   const a = px(TRACK[start].spot);
   const b = px(TRACK[(start + FLIGHT_DISTANCE) % TRACK.length].spot);
   const mid = px(HOME[over][FLIGHT_CROSSES - HOME_FIRST].spot);
   return (
-    <g className="sirat" pointerEvents="none">
+    <g className="ambush" pointerEvents="none">
       <FlightLine seat={seat} a={a} b={b} />
       <path d={PLANE_PATH} transform={`translate(${a.x} ${a.y}) rotate(${heading(a, b)}) scale(${CELL * 0.2})`} fill={COLOR_DARK[seat]} />
       <g transform={`translate(${mid.x + CELL * 0.62} ${mid.y - CELL * 0.62})`}>
-        <title>{`Sirat bridge — ${rounds === 1 ? 'ends this round' : `${rounds} rounds left`}`}</title>
+        <title>{`ambush — ${rounds === 1 ? 'ends this round' : `${rounds} rounds left`}`}</title>
         <circle r={CELL * 0.3} fill="#fff" stroke="#ffb300" strokeWidth={2.5} />
         <text textAnchor="middle" dy="0.35em" fontSize={CELL * 0.22} fontWeight={700} fill="#8a5a00">
-          🌉{rounds}
+          🏹{rounds}
         </text>
       </g>
     </g>
@@ -727,12 +724,12 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           <PowerSquare key={`power${sq}`} square={sq} rounds={powerRounds} />
         ))}
         {(game.bridges ?? []).map((b) => (
-          <BridgeArc key={`bridge${b.square}`} from={b.square} kind={b.kind} />
+          <BridgeMarks key={`bridge${b.square}`} from={b.square} kind={b.kind} />
         ))}
         {(game.safe ?? []).map((x) => (
           <SafeMark key={`safe${x.square}`} square={x.square} owner={x.owner} rounds={roundsUntil(x.until)} />
         ))}
-        {game.sirat && <SiratMark over={game.sirat.over} rounds={roundsUntil(game.sirat.until)} />}
+        {game.ambush && <AmbushMark over={game.ambush.over} rounds={roundsUntil(game.ambush.until)} />}
 
         <g filter="url(#piece-shadow)">
           {items.map((it) => {
@@ -792,7 +789,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             {bombHover !== null &&
               (() => {
                 const p = toPx(TRACK[bombHover].spot, rot);
-                if (targetKind === 'heaven' || targetKind === 'hell') return <BridgeArc from={bombHover} kind={targetKind} ghost />;
+                if (targetKind === 'heaven' || targetKind === 'hell') return <BridgeMarks from={bombHover} kind={targetKind} ghost />;
                 if (targetKind === 'safe') return <SafeMark square={bombHover} owner={game.turn} rounds={2} ghost />;
                 if (targetKind === 'superBomb') {
                   // The squares its blast would reach.

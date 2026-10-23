@@ -42,8 +42,9 @@ import {
   createGame,
   placeOptions,
   planMove,
-  siratStart,
+  ambushStart,
   availablePowers,
+  AMBUSH_ROUNDS,
   ONCE_POWERS,
   wallSquares,
   BOX_OUTCOMES,
@@ -898,12 +899,12 @@ describe('kill streaks', () => {
     return { g, v: g.pieces[1][0], ...applyMove(g, 0) };
   }
 
-  test("a piece's second knock-out counts 1.5 times, its third and later twice", () => {
+  test("a piece's second knock-out counts 1.25 times, its third and later 1.5 times", () => {
     for (const [before, times] of [
       [0, 1],
-      [1, 1.5],
-      [2, 2],
-      [5, 2],
+      [1, 1.25],
+      [2, 1.5],
+      [5, 1.5],
     ]) {
       const { event, v } = hit(before);
       assert.equal(event.captures[0].streak, before + 1);
@@ -929,17 +930,16 @@ describe('kings', () => {
     return { v: g.pieces[1][victim], plan: planMove(g, 0, hitter, 2)! };
   }
 
-  test('knocking out a king, or with one, counts 1.5 times; a king knocking out a king, 2.25 times', () => {
+  test('knocking out a king counts 1.5 times; knocking out with one counts as usual', () => {
     for (const [hitter, victim, times] of [
       [1, 1, 1],
       [1, 0, KING],
-      [0, 1, KING],
-      [0, 0, KING * KING],
+      [0, 1, 1],
+      [0, 0, KING],
     ]) {
       const { v, plan } = knock(hitter, victim);
       assert.equal(plan.captures[0].points, Math.round(captureValue(v) * times), `piece ${hitter} hits piece ${victim}`);
       assert.equal(plan.captures[0].king, victim === 0);
-      assert.equal(plan.captures[0].byKing, hitter === 0);
     }
   });
 
@@ -959,15 +959,15 @@ describe('kings', () => {
     assert.equal(plan.bombed?.points, Math.round(captureValue(32) * KING));
   });
 
-  test('no knock-out is worth more than the biggest award', () => {
+  test('even the biggest knock-out, a revenge triple kill of a king in its home column, stays under the biggest award', () => {
     const g = at(crowned(), 0, [15]);
     at(g, 2, [FLIGHT_CROSSES]);
     g.active = [0, 1, 2];
     g.lastHitBy[0] = 2;
     g.kills[0][0] = 2;
     const c = planMove(g, 0, 0, 3)!.captures[0];
-    assert.ok(captureValue(FLIGHT_CROSSES) * REVENGE * KING * KING * killStreakBonus(3) > POINTS.firstHome);
-    assert.equal(c.points, POINTS.firstHome);
+    assert.equal(c.points, Math.round(captureValue(FLIGHT_CROSSES) * REVENGE * KING * killStreakBonus(3)));
+    assert.ok(c.points < POINTS.firstHome);
   });
 });
 
@@ -1073,7 +1073,7 @@ describe('power squares and bridges', () => {
   });
 });
 
-describe('safe squares and the Sirat bridge', () => {
+describe('safe squares and the ambush', () => {
   // Seat 0 is on the power square (its square 5) and picks a power.
   function power(seats: Seat[] = [0, 1]) {
     const g = at(game(seats, { powerSquares: true }), 0, [3, 20]);
@@ -1110,14 +1110,14 @@ describe('safe squares and the Sirat bridge', () => {
     assert.deepEqual(g.safe, [], 'gone when its owner comes round the second time');
   });
 
-  test('the Sirat bridge adds a second flight over a home column, and every flight over it knocks out the whole column', () => {
-    const g = applyPower(power([0, 1, 2, 3]), 'sirat', undefined, 2).state;
-    assert.deepEqual(g.sirat, { over: 2, owner: 0, until: 1 + 2 * 4 }, 'two rounds of four players from turn 1');
+  test('the ambush adds a second flight over a home column, and every flight over it knocks out the whole column', () => {
+    const g = applyPower(power([0, 1, 2, 3]), 'ambush', undefined, 2).state;
+    assert.deepEqual(g.ambush, { over: 2, owner: 0, until: 1 + AMBUSH_ROUNDS * 4 }, 'five rounds of four players from turn 1');
     at(g, 2, [HOME_FIRST, HOME_FIRST + 2, HOME_LAST]);
     // Yellow's flight crosses green's home column. Yellow's ✈ corner square is half red: red flies from that
     // triangle to the red square on the far side, over the same column.
-    assert.equal(siratStart(2), trackIndex(0, FLIGHT_FROM - 1));
-    assert.equal(trackColor(siratStart(2)), 3);
+    assert.equal(ambushStart(2), trackIndex(0, FLIGHT_FROM - 1));
+    assert.equal(trackColor(ambushStart(2)), 3);
     assert.equal(trackColor(trackIndex(0, FLIGHT_FROM + 11)), 3);
     at(g, 3, [sameSquare(0, FLIGHT_FROM - 1, 3) - 2]);
     Object.assign(g, { turn: 3, phase: 'move', dice: 2, movable: [0] });
@@ -1143,13 +1143,15 @@ describe('safe squares and the Sirat bridge', () => {
     assert.equal(planMove(green, 2, 0, 2)!.flew, false, "green can't use the bridge over its own column");
   });
 
-  test('the Sirat bridge needs another player still playing, and ends after two rounds', () => {
-    assert.throws(() => applyPower(power(), 'sirat', undefined, 0), /another player/);
-    let g = at(applyPower(power(), 'sirat', undefined, 1).state, 0, []);
-    for (let turn = 0; turn < 2; turn++) g = applyRoll(g, 3).state;
-    assert.ok(g.sirat);
+  test('the ambush needs another player still playing, and ends after five rounds', () => {
+    assert.throws(() => applyPower(power(), 'ambush', undefined, 0), /another player/);
+    let g = at(applyPower(power(), 'ambush', undefined, 1).state, 0, []);
+    // Set on turn 1 of two players: it lasts until its owner comes round the fifth time, on turn 11.
+    while (g.turnNo < 10) g = applyRoll(g, 3).state;
+    assert.ok(g.ambush);
     g = applyRoll(g, 3).state;
-    assert.equal(g.sirat, null);
+    assert.equal(g.turnNo, 1 + AMBUSH_ROUNDS * 2);
+    assert.equal(g.ambush, null);
   });
 });
 
@@ -1161,11 +1163,11 @@ describe('once-a-game powers and the super bomb', () => {
     return applyMove(g, 0).state;
   }
 
-  test('bridges, the Sirat bridge and the super bomb can be picked once a game; boxes and safe squares any time', () => {
+  test('bridges, the ambush and the super bomb can be picked once a game; boxes and safe squares any time', () => {
     const g = applyPower(power(), 'heaven').state;
     assert.deepEqual(g.usedPowers, ['heaven']);
     const later = power();
-    later.usedPowers = ['heaven', 'sirat'];
+    later.usedPowers = ['heaven', 'ambush'];
     assert.deepEqual(availablePowers(later), ['hell', 'box', 'safe', 'superBomb']);
     assert.throws(() => applyPower(later, 'heaven'), /already been used/);
     later.usedPowers = [...ONCE_POWERS];

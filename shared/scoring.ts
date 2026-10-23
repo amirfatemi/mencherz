@@ -1,18 +1,19 @@
 import { HOME_FIRST, TRACK_LAST } from './board.ts';
 
-// Small numbers, with 100 the biggest award. Balanced with bot games played to third place: knock-outs
-// make up about a fifth of all points, so hunting pays but can't match finishing first.
+// Small numbers, with 100 the biggest award. Lowered on 2026-10-23 after a game where the runner-up out-scored
+// the first player home: knock-outs come to about a fifth of all points in bot games, so hunting pays but
+// shouldn't beat finishing first.
 export const POINTS = {
   /** A piece reaching the centre. */
   home: 20,
   /** Knocking out a piece in the first half of its track. */
-  captureEarly: 5,
+  captureEarly: 4,
   /** ...between the halfway mark and the last 15%. */
-  captureMid: 7,
+  captureMid: 6,
   /** ...in the last 15% of its track. */
-  captureLate: 10,
+  captureLate: 8,
   /** ...in its home column, which only the opposite player's flight can reach. */
-  captureHomeColumn: 20,
+  captureHomeColumn: 15,
   /** Lost when a magic box turns out to take points. */
   boxPenalty: 10,
   /** Won when a magic box turns out to give points. */
@@ -24,15 +25,15 @@ export const POINTS = {
 /** Knocking out the player who last knocked out one of yours is worth this much more, once per knock-out received. */
 export const REVENGE = 1.5;
 
-/** A king knocked out, or a king knocking out, counts this much more; both together count it twice over. */
+/** Knocking out a king counts this much more. A king knocking others out scores as any piece does. */
 export const KING = 1.5;
 
 /**
- * A piece's second knock-out since it left the hangar (a double kill) counts 1.5 times, its third and any
- * after that twice. Stacks with revenge.
+ * A piece's second knock-out since it left the hangar (a double kill) counts 1.25 times, its third and any
+ * after that 1.5 times. Stacks with revenge.
  */
 export function killStreakBonus(streak: number): number {
-  return streak >= 3 ? 2 : streak === 2 ? 1.5 : 1;
+  return streak >= 3 ? 1.5 : streak === 2 ? 1.25 : 1;
 }
 
 /** What a kill streak is called, from a piece's second knock-out on. */

@@ -56,6 +56,7 @@ interface UserRow {
   total_points: number;
   total_captures: number;
   total_lost: number;
+  total_minutes: number;
   created_at: number;
 }
 
@@ -66,6 +67,7 @@ const LEADER_ORDER: Record<LeaderSort, string> = {
   games: 'games_played DESC, total_points DESC, wins DESC',
   captures: 'total_captures DESC, total_points DESC, wins DESC',
   lost: 'total_lost DESC, total_points DESC, wins DESC',
+  minutes: 'total_minutes DESC, total_points DESC, wins DESC',
 };
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -119,14 +121,14 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     purgeSessions: db.prepare('DELETE FROM sessions WHERE expires_at <= ?'),
     recordGame: db.prepare(`
       UPDATE users SET games_played = games_played + 1, wins = wins + ?, total_points = total_points + ?,
-        total_captures = total_captures + ?, total_lost = total_lost + ?
+        total_captures = total_captures + ?, total_lost = total_lost + ?, total_minutes = total_minutes + ?
       WHERE id = ?
     `),
     leaderboard: Object.fromEntries(
       LEADER_SORTS.map((sort) => [
         sort,
         db.prepare(`
-          SELECT username, total_points, games_played, wins, total_captures, total_lost FROM users WHERE games_played > 0
+          SELECT username, total_points, games_played, wins, total_captures, total_lost, total_minutes FROM users WHERE games_played > 0
           ORDER BY ${LEADER_ORDER[sort]}, username LIMIT 50
         `),
       ]),
@@ -242,7 +244,10 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
   function leaderboard(req: Request): Response {
     const asked = new URL(req.url).searchParams.get('sort') as LeaderSort | null;
     const sort = asked && LEADER_SORTS.includes(asked) ? asked : 'points';
-    const rows = q.leaderboard[sort].all() as Pick<UserRow, 'username' | 'total_points' | 'games_played' | 'wins' | 'total_captures' | 'total_lost'>[];
+    const rows = q.leaderboard[sort].all() as Pick<
+      UserRow,
+      'username' | 'total_points' | 'games_played' | 'wins' | 'total_captures' | 'total_lost' | 'total_minutes'
+    >[];
     return json(
       rows.map(
         (r): LeaderRow => ({
@@ -252,6 +257,7 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
           wins: r.wins,
           captures: r.total_captures,
           lost: r.total_lost,
+          minutes: r.total_minutes,
         }),
       ),
     );
@@ -326,8 +332,8 @@ export function createAuth(db: Db, opts: { secureCookies: boolean; admins?: stri
     json,
     stop: () => clearInterval(purge),
     userFromCookieHeader: (header: string | null | undefined) => userFromToken(readCookie(header)),
-    recordGame(userId: number, won: boolean, stats: { points: number; captures: number; lost: number }) {
-      q.recordGame.run(won ? 1 : 0, Math.max(0, Math.round(stats.points)), stats.captures, stats.lost, userId);
+    recordGame(userId: number, won: boolean, stats: { points: number; captures: number; lost: number; minutes: number }) {
+      q.recordGame.run(won ? 1 : 0, Math.max(0, Math.round(stats.points)), stats.captures, stats.lost, stats.minutes, userId);
     },
     /** Checks a player's one-time code and uses it up. Too many wrong guesses burn the code. */
     consumePairCode(username: string, code: string): PublicUser {

@@ -67,6 +67,11 @@ interface Room {
   paused: boolean;
   /** The reaction GIFs still to come this game, so none repeats before the rest have shown. */
   gifDeck: ReactionDeck;
+  /** The game clock: when it started, how long it has been paused, since when it's paused, when it ended. */
+  startedAt: number | null;
+  pausedMs: number;
+  pausedAt: number | null;
+  finishedAt: number | null;
   createdAt: number;
   updatedAt: number;
   // Runtime only.
@@ -122,6 +127,10 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       statsRecorded: room.statsRecorded,
       paused: room.paused,
       gifDeck: room.gifDeck,
+      startedAt: room.startedAt,
+      pausedMs: room.pausedMs,
+      pausedAt: room.pausedAt,
+      finishedAt: room.finishedAt,
     };
     q.save.run(room.code, room.status, JSON.stringify(data), room.createdAt, room.updatedAt);
   }
@@ -148,6 +157,11 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
           statsRecorded: !!d.statsRecorded,
           paused: !!d.paused,
           gifDeck: d.gifDeck ?? {},
+          // Games from before the clock count from when they were set up.
+          startedAt: d.startedAt ?? (row.status === 'waiting' ? null : row.created_at),
+          pausedMs: d.pausedMs ?? 0,
+          pausedAt: d.pausedAt ?? null,
+          finishedAt: d.finishedAt ?? (row.status === 'finished' ? row.updated_at : null),
           createdAt: row.created_at,
           updatedAt: row.updated_at,
           watchers: new Map(),
@@ -172,6 +186,24 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
   const seatOnline = (room: Room, s: SeatView) => isOnline(room, s.userId) || isOnline(room, s.controllerId);
   const involved = (room: Room, userId: number) => room.seats.some((s) => playsFor(s, userId));
 
+  /** Pauses or resumes, keeping the time spent paused out of the game clock. */
+  function setPaused(room: Room, paused: boolean) {
+    if (paused && !room.paused) room.pausedAt = Date.now();
+    if (!paused && room.paused && room.pausedAt !== null) {
+      room.pausedMs += Date.now() - room.pausedAt;
+      room.pausedAt = null;
+    }
+    room.paused = paused;
+  }
+
+  /** How long the game has been played, pauses left out. */
+  function playedMs(room: Room, now = Date.now()): number {
+    if (room.startedAt === null) return 0;
+    const end = room.finishedAt ?? now;
+    const pausing = room.pausedAt !== null && room.finishedAt === null ? end - room.pausedAt : 0;
+    return Math.max(0, end - room.startedAt - room.pausedMs - pausing);
+  }
+
   function view(room: Room): RoomView {
     const seatedUsers = new Set(room.seats.filter((s) => s.kind === 'human').flatMap((s) => [s.userId, s.controllerId]));
     const spectators = new Set([...room.watchers.values()].filter((id) => !seatedUsers.has(id))).size;
@@ -187,6 +219,8 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       events: room.events.slice(-30),
       spectators,
       paused: room.paused,
+      playedMs: playedMs(room),
+      clockRunning: room.status === 'playing' && !room.paused,
     };
   }
 
@@ -290,6 +324,10 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     room.gifDeck = {};
     room.status = 'playing';
     room.events = [];
+    room.startedAt = Date.now();
+    room.pausedMs = 0;
+    room.pausedAt = null;
+    room.finishedAt = null;
     room.busyUntil = Date.now() + scaled(600);
     room.updatedAt = Date.now();
     save(room);
@@ -323,14 +361,16 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
 
   function finish(room: Room) {
     room.status = 'finished';
+    room.finishedAt ??= Date.now();
     if (room.statsRecorded || !room.game) return;
     room.statsRecorded = true;
     if (peopleIn(room.seats) < RANKED_MIN_PEOPLE) return;
     const winner = room.game.standings[0] ?? room.game.ranking[0];
+    const minutes = Math.max(1, Math.round(playedMs(room) / 60000));
     room.seats.forEach((s, i) => {
       if (s.kind === 'human' && s.userId !== undefined && !s.left) {
         const st = room.game!.stats[i];
-        auth.recordGame(s.userId, i === winner, { points: st?.points ?? 0, captures: st?.captures ?? 0, lost: st?.lost ?? 0 });
+        auth.recordGame(s.userId, i === winner, { points: st?.points ?? 0, captures: st?.captures ?? 0, lost: st?.lost ?? 0, minutes });
       }
     });
   }
@@ -423,10 +463,11 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     if (room.status === 'playing') {
       for (const i of gone) room.seats[i] = { ...room.seats[i], kind: 'bot', botLevel: 'normal', left: true };
       // Nobody else can resume a game the host paused.
-      if (room.hostId === user.id) room.paused = false;
+      if (room.hostId === user.id) setPaused(room, false);
       const humansLeft = room.seats.some((s) => s.kind === 'human' && !s.left);
       if (!humansLeft) {
         room.status = 'finished';
+        room.finishedAt = Date.now();
         if (room.game) room.game = { ...room.game, phase: 'over' };
       }
       schedule(room);
@@ -509,6 +550,10 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
           statsRecorded: false,
           paused: false,
           gifDeck: {},
+          startedAt: null,
+          pausedMs: 0,
+          pausedAt: null,
+          finishedAt: null,
           createdAt: now,
           updatedAt: now,
           watchers: new Map(),
@@ -693,7 +738,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         requireTurn(room, user);
         const choice = req?.choice as PowerChoice;
         if (!POWER_CHOICES.includes(choice)) throw new InputError('Unknown power');
-        commit(room, applyPower(room.game!, choice, rand, choice === 'sirat' ? parseSeat(req?.over) : undefined));
+        commit(room, applyPower(room.game!, choice, rand, choice === 'ambush' ? parseSeat(req?.over) : undefined));
         return null;
       }),
     );
@@ -728,7 +773,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         const room = getRoom(req?.code);
         requireHost(room, user);
         if (room.status !== 'playing') throw new InputError('The game is not running');
-        room.paused = !!req?.paused;
+        setPaused(room, !!req?.paused);
         // Resuming starts the turn clock afresh.
         room.busyUntil = Date.now();
         schedule(room);

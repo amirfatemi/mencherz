@@ -16,13 +16,13 @@ import {
 import {
   SUPER_BOMB_REACH,
   availablePowers,
-  siratTargets,
+  ambushTargets,
   bridgeTarget,
   distinctMoves,
   freeSquares,
   planMove,
   safeSquareOptions,
-  siratStart,
+  ambushStart,
   vestOptions,
   type BridgeKind,
   type GameState,
@@ -208,7 +208,7 @@ export function chooseBridge(state: GameState, kind: BridgeKind, level: BotLevel
   return best;
 }
 
-/** A power picked by a bot, with whose home column a Sirat bridge opens. */
+/** A power picked by a bot, with whose home column an ambush opens. */
 export interface PowerPick {
   choice: PowerChoice;
   over?: Seat;
@@ -227,13 +227,13 @@ function safeCandidate(state: GameState): { square: number; value: number } | nu
   return best;
 }
 
-/** For each other player, how much a Sirat bridge over their home column might win: their pieces there, times the chance of taking that flight soon. */
-function siratValues(state: GameState): { over: Seat; value: number }[] {
+/** For each other player, how much an ambush over their home column might win: their pieces there, times the chance of taking that flight soon. */
+function ambushValues(state: GameState): { over: Seat; value: number }[] {
   const me = state.turn;
-  return siratTargets(state).map((over) => {
+  return ambushTargets(state).map((over) => {
     const inColumn = state.pieces[over].filter((p) => p >= HOME_FIRST && p <= HOME_LAST).length;
-    // The bot's own way over that column: its ✈ square, or the Sirat square if it's the bot's colour.
-    const square = me === flightCrossedSeat(over) ? trackIndex(me, FLIGHT_FROM) : trackColor(siratStart(over)) === me ? siratStart(over) : undefined;
+    // The bot's own way over that column: its ✈ square, or the ambush square if it's the bot's colour.
+    const square = me === flightCrossedSeat(over) ? trackIndex(me, FLIGHT_FROM) : trackColor(ambushStart(over)) === me ? ambushStart(over) : undefined;
     if (square === undefined) return { over, value: 0 };
     let chance = 0;
     for (const p of state.pieces[me]) {
@@ -246,20 +246,20 @@ function siratValues(state: GameState): { over: Seat; value: number }[] {
   });
 }
 
-/** Picks a power: whichever of the bridges, a Sirat bridge or a safe square looks best, or a magic box when none does much. */
+/** Picks a power: whichever of the bridges, an ambush or a safe square looks best, or a magic box when none does much. */
 export function choosePower(state: GameState, level: BotLevel, rand: () => number = Math.random): PowerPick {
-  const targets = siratTargets(state);
+  const targets = ambushTargets(state);
   const open = availablePowers(state);
   if (level === 'easy') {
     const choice = open[Math.floor(rand() * open.length)];
-    return choice === 'sirat' ? { choice, over: targets[Math.floor(rand() * targets.length)] } : { choice };
+    return choice === 'ambush' ? { choice, over: targets[Math.floor(rand() * targets.length)] } : { choice };
   }
   const free = freeSquares(state);
   const best = (kind: BridgeKind) => {
     const values = bridgeValues(state, kind);
     return Math.max(0, ...free.map((sq) => values.get(sq) ?? 0));
   };
-  const sirat = siratValues(state).sort((a, b) => b.value - a.value)[0];
+  const ambush = ambushValues(state).sort((a, b) => b.value - a.value)[0];
   // A box in front of the others is worth a little whatever it holds; the rest are valued in squares over a turn or two.
   const options: { pick: PowerPick; value: number }[] = [
     { pick: { choice: 'box' }, value: 1.5 },
@@ -267,7 +267,7 @@ export function choosePower(state: GameState, level: BotLevel, rand: () => numbe
     { pick: { choice: 'hell' }, value: best('hell') },
     { pick: { choice: 'safe' }, value: (safeCandidate(state)?.value ?? 0) * 0.5 },
   ];
-  if (sirat) options.push({ pick: { choice: 'sirat', over: sirat.over }, value: sirat.value });
+  if (ambush) options.push({ pick: { choice: 'ambush', over: ambush.over }, value: ambush.value });
   options.push({ pick: { choice: 'superBomb' }, value: superBombPlan(state)?.value ?? 0 });
   return options.filter((o) => open.includes(o.pick.choice)).reduce((a, b) => (b.value > a.value ? b : a)).pick;
 }

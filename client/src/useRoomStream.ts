@@ -97,7 +97,7 @@ interface ScoreMoment {
 function scoreMoments(ev: MoveEvent): ScoreMoment[] {
   const out = ev.captures.map((c): ScoreMoment => {
     const spree = killStreakName(c.streak ?? 1);
-    const marks = `${c.king || c.byKing ? '👑 ' : ''}${c.revenge ? '⚔️ ' : ''}`;
+    const marks = `${c.king ? '👑 ' : ''}${c.revenge ? '⚔️ ' : ''}`;
     return {
       at: piecePoint(c.seat, c.piece, c.from),
       delay: captureAt(ev, c),
@@ -251,8 +251,9 @@ export function useRoomStream(code: string) {
   const [reactions, setReactions] = useState<ActiveReaction[]>([]);
   const [reveal, setReveal] = useState<BoxReveal | null>(null);
   /**
-   * A roll that couldn't be played, left on the dice until the next roll. With a computer in the game the
-   * next player also waits a few seconds (`wait`), so people see it before a bot rolls over it.
+   * A roll that couldn't be played. Among people it stays on the dice until the next roll; with a computer
+   * in the game it shows for a few seconds while the next player waits (`wait`), so people see it before a
+   * bot rolls over it, and then the dice clears.
    */
   const [held, setHeld] = useState<{ seat: Seat; value: number; wait: boolean } | null>(null);
 
@@ -331,8 +332,9 @@ export function useRoomStream(code: string) {
               commit(u.room);
               setHeld({ seat: ev.seat, value: ev.dice, wait });
               if (wait) {
+                // Then the dice clears for the next player, in their colour.
                 await sleep(PASS_HOLD_MS / speed);
-                setHeld((h) => (h ? { ...h, wait: false } : h));
+                setHeld(null);
               }
               continue;
             }

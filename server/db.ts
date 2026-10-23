@@ -52,6 +52,7 @@ export function initSchema(db: Db) {
     total_points: 'INTEGER NOT NULL DEFAULT 0',
     total_captures: 'INTEGER NOT NULL DEFAULT 0',
     total_lost: 'INTEGER NOT NULL DEFAULT 0',
+    total_minutes: 'INTEGER NOT NULL DEFAULT 0',
   });
 }
 

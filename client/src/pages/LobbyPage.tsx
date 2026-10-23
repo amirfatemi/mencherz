@@ -47,6 +47,7 @@ const SORT_COLUMNS: { sort: LeaderSort; label: string; title: string; value: (r:
   { sort: 'wins', label: 'Wins', title: 'Games won', value: (r) => r.wins },
   { sort: 'captures', label: '💥', title: 'Hits made: opponent pieces knocked out, in all games', value: (r) => r.captures },
   { sort: 'lost', label: '🤕', title: 'Hits taken: own pieces knocked out, in all games', value: (r) => r.lost },
+  { sort: 'minutes', label: '⏱', title: 'Minutes played, in all games', value: (r) => r.minutes },
 ];
 
 function savedSort(): LeaderSort {
@@ -63,8 +64,8 @@ function Leaderboard({ rows, me, sort, onSort }: { rows: LeaderRow[] | null; me:
     <section className="card leaderboard">
       <h2>🏆 Leaderboard</h2>
       <p className="muted small">
-        Totals over every game with at least two people (games against computers alone don't count). 💥 hits made · 🤕 hits taken. Tap a
-        column to sort by it.
+        Totals over every game with at least two people (games against computers alone don't count). 💥 hits made · 🤕 hits taken · ⏱ minutes
+        played. Tap a column to sort by it.
       </p>
       {!rows ? (
         <p className="muted">Loading…</p>

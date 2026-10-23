@@ -62,7 +62,7 @@ export interface Rules {
    * heaven bridge, a hell bridge or a magic box to hide.
    */
   powerSquares: boolean;
-  /** Each colour's first piece is a king: knocking one out, or knocking out with one, counts KING times. */
+  /** Each colour's first piece is a king: knocking one out counts KING times. */
   kings: boolean;
   /** Stop when the first player finishes, or play on until only one is left (the full ranking). */
   playUntil: 'winner' | 'all';
@@ -152,12 +152,12 @@ export interface SafeSquare {
 }
 
 /**
- * A Sirat bridge over a seat's home column, until turn `until`. The one flight line over that column becomes
+ * An ambush over a seat's home column, until turn `until`. The one flight line over that column becomes
  * two: the ✈ square that flies over it shares its corner square with a triangle of another colour, and that
  * colour flies too, from its triangle to the square of its colour on the far side. Every flight over the
  * column knocks out every piece in it, not just the one in the middle.
  */
-export interface SiratBridge {
+export interface Ambush {
   over: Seat;
   owner: Seat;
   until: number;
@@ -165,16 +165,18 @@ export interface SiratBridge {
 
 /**
  * What a player picks on a power square. A bridge, a magic box or a safe square is then placed on a square;
- * a Sirat bridge names the seat whose home column it opens.
+ * an ambush names the seat whose home column it opens.
  */
-export type PowerChoice = BridgeKind | 'box' | 'safe' | 'sirat' | 'superBomb';
-export const POWER_CHOICES: readonly PowerChoice[] = ['heaven', 'hell', 'box', 'safe', 'sirat', 'superBomb'];
+export type PowerChoice = BridgeKind | 'box' | 'safe' | 'ambush' | 'superBomb';
+export const POWER_CHOICES: readonly PowerChoice[] = ['heaven', 'hell', 'box', 'safe', 'ambush', 'superBomb'];
 /** Powers that can be picked only once a game: whoever picks one first uses it up for everyone. */
-export const ONCE_POWERS: readonly PowerChoice[] = ['heaven', 'hell', 'sirat', 'superBomb'];
+export const ONCE_POWERS: readonly PowerChoice[] = ['heaven', 'hell', 'ambush', 'superBomb'];
 /** What gets put on a square in the 'place' phase. */
-export type Placeable = Exclude<PowerChoice, 'sirat'>;
-/** A safe square and a Sirat bridge last this many rounds. */
-export const POWER_HOLD_ROUNDS = 2;
+export type Placeable = Exclude<PowerChoice, 'ambush'>;
+/** How many rounds a safe square lasts. */
+export const SAFE_ROUNDS = 2;
+/** How many rounds an ambush lasts. */
+export const AMBUSH_ROUNDS = 5;
 /** The power squares move after this many rounds. */
 export const POWER_EVERY_ROUNDS = 5;
 /** Turns in a row without a piece out of the hangar that earn a sad reaction. */
@@ -231,7 +233,7 @@ export interface GameState {
   /** What's being put down in the 'place' phase. */
   placing: Placeable | null;
   safe: SafeSquare[];
-  sirat: SiratBridge | null;
+  ambush: Ambush | null;
   /** ONCE_POWERS already picked this game. */
   usedPowers: PowerChoice[];
   /** Turns in a row each seat had nothing to move and no piece out of the hangar. */
@@ -261,8 +263,6 @@ export interface Capture {
   streak: number;
   /** The piece knocked out was a king. */
   king: boolean;
-  /** The moving piece is a king. */
-  byKing: boolean;
 }
 
 /** A piece landing on a bomb: it goes back to the hangar and the bomb is used up. */
@@ -365,7 +365,7 @@ export interface PowerEvent {
   type: 'power';
   seat: Seat;
   choice: PowerChoice;
-  /** For a Sirat bridge: whose home column it opens. */
+  /** For an ambush: whose home column it opens. */
   over?: Seat;
 }
 
@@ -468,7 +468,7 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     powerAfterVest: false,
     placing: null,
     safe: [],
-    sirat: null,
+    ambush: null,
     usedPowers: [],
     stuck: SEATS.map(() => 0),
     turnNo: 1,
@@ -488,29 +488,29 @@ function movePower(s: GameState, rand: Rand): void {
   s.powerMovesAt = s.turnNo + POWER_EVERY_ROUNDS * Math.max(1, playing);
 }
 
-/** The turn number a power used now runs until: POWER_HOLD_ROUNDS rounds of the players still playing. */
-function holdUntil(s: GameState): number {
-  return s.turnNo + POWER_HOLD_ROUNDS * Math.max(1, s.active.filter((x) => !s.ranking.includes(x)).length);
+/** The turn number a power used now runs until: that many rounds of the players still playing. */
+function holdUntil(s: GameState, rounds: number): number {
+  return s.turnNo + rounds * Math.max(1, s.active.filter((x) => !s.ranking.includes(x)).length);
 }
 
 /**
- * The square a Sirat bridge over `over`'s home column adds a flight from: the other triangle of the corner
+ * The square an ambush over `over`'s home column adds a flight from: the other triangle of the corner
  * square whose ✈ flies over that column.
  */
-export function siratStart(over: Seat): number {
+export function ambushStart(over: Seat): number {
   return trackIndex(flightCrossedSeat(over), FLIGHT_FROM - 1);
 }
 
 /**
  * Whose home column a piece of `seat` flies over from `pos`, if it flies: from its own ✈ square, or during a
- * Sirat bridge from the Sirat square when it's that piece's colour, unless that would take it past its turn home.
+ * ambush from the ambush square when it's that piece's colour, unless that would take it past its turn home.
  */
 function flightOver(state: GameState, seat: Seat, pos: number): Seat | null {
   if (pos === FLIGHT_FROM) return flightCrossedSeat(seat);
-  const sb = state.sirat;
+  const sb = state.ambush;
   if (!sb || !isOnTrack(pos) || pos + FLIGHT_DISTANCE > TRACK_LAST) return null;
   const square = trackIndex(seat, pos);
-  return trackColor(square) === seat && square === siratStart(sb.over) ? sb.over : null;
+  return trackColor(square) === seat && square === ambushStart(sb.over) ? sb.over : null;
 }
 
 /** Whether a piece of `seat` on this absolute square is on its own safe square, so can't be knocked out. */
@@ -593,14 +593,13 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
   if (plan.path.slice(0, -1).some((step) => wallAt(step.pos))) return null;
 
   // A knock-out's points: by how far the victim had come, times REVENGE when the victim last knocked out one
-  // of the hitter's pieces, KING for a king on either side and the moving piece's kill streak, capped at
-  // the biggest award. Bombs have no moving piece, so only the victim's crown counts.
+  // of the hitter's pieces, KING when the victim is a king, and the moving piece's kill streak (bombs have
+  // none), capped at the biggest award.
   const worth = (hitter: Seat, victim: Seat, victimPiece: number, pos: number, streak = 0) => {
     const revenge = state.lastHitBy?.[hitter] === victim;
     const king = isKing(state, victimPiece);
-    const byKing = streak > 0 && isKing(state, piece);
-    const times = (revenge ? REVENGE : 1) * (king ? KING : 1) * (byKing ? KING : 1) * killStreakBonus(streak);
-    return { points: Math.min(POINTS.firstHome, Math.round(captureValue(pos) * times)), revenge, king, byKing };
+    const times = (revenge ? REVENGE : 1) * (king ? KING : 1) * killStreakBonus(streak);
+    return { points: Math.min(POINTS.firstHome, Math.round(captureValue(pos) * times)), revenge, king };
   };
   // Every knock-out in a move is the moving piece's, so its streak counts on from what it had.
   const killsBefore = state.kills?.[seat]?.[piece] ?? 0;
@@ -694,8 +693,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
       }
       const crossed = rules.flights && !plan.flew ? flightOver(state, seat, cur) : null;
       if (crossed !== null) {
-        // A Sirat bridge opens the whole home column: every piece in it is in the flight's way.
-        const open = state.sirat?.over === crossed;
+        // An ambush opens the whole home column: every piece in it is in the flight's way.
+        const open = state.ambush?.over === crossed;
         if ((rules.flightCapture || open) && crossed !== seat) {
           if (state.active.includes(crossed)) {
             state.pieces[crossed].forEach((p, j) => {
@@ -821,7 +820,7 @@ function nextTurn(s: GameState, rand: Rand): void {
       s.turnNo++;
       if (s.rules.powerSquares && s.turnNo >= (s.powerMovesAt ?? 0)) movePower(s, rand);
       s.safe = (s.safe ?? []).filter((x) => x.until > s.turnNo);
-      if (s.sirat && s.sirat.until <= s.turnNo) s.sirat = null;
+      if (s.ambush && s.ambush.until <= s.turnNo) s.ambush = null;
       return;
     }
   }
@@ -1083,13 +1082,13 @@ export function availablePowers(state: GameState): PowerChoice[] {
   return POWER_CHOICES.filter((c) => !(ONCE_POWERS.includes(c) && state.usedPowers?.includes(c)));
 }
 
-/** Who a Sirat bridge may be built over: the other players still playing. */
-export function siratTargets(state: GameState): Seat[] {
+/** Who an ambush may be built over: the other players still playing. */
+export function ambushTargets(state: GameState): Seat[] {
   return state.active.filter((x) => x !== state.turn && !state.ranking.includes(x));
 }
 
 /**
- * Picks a power on a power square. A Sirat bridge opens `over`'s home column at once; anything else is
+ * Picks a power on a power square. An ambush opens `over`'s home column at once; anything else is
  * placed on a square next.
  */
 export function applyPower(state: GameState, choice: PowerChoice, rand: Rand = defaultRand, over?: Seat): { state: GameState; event: PowerEvent } {
@@ -1100,9 +1099,9 @@ export function applyPower(state: GameState, choice: PowerChoice, rand: Rand = d
   s.seq++;
   if (ONCE_POWERS.includes(choice)) (s.usedPowers ??= []).push(choice);
   const event: PowerEvent = { type: 'power', seat: s.turn, choice };
-  if (choice === 'sirat') {
-    if (over === undefined || !siratTargets(state).includes(over)) throw new RuleError('Pick another player for the Sirat bridge');
-    s.sirat = { over, owner: s.turn, until: holdUntil(s) };
+  if (choice === 'ambush') {
+    if (over === undefined || !ambushTargets(state).includes(over)) throw new RuleError('Pick another player for the ambush');
+    s.ambush = { over, owner: s.turn, until: holdUntil(s, AMBUSH_ROUNDS) };
     event.over = over;
     resumeAfterPower(s, rand);
     return { state: s, event };
@@ -1126,7 +1125,7 @@ export function applyPlace(state: GameState, square: number, rand: Rand = defaul
   let event: BridgeEvent | BoxEvent | SafeEvent | BombEvent;
   if (kind === 'safe') {
     s.safe ??= [];
-    s.safe.push({ square, owner: s.turn, until: holdUntil(s) });
+    s.safe.push({ square, owner: s.turn, until: holdUntil(s, SAFE_ROUNDS) });
     event = { type: 'safe', seat: s.turn, square };
   } else if (kind === 'superBomb') {
     s.bombs.push({ square, owner: s.turn, super: true });
