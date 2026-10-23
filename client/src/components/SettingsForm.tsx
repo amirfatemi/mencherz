@@ -151,7 +151,7 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Dragon 🐉"
-          hint="Every 5 rounds a dragon roams the track for 2 rounds, moving with every roll. It eats what it stops on; landing on it pays 40."
+          hint="Every 5 rounds a dragon roams for one round, moving with every roll, up home columns too. It eats what it stops on; landing on it pays 40; if nobody does, it explodes, taking the pieces next to it."
           checked={rules.dragon}
           onChange={(v) => setRules({ dragon: v })}
         />

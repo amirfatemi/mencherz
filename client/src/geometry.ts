@@ -1,7 +1,14 @@
-import { BOARD_SIZE, GOAL, HANGAR, TAKEOFF, piecePoint, rotatePoint, type Point, type Seat } from '../../shared/board.ts';
+import { BOARD_SIZE, GOAL, HANGAR, HOME_CELLS, HOME_FIRST, TAKEOFF, TRACK_CELLS, piecePoint, rotatePoint, type Point, type Seat } from '../../shared/board.ts';
+import { DRAGON_PATH } from '../../shared/rules.ts';
 
 export const CELL = 40;
 export const BOARD_PX = CELL * BOARD_SIZE;
+
+/** Where the dragon stands, in board grid units, at this point along its route. */
+export function dragonPoint(at: number): Point {
+  const cell = DRAGON_PATH[((at % DRAGON_PATH.length) + DRAGON_PATH.length) % DRAGON_PATH.length];
+  return 'square' in cell ? TRACK_CELLS[cell.square] : HOME_CELLS[cell.seat][cell.pos - HOME_FIRST];
+}
 
 /** Board grid point → SVG pixels, rotated `rot` quarter turns clockwise. */
 export function toPx(p: Point, rot: number): Point {

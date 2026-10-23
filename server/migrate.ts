@@ -1,5 +1,5 @@
 import { GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, type Seat } from '../shared/board.ts';
-import { DEFAULT_RULES, DRAGON_EVERY_ROUNDS, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
+import { DEFAULT_RULES, DRAGON_EVERY_ROUNDS, DRAGON_PATH, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
 import { POINTS } from '../shared/scoring.ts';
 
 /** Brings a saved game up to date: board numbering first, then fields added since it was saved. */
@@ -50,6 +50,13 @@ export function upgradeGame(game: GameState): GameState {
   g.bounty ??= null;
   g.dragon ??= null;
   g.dragonAt ??= g.turnNo + DRAGON_EVERY_ROUNDS * g.active.length;
+  g.dragonBlast ??= null;
+  // A dragon saved by square, before it took home columns too, goes to that square on its route.
+  const oldDragon = g.dragon as unknown as { square?: number; at?: number; until: number } | null;
+  if (oldDragon && oldDragon.at === undefined) {
+    const at = DRAGON_PATH.findIndex((c) => 'square' in c && c.square === oldDragon.square);
+    g.dragon = { at: Math.max(0, at), until: oldDragon.until };
+  }
   // Roll-again cards were dropped: the phase that placed bridges also places boxes now, and a roll that
   // waited for a card or a pass is simply rolled again.
   const old = g as Omit<GameState, 'phase'> & { rerolls?: unknown; preRoll?: unknown; phase: string };

@@ -3,7 +3,7 @@ import { GOAL, HANGAR_SLOTS, TRACK_CELLS, piecePoint, type Point, type Seat } fr
 import type { RoomUpdate, RoomView } from '../../shared/protocol.ts';
 import { REACTION_MS } from '../../shared/reactions.ts';
 import { blastOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind } from '../../shared/rules.ts';
-import { DRAGON_PRIZE, type WorldEventKind } from '../../shared/rules.ts';
+import { DRAGON_PRIZE, type GameState, type WorldEventKind } from '../../shared/rules.ts';
 import { POINTS, killStreakName } from '../../shared/scoring.ts';
 import {
   BOMB_MS,
@@ -19,7 +19,7 @@ import {
   settledAt,
   stepEnd,
 } from '../../shared/timing.ts';
-import { heading, lerpAngle, restHeading } from './geometry.ts';
+import { dragonPoint, heading, lerpAngle, restHeading } from './geometry.ts';
 import { sfx } from './sound.ts';
 import { getSocket, call } from './socket.ts';
 
@@ -82,14 +82,12 @@ function moveBanner(ev: MoveEvent): { at: number; text: string; tone: Banner['to
   return null;
 }
 
-/** The dragon stepping along with a roll, and the pieces it eats where it stops flying home. */
+/** The dragon stepping along its route with a roll, and the pieces it eats where it stops flying home. */
 function dragonTimeline(ev: RollEvent): Timeline {
   const d = ev.dragon!;
   const segments: Segment[] = [];
   for (let k = 0; k < ev.dice; k++) {
-    const from = TRACK_CELLS[(d.from + k) % TRACK_CELLS.length];
-    const to = TRACK_CELLS[(d.from + k + 1) % TRACK_CELLS.length];
-    segments.push({ from, to, start: k * STEP_MS.step, dur: STEP_MS.step, kind: 'step' });
+    segments.push({ from: dragonPoint(d.from + k), to: dragonPoint(d.from + k + 1), start: k * STEP_MS.step, dur: STEP_MS.step, kind: 'step' });
   }
   const end = ev.dice * STEP_MS.step;
   const tl: Timeline = { motions: [{ key: 'dragon', startAngle: 0, segments }], booms: [], total: end };
@@ -97,6 +95,16 @@ function dragonTimeline(ev: RollEvent): Timeline {
     tl.motions.push(returnHome(e.seat, e.piece, e.from, end));
     tl.booms.push({ at: piecePoint(e.seat, e.piece, e.from), start: end });
     tl.total = end + CAPTURE_MS;
+  }
+  return tl;
+}
+
+/** The dragon exploding: a blast where it stood, and the pieces it took flying home. */
+function dragonBlastTimeline(blast: NonNullable<GameState['dragonBlast']>): Timeline {
+  const tl: Timeline = { motions: [], booms: [{ at: dragonPoint(blast.at), start: 0 }], total: CAPTURE_MS };
+  for (const v of blast.hit) {
+    tl.booms.push({ at: piecePoint(v.seat, v.piece, v.from), start: 0 });
+    if (!v.saved) tl.motions.push(returnHome(v.seat, v.piece, v.from, 0));
   }
   return tl;
 }
@@ -416,6 +424,18 @@ export function useRoomStream(code: string) {
             sfx.roar();
           }
         };
+        // The dragon exploding at the turn's end plays just before the new state shows.
+        const blast = !skip && before && u.room.game?.dragonBlast && u.room.game.dragonBlast.n !== before.dragonBlast?.n ? u.room.game.dragonBlast : null;
+        const explode = async () => {
+          if (!blast) return;
+          showBanner('🐉💥 اژدها منفجر شد!', 'kill');
+          sfx.boom();
+          if (cinematic) {
+            setShake(true);
+            setTimeout(() => setShake(false), 650);
+          }
+          await play(dragonBlastTimeline(blast), speed);
+        };
         if (ev && current.current?.game && !skip) {
           setAnimating(true);
           // Reactions can come with any event (a move, or a roll of three sixes), timed from its start.
@@ -443,6 +463,7 @@ export function useRoomStream(code: string) {
             if (ev.penalized.length) await play(penaltyTimeline(ev), speed);
             if (ev.outcome === 'pass') {
               // Show the turn moving on, but keep the number up (and, with a bot about, the next player waiting).
+              await explode();
               commit(u.room);
               announce();
               setHeld({ seat: ev.seat, value: ev.dice, wait });
@@ -455,12 +476,14 @@ export function useRoomStream(code: string) {
             }
           } else if (ev.type === 'power' || ev.type === 'vest') {
             (ev.type === 'power' ? sfx.power : sfx.good)();
+            await explode();
             commit(u.room);
             announce();
             continue;
           } else if (ev.type === 'bomb' || ev.type === 'box' || ev.type === 'bridge' || ev.type === 'safe') {
             // The bomb or box drops in (CSS) once the new state is shown.
             sfx.place();
+            await explode();
             commit(u.room);
             announce();
             await sleep(BOMB_MS / speed);
@@ -496,6 +519,7 @@ export function useRoomStream(code: string) {
             }
             await play(moveTimeline(ev), pace);
           }
+          await explode();
         }
         commit(u.room);
         announce();

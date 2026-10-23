@@ -69,8 +69,10 @@ export interface Rules {
   /** The points leader has a bounty on them: knocking out their pieces pays extra, more the longer they lead. */
   bounty: boolean;
   /**
-   * Every DRAGON_EVERY_ROUNDS rounds a dragon roams the track for DRAGON_ROUNDS rounds, moved by every roll. It
-   * eats any piece where it stops, and pays DRAGON_PRIZE to the piece that lands on it.
+   * DRAGON_EVERY_ROUNDS rounds after the last one went, a dragon appears and roams for a round along
+   * DRAGON_PATH, moved by every roll: the track and, on the way, up every home column and back. It eats any
+   * piece where it stops and pays DRAGON_PRIZE to the piece that lands on it; if nobody does, it explodes,
+   * taking the pieces next to it (DRAGON_BLAST_REACH) along. It sets off nothing and takes no bridge.
    */
   dragon: boolean;
   /** Stop when the first player finishes, or play on until only one is left (the full ranking). */
@@ -138,8 +140,79 @@ export const EVENT_EVERY_ROUNDS = 6;
 export const BOUNTY = { start: 3, perRound: 1, max: 8 } as const;
 
 export const DRAGON_EVERY_ROUNDS = 5;
-export const DRAGON_ROUNDS = 2;
+export const DRAGON_ROUNDS = 1;
 export const DRAGON_PRIZE = 40;
+/** How far, ahead and behind, the dragon's explosion reaches. */
+export const DRAGON_BLAST_REACH = 1;
+
+/** A place on the dragon's route: a track square, or a square of a seat's home column (a seat-relative pos). */
+export type DragonCell = { square: number } | { seat: Seat; pos: number };
+
+/**
+ * The dragon's route, a loop: the whole track, and at each seat's arrow square up that seat's home column to
+ * its last square and back down, before going on along the track.
+ */
+export const DRAGON_PATH: readonly DragonCell[] = (() => {
+  const out: DragonCell[] = [];
+  for (let square = 0; square < TRACK_LEN; square++) {
+    out.push({ square });
+    const seat = SEATS.find((x) => trackIndex(x, TRACK_LAST) === square);
+    if (seat === undefined) continue;
+    for (let pos = HOME_FIRST; pos <= HOME_LAST; pos++) out.push({ seat, pos });
+    for (let pos = HOME_LAST - 1; pos >= HOME_FIRST; pos--) out.push({ seat, pos });
+  }
+  return out;
+})();
+
+/** The pieces standing on a cell of the dragon's route. */
+function piecesOn(s: GameState, cell: DragonCell): { seat: Seat; piece: number; from: number }[] {
+  const out: { seat: Seat; piece: number; from: number }[] = [];
+  for (const seat of s.active) {
+    s.pieces[seat].forEach((p, j) => {
+      const here = 'square' in cell ? isOnTrack(p) && trackIndex(seat, p) === cell.square : seat === cell.seat && p === cell.pos;
+      if (here) out.push({ seat, piece: j, from: p });
+    });
+  }
+  return out;
+}
+
+/** The cells next to a cell, `reach` steps either way along the board (a home column leads back to its arrow square). */
+function cellsAround(cell: DragonCell, reach: number): DragonCell[] {
+  const out: DragonCell[] = [cell];
+  let frontier: DragonCell[] = [cell];
+  const key = (c: DragonCell) => ('square' in c ? `t${c.square}` : `h${c.seat}:${c.pos}`);
+  const seen = new Set([key(cell)]);
+  for (let r = 0; r < reach; r++) {
+    const next: DragonCell[] = [];
+    for (const c of frontier) {
+      const around: DragonCell[] = [];
+      if ('square' in c) {
+        around.push({ square: (c.square + 1) % TRACK_LEN }, { square: (c.square - 1 + TRACK_LEN) % TRACK_LEN });
+        const seat = SEATS.find((x) => trackIndex(x, TRACK_LAST) === c.square);
+        if (seat !== undefined) around.push({ seat, pos: HOME_FIRST });
+      } else {
+        around.push(c.pos > HOME_FIRST ? { seat: c.seat, pos: c.pos - 1 } : { square: trackIndex(c.seat, TRACK_LAST) });
+        if (c.pos < HOME_LAST) around.push({ seat: c.seat, pos: c.pos + 1 });
+      }
+      for (const a of around) {
+        if (seen.has(key(a))) continue;
+        seen.add(key(a));
+        next.push(a);
+        out.push(a);
+      }
+    }
+    frontier = next;
+  }
+  return out;
+}
+
+/** Whether the dragon stands where a piece of `seat` at `pos` stands. */
+function dragonAt(s: GameState, seat: Seat, pos: number): boolean {
+  if (!s.dragon) return false;
+  const cell = DRAGON_PATH[s.dragon.at];
+  if (!cell) return false;
+  return 'square' in cell ? isOnTrack(pos) && trackIndex(seat, pos) === cell.square : cell.seat === seat && cell.pos === pos;
+}
 
 /** A magic box. Whoever lands on it first opens it, the owner too. */
 export interface MagicBox {
@@ -299,10 +372,12 @@ export interface GameState {
   eventAt: number;
   /** Who has the bounty on them, and what knocking out one of their pieces pays on top. */
   bounty: { seat: Seat; value: number } | null;
-  /** The dragon on the track, and until when it stays. */
-  dragon: { square: number; until: number } | null;
+  /** The dragon: where it is along DRAGON_PATH, and until when it stays. */
+  dragon: { at: number; until: number } | null;
   /** The turn number the next dragon comes. */
   dragonAt: number;
+  /** The dragon's last explosion, numbered so it's shown once: where, and what it took (or a vest saved). */
+  dragonBlast: { n: number; at: number; hit: { seat: Seat; piece: number; from: number; saved: boolean }[] } | null;
   /** How many surprise events there have been. */
   eventN?: number;
   /** Turns in a row each seat had nothing to move and no piece out of the hangar. */
@@ -415,7 +490,7 @@ export interface MovePlan {
   /** The move ends on a power square, so the mover picks a power. */
   power?: boolean;
   /** The piece landed on the dragon and slew it, for DRAGON_PRIZE (in points). */
-  dragon?: { square: number; atStep: number };
+  dragon?: { at: number; atStep: number };
 }
 
 export type RollOutcome = 'move' | 'pass' | 'again' | 'forfeit' | 'penalty';
@@ -432,7 +507,7 @@ export interface RollEvent {
   bomb?: boolean;
   /** STUCK_TURNS turns in a row lost with nothing out of the hangar. */
   stuck?: boolean;
-  /** The dragon moving with the roll, and the pieces it ate where it stopped. */
+  /** The dragon moving with the roll (positions along DRAGON_PATH), and the pieces it ate where it stopped. */
   dragon?: { from: number; to: number; eaten: { seat: Seat; piece: number; from: number }[] };
 }
 
@@ -550,6 +625,7 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     bounty: null,
     dragon: null,
     dragonAt: 1 + DRAGON_EVERY_ROUNDS * order.length,
+    dragonBlast: null,
     stuck: SEATS.map(() => 0),
     turnNo: 1,
     seq: 0,
@@ -730,8 +806,14 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
   // flight after ('stay'); otherwise the move carries on ('on').
   // Only the moving piece's own vests count. One from a box on the way is handed out after the move.
   let vests = state.vested?.[seat]?.[piece] ?? 0;
+  const slay = (pos: number) => {
+    if (plan.dragon || !dragonAt(state, seat, pos)) return false;
+    plan.dragon = { at: state.dragon!.at, atStep: plan.path.length - 1 };
+    return true;
+  };
   const land = (pos: number): 'hangar' | 'stay' | 'on' => {
-    if (!isOnTrack(pos)) return 'on';
+    // The dragon goes up home columns too, so a piece can meet it there.
+    if (!isOnTrack(pos)) return slay(pos) ? 'stay' : 'on';
     const square = trackIndex(seat, pos);
     const atStep = plan.path.length - 1;
     const bomb = state.bombs.find((b) => b.square === square);
@@ -747,10 +829,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     const knocked = plan.captures.length;
     captureAt(pos);
     // Landing on the dragon slays it, and the piece stops there.
-    if (state.dragon?.square === square && !plan.dragon) {
-      plan.dragon = { square, atStep };
-      return 'stay';
-    }
+    if (slay(pos)) return 'stay';
     // Anyone's piece opens a box, its owner's included.
     const box = state.boxes?.find((b) => b.square === square);
     if (box && !plan.box) {
@@ -931,13 +1010,49 @@ function newRound(s: GameState, rand: Rand): void {
     startEvent(s, rand);
     s.eventAt = s.turnNo + roundsOf(s, EVENT_EVERY_ROUNDS);
   }
-  if (s.dragon && s.turnNo >= s.dragon.until) s.dragon = null;
-  if (s.rules.dragon && !s.dragon && s.turnNo >= (s.dragonAt ?? 0)) {
-    const free = freeSquares(s);
-    if (free.length) s.dragon = { square: free[rand(free.length)], until: s.turnNo + roundsOf(s, DRAGON_ROUNDS) };
+  if (s.dragon && s.turnNo >= s.dragon.until) {
+    dragonExplodes(s);
     s.dragonAt = s.turnNo + roundsOf(s, DRAGON_EVERY_ROUNDS);
   }
+  if (s.rules.dragon && !s.dragon && s.turnNo >= (s.dragonAt ?? 0)) {
+    const free = freeSquares(s);
+    if (free.length) {
+      const square = free[rand(free.length)];
+      s.dragon = { at: DRAGON_PATH.findIndex((c) => 'square' in c && c.square === square), until: s.turnNo + roundsOf(s, DRAGON_ROUNDS) };
+    } else s.dragonAt = s.turnNo + 1;
+  }
   updateBounty(s);
+}
+
+/** Sends a piece back to the hangar for something no player did: the dragon. */
+function sendHome(s: GameState, seat: Seat, piece: number): void {
+  s.pieces[seat][piece] = HANGAR;
+  if (s.frozen) s.frozen[seat][piece] = 0;
+  if (s.kills) s.kills[seat][piece] = 0;
+  s.stats[seat].lost++;
+}
+
+/** Whether a piece stands on its owner's safe square. */
+const onOwnSafe = (s: GameState, seat: Seat, pos: number) => isOnTrack(pos) && isSafe(s, seat, trackIndex(seat, pos));
+
+/**
+ * The dragon's round is up: it explodes, and every piece where it is or DRAGON_BLAST_REACH squares either side
+ * (home columns too) goes back to the hangar, unless on its own safe square or saved by a vest.
+ */
+function dragonExplodes(s: GameState): void {
+  const at = s.dragon!.at;
+  const hit: { seat: Seat; piece: number; from: number; saved: boolean }[] = [];
+  for (const cell of cellsAround(DRAGON_PATH[at], DRAGON_BLAST_REACH)) {
+    for (const v of piecesOn(s, cell)) {
+      if (onOwnSafe(s, v.seat, v.from)) continue;
+      const saved = (s.vested?.[v.seat]?.[v.piece] ?? 0) > 0;
+      hit.push({ ...v, saved });
+      if (saved) s.vested[v.seat][v.piece]--;
+      else sendHome(s, v.seat, v.piece);
+    }
+  }
+  s.dragonBlast = { n: (s.dragonBlast?.n ?? 0) + 1, at, hit };
+  s.dragon = null;
 }
 
 /** Starts a surprise event at random, among those that would change something. */
@@ -993,22 +1108,16 @@ function countStuck(s: GameState, seat: Seat): boolean {
   return true;
 }
 
-/** The dragon goes as far as the dice says and eats every piece where it stops, unless on its own safe square. */
+/**
+ * The dragon goes as far along its route as the dice says, setting nothing off on the way, and eats every
+ * piece where it stops, unless on its own safe square.
+ */
 function moveDragon(s: GameState, dice: number, event: RollEvent): void {
-  const from = s.dragon!.square;
-  const to = (from + dice) % TRACK_LEN;
-  const eaten: { seat: Seat; piece: number; from: number }[] = [];
-  for (const seat of s.active) {
-    s.pieces[seat].forEach((p, j) => {
-      if (!isOnTrack(p) || trackIndex(seat, p) !== to || isSafe(s, seat, to)) return;
-      eaten.push({ seat, piece: j, from: p });
-      s.pieces[seat][j] = HANGAR;
-      if (s.frozen) s.frozen[seat][j] = 0;
-      if (s.kills) s.kills[seat][j] = 0;
-      s.stats[seat].lost++;
-    });
-  }
-  s.dragon!.square = to;
+  const from = s.dragon!.at;
+  const to = (from + dice) % DRAGON_PATH.length;
+  const eaten = piecesOn(s, DRAGON_PATH[to]).filter((v) => !onOwnSafe(s, v.seat, v.from));
+  for (const v of eaten) sendHome(s, v.seat, v.piece);
+  s.dragon!.at = to;
   event.dragon = { from, to, eaten };
 }
 
@@ -1103,6 +1212,7 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   if (plan.bridge) s.bridges = s.bridges.filter((b) => b.square !== plan.bridge!.square);
   if (plan.dragon) {
     s.dragon = null;
+    s.dragonAt = s.turnNo + roundsOf(s, DRAGON_EVERY_ROUNDS);
     s.stats[seat].dragons = (s.stats[seat].dragons ?? 0) + 1;
   }
   // A claimed bounty goes back to its starting value; it stays on the leader.

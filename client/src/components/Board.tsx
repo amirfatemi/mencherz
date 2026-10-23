@@ -20,7 +20,6 @@ import {
   SEATS,
   TAKEOFF_SQUARES,
   TRACK,
-  TRACK_CELLS,
   TRACK_LAST,
   isOnTrack,
   piecePoint,
@@ -38,7 +37,7 @@ import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
 import { BRIDGE_SPAN, DRAGON_PRIZE, KING_PIECE, SUPER_BOMB_REACH, isKing, planMove, ambushStart, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
-import { BOARD_PX, CELL, heading, restHeading, toPx } from '../geometry.ts';
+import { BOARD_PX, CELL, dragonPoint, heading, restHeading, toPx } from '../geometry.ts';
 import type { ActiveReaction, AnimFrame, Popup } from '../useRoomStream.ts';
 import { PLANE_PATH, Piece, PieceDefs, type PieceStyle } from './Piece.tsx';
 import { ReactionArt } from './Reaction.tsx';
@@ -456,7 +455,7 @@ function AmbushMark({ over, rounds }: { over: Seat; rounds: number }) {
 function DragonIcon({ x, y, rounds }: { x: number; y: number; rounds: number }) {
   return (
     <g className="dragon" transform={`translate(${x} ${y})`} pointerEvents="none">
-      <title>{`The dragon — it moves with every roll and eats what it stops on. Land on it for +${DRAGON_PRIZE}. ${rounds === 1 ? 'Leaves after this round' : `${rounds} rounds left`}.`}</title>
+      <title>{`The dragon — it moves with every roll, up home columns too, and eats what it stops on. Land on it for +${DRAGON_PRIZE}. ${rounds === 1 ? 'It explodes after this round' : `${rounds} rounds left`}.`}</title>
       {/* Bigger than a square, so it stands out wherever it is. */}
       <g className="dragon-body">
         <circle className="dragon-fire" r={CELL * 0.72} />
@@ -815,7 +814,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
 
         {game.dragon &&
           (() => {
-            const at = anim?.pieces.get('dragon') ?? TRACK_CELLS[game.dragon.square];
+            const at = anim?.pieces.get('dragon') ?? dragonPoint(game.dragon.at);
             const p = toPx(at, rot);
             return <DragonIcon x={p.x} y={p.y} rounds={roundsUntil(game.dragon.until)} />;
           })()}

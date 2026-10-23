@@ -48,7 +48,9 @@ import {
   AMBUSH_ROUNDS,
   BOUNTY,
   DRAGON_EVERY_ROUNDS,
+  DRAGON_PATH,
   DRAGON_PRIZE,
+  DRAGON_ROUNDS,
   EVENT_EVERY_ROUNDS,
   WORLD_EVENTS,
   ONCE_POWERS,
@@ -1313,36 +1315,96 @@ describe('the bounty on the leader', () => {
 });
 
 describe('the dragon', () => {
+  const onTrack = (square: number) => DRAGON_PATH.findIndex((c) => 'square' in c && c.square === square);
+  const inHome = (seat: Seat, pos: number) => DRAGON_PATH.findIndex((c) => !('square' in c) && c.seat === seat && c.pos === pos);
+  // Blue's relative position on an absolute track square.
+  const blueAt = (square: number) => [...Array(50).keys()].map((p) => p + 1).find((p) => trackIndex(1, p) === square)!;
+
+  test('its route is the track, and up every home column and back from its arrow square', () => {
+    assert.equal(DRAGON_PATH.length, 52 + 4 * 9);
+    const arrow = trackIndex(1, TRACK_LAST);
+    const after = DRAGON_PATH.slice(onTrack(arrow), onTrack(arrow) + 11);
+    assert.deepEqual(
+      after.map((c) => ('square' in c ? `t${c.square}` : `${c.seat}:${c.pos}`)),
+      [`t${arrow}`, '1:51', '1:52', '1:53', '1:54', '1:55', '1:54', '1:53', '1:52', '1:51', `t${arrow + 1}`],
+    );
+  });
+
   test('comes after five rounds, moves with every roll, and eats what it stops on', () => {
     let g = game([0, 1], { dragon: true });
     for (let i = 0; i < DRAGON_EVERY_ROUNDS * 2; i++) g = applyRoll(g, 3, () => 0).state;
     assert.ok(g.dragon, 'here after five rounds');
-    const from = g.dragon!.square;
-    const victim = [...Array(50).keys()].map((p) => p + 1).find((p) => trackIndex(1, p) === (from + 4) % 52)!;
-    at(g, 1, [victim]);
+    g.dragon = { at: onTrack(20), until: 99 };
+    at(g, 1, [blueAt(24)]);
     const r = applyRoll(g, 4);
-    assert.deepEqual(r.event.dragon, { from, to: (from + 4) % 52, eaten: [{ seat: 1, piece: 0, from: victim }] });
+    assert.deepEqual(r.event.dragon, { from: onTrack(20), to: onTrack(24), eaten: [{ seat: 1, piece: 0, from: blueAt(24) }] });
     assert.equal(r.state.pieces[1][0], HANGAR);
     assert.equal(r.state.stats[1].lost, 1);
   });
 
-  test('landing on it slays it for a big prize; it leaves after two rounds', () => {
+  test('it goes up home columns too, eating what it finds there, and comes back down', () => {
+    const g = at(game([0, 1], { dragon: true }), 1, [HOME_FIRST + 1]);
+    g.dragon = { at: onTrack(trackIndex(1, TRACK_LAST) - 1), until: 99 };
+    const up = applyRoll(g, 3);
+    assert.equal(up.event.dragon?.to, inHome(1, HOME_FIRST + 1));
+    assert.deepEqual(up.event.dragon?.eaten, [{ seat: 1, piece: 0, from: HOME_FIRST + 1 }]);
+    const g2 = at(game([0, 1], { dragon: true }), 1, []);
+    g2.dragon = { at: inHome(1, HOME_FIRST + 2), until: 99 };
+    // From the third square, a 5: up to the end and back down to the second.
+    const down = DRAGON_PATH.findIndex((c, i) => i > inHome(1, HOME_LAST) && !('square' in c) && c.pos === HOME_FIRST + 1);
+    assert.equal(applyRoll(g2, 5).state.dragon?.at, down, 'past the end and back down');
+  });
+
+  test("it sets off no bomb or box on its way, and doesn't take bridges", () => {
+    const g = at(game([0, 1], { dragon: true }), 0, []);
+    g.dragon = { at: onTrack(20), until: 99 };
+    g.bombs = [{ square: 22, owner: 1 }];
+    g.boxes = [{ square: 24, owner: 1 }];
+    g.bridges = [{ square: 24, to: 34, kind: 'heaven', owner: 1 }];
+    const r = applyRoll(g, 4).state;
+    assert.equal(r.dragon?.at, onTrack(24));
+    assert.deepEqual([r.bombs.length, r.boxes.length, r.bridges.length], [1, 1, 1]);
+  });
+
+  test('landing on it slays it for a big prize, in a home column too', () => {
     const g = at(game([0, 1], { dragon: true }), 0, [10]);
-    g.dragon = { square: trackIndex(0, 13), until: g.turnNo + 4 };
+    g.dragon = { at: onTrack(trackIndex(0, 13)), until: g.turnNo + 4 };
     const plan = planMove(g, 0, 0, 3)!;
-    assert.deepEqual(plan.dragon, { square: trackIndex(0, 13), atStep: 2 });
+    assert.deepEqual(plan.dragon, { at: onTrack(trackIndex(0, 13)), atStep: 2 });
     assert.equal(plan.points, DRAGON_PRIZE);
     Object.assign(g, { phase: 'move', dice: 3, movable: [0] });
     const r = applyMove(g, 0);
     assert.equal(r.state.dragon, null);
     assert.equal(r.state.stats[0].dragons, 1);
-    let later = at(game([0, 1], { dragon: true }), 0, []);
-    later.dragon = { square: 5, until: later.turnNo + 4 };
-    later.dragonAt = 999;
-    for (let i = 0; i < 3; i++) later = applyRoll(later, 3).state;
-    assert.ok(later.dragon);
-    later = applyRoll(later, 3).state;
-    assert.equal(later.dragon, null);
+    assert.equal(r.state.dragonAt, r.state.turnNo + DRAGON_EVERY_ROUNDS * 2 - 1, 'the next one comes five rounds on');
+    const home = at(game([0, 1], { dragon: true }), 0, [HOME_FIRST]);
+    home.dragon = { at: inHome(0, HOME_FIRST + 2), until: 99 };
+    assert.ok(planMove(home, 0, 0, 2)!.dragon);
+  });
+
+  test('after its one round it explodes, taking the pieces next to it; the next comes five rounds later', () => {
+    let g = at(game([0, 1], { dragon: true }), 0, []);
+    // Placed on yellow's turn 1, on square 2 (no arrow squares near). Each roll moves it 3: yellow's to 5,
+    // blue's to 8 (blue's pieces are frozen, so both pass). Then its round is up.
+    g.dragon = { at: onTrack(2), until: g.turnNo + DRAGON_ROUNDS * 2 };
+    g.dragonAt = 999;
+    at(g, 1, [blueAt(9), blueAt(7), blueAt(10)]);
+    g.frozen[1] = [99, 99, 99, 0];
+    g.vested[1][1] = 1;
+    g = applyRoll(g, 3).state;
+    assert.equal(g.dragon?.at, onTrack(5));
+    g = applyRoll(g, 3).state;
+    assert.equal(g.dragon, null);
+    assert.deepEqual(g.dragonBlast, {
+      n: 1,
+      at: onTrack(8),
+      hit: [
+        { seat: 1, piece: 0, from: blueAt(9), saved: false },
+        { seat: 1, piece: 1, from: blueAt(7), saved: true },
+      ],
+    });
+    assert.deepEqual(g.pieces[1].slice(0, 3), [HANGAR, blueAt(7), blueAt(10)], 'one away goes; two away stays; a vest saves');
+    assert.equal(g.dragonAt, g.turnNo + DRAGON_EVERY_ROUNDS * 2);
   });
 });
 
