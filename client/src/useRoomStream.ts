@@ -59,9 +59,9 @@ const BANNER_MS = 1700;
 /** What each surprise event's banner says. */
 export const EVENT_BANNERS: Record<WorldEventKind, string> = {
   storm: '🌪 طوفان! پروازها یک دور بسته‌اند',
-  goldRain: '💰 باران طلا! رسیدن به خانه دو برابر، دو دور',
+  goldRain: '💰 باران طلا! رسیدن به خانه ۱٫۲ برابر، دو دور',
   earthquake: '🌋 زلزله! بمب‌ها جابه‌جا شدند',
-  darkNight: '🌙 شب تاریک! زدن دو برابر، دو دور',
+  darkNight: '🌙 شب تاریک! زدن ۱٫۲ برابر، دو دور',
   fog: '🌫 مه! جعبه‌ها یک دور پنهان‌اند',
 };
 

@@ -51,6 +51,7 @@ import {
   DRAGON_PATH,
   DRAGON_PRIZE,
   DRAGON_ROUNDS,
+  EVENT_BOOST,
   EVENT_EVERY_ROUNDS,
   WORLD_EVENTS,
   ONCE_POWERS,
@@ -1245,7 +1246,7 @@ describe('surprise events', () => {
     return g;
   };
 
-  test('one comes every six rounds and lasts its rounds', () => {
+  test('one comes every ten rounds and lasts its rounds', () => {
     let g = game([0, 1], { events: true });
     g = passes(g, EVENT_EVERY_ROUNDS * 2 - 1);
     assert.equal(g.event, null);
@@ -1263,13 +1264,13 @@ describe('surprise events', () => {
     assert.equal(planMove(g, 0, 0, 3)!.flew, false);
   });
 
-  test('gold rain doubles a piece home; a dark night doubles knock-outs', () => {
+  test('gold rain makes a piece home worth 1.2 times; a dark night, a knock-out', () => {
     const g = at(game([0, 1]), 0, [GOAL - 2, 20]);
     at(g, 1, [sameSquare(0, 22, 1)]);
     g.event = { kind: 'goldRain', n: 1, until: 99 };
-    assert.equal(planMove(g, 0, 0, 2)!.points, 2 * POINTS.home);
+    assert.equal(planMove(g, 0, 0, 2)!.points, Math.round(EVENT_BOOST * POINTS.home));
     g.event = { kind: 'darkNight', n: 1, until: 99 };
-    assert.equal(planMove(g, 0, 1, 2)!.points, 2 * captureValue(g.pieces[1][0]));
+    assert.equal(planMove(g, 0, 1, 2)!.points, Math.round(EVENT_BOOST * captureValue(g.pieces[1][0])));
   });
 
   test('an earthquake moves every bomb; fog needs boxes to hide', () => {

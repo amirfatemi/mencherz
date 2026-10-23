@@ -125,16 +125,18 @@ export type WorldEventKind = 'storm' | 'goldRain' | 'earthquake' | 'darkNight' |
 export const WORLD_EVENTS: Record<WorldEventKind, { rounds: number }> = {
   /** No flights. */
   storm: { rounds: 1 },
-  /** Pieces reaching the centre score double. */
+  /** Pieces reaching the centre score EVENT_BOOST times. */
   goldRain: { rounds: 2 },
   /** Every bomb jumps to another free square. */
   earthquake: { rounds: 0 },
-  /** Knock-outs score double. */
+  /** Knock-outs score EVENT_BOOST times. */
   darkNight: { rounds: 2 },
   /** Magic boxes can't be seen. */
   fog: { rounds: 1 },
 };
-export const EVENT_EVERY_ROUNDS = 6;
+export const EVENT_EVERY_ROUNDS = 10;
+/** How much more gold rain makes a piece home, and a dark night a knock-out. */
+export const EVENT_BOOST = 1.2;
 
 /** The bounty on the points leader: what it starts at, what each round in the lead adds, and its most. */
 export const BOUNTY = { start: 3, perRound: 1, max: 8 } as const;
@@ -755,7 +757,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
   const worth = (hitter: Seat, victim: Seat, victimPiece: number, pos: number, streak = 0) => {
     const revenge = state.lastHitBy?.[hitter] === victim;
     const king = isKing(state, victimPiece);
-    const night = state.event?.kind === 'darkNight' ? 2 : 1;
+    const night = state.event?.kind === 'darkNight' ? EVENT_BOOST : 1;
     const times = (revenge ? REVENGE : 1) * (king ? KING : 1) * killStreakBonus(streak) * night;
     // The leader's bounty comes on top, for whoever knocks out one of their pieces.
     const bounty = state.rules.bounty && state.bounty?.seat === victim && hitter !== victim ? state.bounty.value : 0;
@@ -906,8 +908,8 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
 
 function finishPlan(plan: MovePlan, to: number, state: GameState): MovePlan {
   plan.to = to;
-  // Gold rain doubles what a piece reaching the centre scores.
-  const home = POINTS.home * (state.event?.kind === 'goldRain' ? 2 : 1);
+  // Gold rain raises what a piece reaching the centre scores.
+  const home = Math.round(POINTS.home * (state.event?.kind === 'goldRain' ? EVENT_BOOST : 1));
   plan.points =
     plan.captures.reduce((sum, c) => sum + c.points, 0) +
     (to === GOAL ? home : 0) +

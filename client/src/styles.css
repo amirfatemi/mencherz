@@ -1142,7 +1142,7 @@ select:focus {
 }
 
 .hangar-label.wanted-label {
-  font-size: 10.5px;
+  font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.8px;
   fill: #ffe082;

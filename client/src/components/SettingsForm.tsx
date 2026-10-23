@@ -139,7 +139,7 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Surprise events 🌪"
-          hint="Every 6 rounds: a storm (no flights, 1 round), gold rain (pieces home score double, 2 rounds), an earthquake (bombs move), a dark night (knock-outs score double, 2 rounds) or fog (boxes hidden, 1 round)."
+          hint="Every 10 rounds: a storm (no flights, 1 round), gold rain (pieces home score ×1.2, 2 rounds), an earthquake (bombs move), a dark night (knock-outs score ×1.2, 2 rounds) or fog (boxes hidden, 1 round)."
           checked={rules.events}
           onChange={(v) => setRules({ events: v })}
         />

@@ -8,6 +8,7 @@ import {
   DRAGON_EVERY_ROUNDS,
   DRAGON_PRIZE,
   DRAGON_ROUNDS,
+  EVENT_BOOST,
   EVENT_EVERY_ROUNDS,
   POWER_EVERY_ROUNDS,
   SAFE_ROUNDS,
@@ -286,9 +287,9 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
         <p>هر {fa(EVENT_EVERY_ROUNDS)} دور یکی از این اتفاق‌ها به‌طور تصادفی پیش می‌آید و با یک بنر و صدا اعلام می‌شود:</p>
         <ul>
           <li>🌪 طوفان: همهٔ پروازها {fa(WORLD_EVENTS.storm.rounds)} دور بسته‌اند (پل‌ها کار می‌کنند).</li>
-          <li>💰 باران طلا: تا {fa(WORLD_EVENTS.goldRain.rounds)} دور، رسیدن هر مهره به مرکز دو برابر امتیاز دارد.</li>
+          <li>💰 باران طلا: تا {fa(WORLD_EVENTS.goldRain.rounds)} دور، رسیدن هر مهره به مرکز {fa(EVENT_BOOST)} برابر امتیاز دارد.</li>
           <li>🌋 زلزله: همهٔ بمب‌ها همان لحظه به خانه‌های دیگری می‌پرند.</li>
-          <li>🌙 شب تاریک: تا {fa(WORLD_EVENTS.darkNight.rounds)} دور، زدن مهره دو برابر امتیاز دارد.</li>
+          <li>🌙 شب تاریک: تا {fa(WORLD_EVENTS.darkNight.rounds)} دور، زدن مهره {fa(EVENT_BOOST)} برابر امتیاز دارد.</li>
           <li>🌫 مه: جعبه‌های جادو {fa(WORLD_EVENTS.fog.rounds)} دور دیده نمی‌شوند (ولی سر جایشان هستند).</li>
         </ul>
 
