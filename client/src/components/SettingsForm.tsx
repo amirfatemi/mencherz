@@ -80,6 +80,12 @@ export function SettingsForm({ value, onChange }: Props) {
         checked={value.gifs}
         onChange={(v) => onChange({ ...value, gifs: v })}
       />
+      <Toggle
+        label="Cinematic moments 🎬"
+        hint="The board shakes when a super bomb goes off; double kills, revenge and knocked-out kings play in slow motion with a banner"
+        checked={value.cinematic}
+        onChange={(v) => onChange({ ...value, cinematic: v })}
+      />
 
       <details className="house-rules">
         <summary>House rules</summary>
@@ -130,6 +136,24 @@ export function SettingsForm({ value, onChange }: Props) {
           hint="Two pieces of a colour on one square block the others, jumps included. Landing on a wall knocks out both."
           checked={rules.walls}
           onChange={(v) => setRules({ walls: v })}
+        />
+        <Toggle
+          label="Surprise events 🌪"
+          hint="Every 6 rounds: a storm (no flights, 1 round), gold rain (pieces home score double, 2 rounds), an earthquake (bombs move), a dark night (knock-outs score double, 2 rounds) or fog (boxes hidden, 1 round)."
+          checked={rules.events}
+          onChange={(v) => setRules({ events: v })}
+        />
+        <Toggle
+          label="Bounty on the leader 🎯"
+          hint="Knocking out a piece of whoever leads on points pays extra, and the bounty grows every round they stay in front."
+          checked={rules.bounty}
+          onChange={(v) => setRules({ bounty: v })}
+        />
+        <Toggle
+          label="Dragon 🐉"
+          hint="Every 5 rounds a dragon roams the track for 2 rounds, moving with every roll. It eats what it stops on; landing on it pays 40."
+          checked={rules.dragon}
+          onChange={(v) => setRules({ dragon: v })}
         />
         <Toggle
           label="Kings 👑"

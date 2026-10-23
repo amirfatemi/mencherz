@@ -20,6 +20,7 @@ import {
   SEATS,
   TAKEOFF_SQUARES,
   TRACK,
+  TRACK_CELLS,
   TRACK_LAST,
   isOnTrack,
   piecePoint,
@@ -35,7 +36,7 @@ import {
 import type { SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
-import { BRIDGE_SPAN, KING_PIECE, SUPER_BOMB_REACH, isKing, planMove, ambushStart, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
+import { BRIDGE_SPAN, DRAGON_PRIZE, KING_PIECE, SUPER_BOMB_REACH, isKing, planMove, ambushStart, type BridgeKind, type GameState, type Placeable } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
 import { BOARD_PX, CELL, heading, restHeading, toPx } from '../geometry.ts';
 import type { ActiveReaction, AnimFrame, Popup } from '../useRoomStream.ts';
@@ -134,6 +135,10 @@ function Defs() {
         <stop offset="0" stopColor="#d1c4e9" />
         <stop offset="1" stopColor="#9575cd" />
       </linearGradient>
+      <radialGradient id="dragon-bg" cx="0.4" cy="0.35" r="0.75">
+        <stop offset="0" stopColor="#fff3e0" />
+        <stop offset="1" stopColor="#ffb74d" />
+      </radialGradient>
       <linearGradient id="power-sq" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stopColor="#7e57c2" />
         <stop offset="0.55" stopColor="#4a2a9e" />
@@ -250,21 +255,23 @@ const BoardBase = memo(function BoardBase({ rot, active, turn }: { rot: number; 
             <circle cx={t.x} cy={t.y} r={SPOT_R * 0.95} fill="#fff" stroke={COLOR_HEX[s]} strokeWidth={2.5} strokeDasharray="4 3" />
             <Chevron at={takeoff} angle={heading(takeoff, first)} color={COLOR_HEX[s]} size={5} />
             <Chevron at={tip} angle={heading(tip, h1)} color={COLOR_HEX[s]} size={6.5} width={3} />
-            <line
-              x1={a.x + ux * trim}
-              y1={a.y + uy * trim}
-              x2={b.x - ux * trim}
-              y2={b.y - uy * trim}
-              stroke={COLOR_HEX[s]}
-              strokeWidth={3}
-              strokeDasharray="2 7"
-              strokeLinecap="round"
-              opacity={0.9}
-            />
-            {[0.3, 0.5, 0.7].map((f) => (
-              <Chevron key={f} at={{ x: (a.x + (b.x - a.x) * f) / CELL, y: (a.y + (b.y - a.y) * f) / CELL }} angle={fly} color={COLOR_DARK[s]} size={4.5} width={2.4} />
-            ))}
-            <path d={PLANE_PATH} transform={`translate(${plane.x} ${plane.y}) rotate(${fly}) scale(${CELL * 0.22})`} fill={COLOR_DARK[s]} />
+            <g className="flight-line">
+              <line
+                x1={a.x + ux * trim}
+                y1={a.y + uy * trim}
+                x2={b.x - ux * trim}
+                y2={b.y - uy * trim}
+                stroke={COLOR_HEX[s]}
+                strokeWidth={3}
+                strokeDasharray="2 7"
+                strokeLinecap="round"
+                opacity={0.9}
+              />
+              {[0.3, 0.5, 0.7].map((f) => (
+                <Chevron key={f} at={{ x: (a.x + (b.x - a.x) * f) / CELL, y: (a.y + (b.y - a.y) * f) / CELL }} angle={fly} color={COLOR_DARK[s]} size={4.5} width={2.4} />
+              ))}
+              <path d={PLANE_PATH} transform={`translate(${plane.x} ${plane.y}) rotate(${fly}) scale(${CELL * 0.22})`} fill={COLOR_DARK[s]} />
+            </g>
           </g>
         );
       })}
@@ -445,6 +452,45 @@ function AmbushMark({ over, rounds }: { over: Seat; rounds: number }) {
   );
 }
 
+/** The dragon: it eats what it stops on. The badge says how many rounds it stays. */
+function DragonIcon({ x, y, rounds }: { x: number; y: number; rounds: number }) {
+  return (
+    <g className="dragon" transform={`translate(${x} ${y})`} pointerEvents="none">
+      <title>{`The dragon — it moves with every roll and eats what it stops on. Land on it for +${DRAGON_PRIZE}. ${rounds === 1 ? 'Leaves after this round' : `${rounds} rounds left`}.`}</title>
+      {/* Bigger than a square, so it stands out wherever it is. */}
+      <g className="dragon-body">
+        <circle className="dragon-fire" r={CELL * 0.72} />
+        <circle r={CELL * 0.56} fill="url(#dragon-bg)" stroke="#bf360c" strokeWidth={3} />
+        <text textAnchor="middle" dominantBaseline="central" fontSize={CELL * 0.78}>
+          🐉
+        </text>
+      </g>
+      <g transform={`translate(${CELL * 0.5} ${-CELL * 0.5})`}>
+        <circle r={CELL * 0.2} fill="#bf360c" stroke="#fff" strokeWidth={2} />
+        <text textAnchor="middle" dy="0.35em" fontSize={CELL * 0.24} fontWeight={700} fill="#fff">
+          {rounds}
+        </text>
+      </g>
+    </g>
+  );
+}
+
+/** A wanted poster on the edge of the hangar of whoever has the bounty on them. */
+function WantedPoster({ x, y, value }: { x: number; y: number; value: number }) {
+  const text = `🎯 MOST WANTED · +${value}`;
+  const w = text.length * 6.3 + 14;
+  const h = CELL * 0.48;
+  return (
+    <g className="wanted" transform={`translate(${x} ${y})`} pointerEvents="none">
+      <title>{`Most wanted: knocking out one of these pieces pays +${value} on top`}</title>
+      <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={4} />
+      <text textAnchor="middle" dominantBaseline="central">
+        {text}
+      </text>
+    </g>
+  );
+}
+
 interface BoardProps {
   game: GameState;
   seats: SeatView[];
@@ -598,7 +644,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
 
   return (
     <div className="board-stack">
-      <svg className="board" viewBox={`0 0 ${BOARD_PX} ${BOARD_PX}`} role="img" aria-label="Game board">
+      <svg className={`board${game.event ? ` event-${game.event.kind}` : ''}`} viewBox={`0 0 ${BOARD_PX} ${BOARD_PX}`} role="img" aria-label="Game board">
         <Defs />
         <BoardBase rot={rot} active={game.active} turn={game.phase === 'over' ? null : game.turn} />
 
@@ -608,12 +654,19 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           const rank = game.standings.indexOf(s);
           const medal = game.phase === 'over' && rank >= 0 ? `${['🥇', '🥈', '🥉', '4th'][rank]} ` : '';
           const name = seat?.name ?? (seat?.kind === 'bot' ? `Bot · ${seat.botLevel}` : '');
+          // The leader gets a wanted poster on the hangar's edge facing the middle, away from the name.
+          const wanted = game.rules.bounty && game.bounty?.seat === s && game.phase !== 'over' ? game.bounty.value : 0;
+          const h = rotateShape(HANGARS[s], rot);
+          const edge = h.kind === 'rect' ? (y < BOARD_PX / 2 ? h.y1 : h.y0) * CELL : y;
           return (
-            <text key={s} x={x} y={y} className="hangar-label" textAnchor="middle" dominantBaseline="central">
-              {medal}
-              {name.length > 13 ? `${name.slice(0, 12)}…` : name}
-              {seat?.kind === 'bot' && !seat.left ? ' 🤖' : ''}
-            </text>
+            <g key={s}>
+              <text x={x} y={y} className="hangar-label" textAnchor="middle" dominantBaseline="central">
+                {medal}
+                {name.length > 13 ? `${name.slice(0, 12)}…` : name}
+                {seat?.kind === 'bot' && !seat.left ? ' 🤖' : ''}
+              </text>
+              {wanted > 0 && <WantedPoster x={x} y={edge} value={wanted} />}
+            </g>
           );
         })}
 
@@ -712,10 +765,12 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           </g>
         )}
 
-        {(game.boxes ?? []).map((b) => {
-          const p = toPx(TRACK[b.square].spot, rot);
-          return <BoxIcon key={`box${b.square}`} x={p.x} y={p.y} owner={b.owner} />;
-        })}
+        {/* Fog hides the boxes. */}
+        {game.event?.kind !== 'fog' &&
+          (game.boxes ?? []).map((b) => {
+            const p = toPx(TRACK[b.square].spot, rot);
+            return <BoxIcon key={`box${b.square}`} x={p.x} y={p.y} owner={b.owner} />;
+          })}
         {game.bombs.map((b) => {
           const p = toPx(TRACK[b.square].spot, rot);
           return <BombIcon key={b.square} x={p.x} y={p.y} owner={b.owner} big={b.super} />;
@@ -763,6 +818,18 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             );
           })}
         </g>
+
+        {game.dragon &&
+          (() => {
+            const at = anim?.pieces.get('dragon') ?? TRACK_CELLS[game.dragon.square];
+            const p = toPx(at, rot);
+            return <DragonIcon x={p.x} y={p.y} rounds={roundsUntil(game.dragon.until)} />;
+          })()}
+
+        {/* A light tint for the dark night, a haze for fog. */}
+        {(game.event?.kind === 'darkNight' || game.event?.kind === 'fog') && (
+          <rect className={`event-tint ${game.event.kind}`} width={BOARD_PX} height={BOARD_PX} rx={22} pointerEvents="none" />
+        )}
 
         {targets.length > 0 && (
           <g className={`bomb-targets ${targetKind}`}>

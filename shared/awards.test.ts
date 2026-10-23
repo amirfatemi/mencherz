@@ -5,7 +5,7 @@ import { GOAL, HANGAR, trackIndex } from './board.ts';
 import { DEFAULT_RULES, applyMove, createGame, newStats, type GameState } from './rules.ts';
 
 function finished(): GameState {
-  const g = createGame([0, 1, 2], { ...DEFAULT_RULES, magicBoxes: false, powerSquares: false });
+  const g = createGame([0, 1, 2], { ...DEFAULT_RULES, magicBoxes: false, powerSquares: false, events: false, bounty: false, dragon: false });
   g.phase = 'over';
   g.standings = [1, 0, 2];
   g.ranking = [1, 0, 2];
@@ -63,7 +63,7 @@ describe('medals and titles', () => {
   });
 
   test("a bomb's owner is credited for what it blew up", () => {
-    const g = createGame([0, 1], { ...DEFAULT_RULES, magicBoxes: false, powerSquares: false, kings: false });
+    const g = createGame([0, 1], { ...DEFAULT_RULES, magicBoxes: false, powerSquares: false, kings: false, events: false, bounty: false, dragon: false });
     g.pieces[1] = [30, HANGAR, HANGAR, HANGAR];
     g.bombs = [{ square: trackIndex(1, 32), owner: 0 }];
     Object.assign(g, { turn: 1, phase: 'move', dice: 2, movable: [0] });

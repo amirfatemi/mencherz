@@ -64,6 +64,15 @@ export interface Rules {
   powerSquares: boolean;
   /** Each colour's first piece is a king: knocking one out counts KING times. */
   kings: boolean;
+  /** Every EVENT_EVERY_ROUNDS rounds a surprise event changes the game for a while (see WORLD_EVENTS). */
+  events: boolean;
+  /** The points leader has a bounty on them: knocking out their pieces pays extra, more the longer they lead. */
+  bounty: boolean;
+  /**
+   * Every DRAGON_EVERY_ROUNDS rounds a dragon roams the track for DRAGON_ROUNDS rounds, moved by every roll. It
+   * eats any piece where it stops, and pays DRAGON_PRIZE to the piece that lands on it.
+   */
+  dragon: boolean;
   /** Stop when the first player finishes, or play on until only one is left (the full ranking). */
   playUntil: 'winner' | 'all';
   /** Rank by points (pieces home and knock-outs), or by who brought everything home first. */
@@ -85,6 +94,9 @@ export const DEFAULT_RULES: Rules = {
   walls: true,
   powerSquares: true,
   kings: true,
+  events: true,
+  bounty: true,
+  dragon: true,
   playUntil: 'all',
   winBy: 'points',
 };
@@ -104,7 +116,30 @@ export interface Bomb {
 }
 
 /** How far along the track, ahead or behind, a super bomb's blast reaches. Home columns are out of reach. */
-export const SUPER_BOMB_REACH = 2;
+export const SUPER_BOMB_REACH = 3;
+
+/** Surprise events, and how many rounds each lasts (an earthquake just happens). */
+export type WorldEventKind = 'storm' | 'goldRain' | 'earthquake' | 'darkNight' | 'fog';
+export const WORLD_EVENTS: Record<WorldEventKind, { rounds: number }> = {
+  /** No flights. */
+  storm: { rounds: 1 },
+  /** Pieces reaching the centre score double. */
+  goldRain: { rounds: 2 },
+  /** Every bomb jumps to another free square. */
+  earthquake: { rounds: 0 },
+  /** Knock-outs score double. */
+  darkNight: { rounds: 2 },
+  /** Magic boxes can't be seen. */
+  fog: { rounds: 1 },
+};
+export const EVENT_EVERY_ROUNDS = 6;
+
+/** The bounty on the points leader: what it starts at, what each round in the lead adds, and its most. */
+export const BOUNTY = { start: 5, perRound: 3, max: 30 } as const;
+
+export const DRAGON_EVERY_ROUNDS = 5;
+export const DRAGON_ROUNDS = 2;
+export const DRAGON_PRIZE = 40;
 
 /** A magic box. Whoever lands on it first opens it, the owner too. */
 export interface MagicBox {
@@ -205,11 +240,13 @@ export interface SeatStats {
   flights: number;
   /** Times the seat ended a move on the power square. */
   powers: number;
+  /** Dragons slain. */
+  dragons: number;
 }
 
 /** A seat's stats at the start of a game. */
 export function newStats(): SeatStats {
-  return { points: 0, home: 0, captures: 0, lost: 0, bestHit: 0, bestStreak: 0, bombKills: 0, boxes: 0, sixes: 0, flights: 0, powers: 0 };
+  return { points: 0, home: 0, captures: 0, lost: 0, bestHit: 0, bestStreak: 0, bombKills: 0, boxes: 0, sixes: 0, flights: 0, powers: 0, dragons: 0 };
 }
 
 export interface GameState {
@@ -256,6 +293,18 @@ export interface GameState {
   ambush: Ambush | null;
   /** ONCE_POWERS already picked this game. */
   usedPowers: PowerChoice[];
+  /** The surprise event in play: its kind, its number this game (so it's announced once), and until when. */
+  event: { kind: WorldEventKind; n: number; until: number } | null;
+  /** The turn number of the next surprise event. */
+  eventAt: number;
+  /** Who has the bounty on them, and what knocking out one of their pieces pays on top. */
+  bounty: { seat: Seat; value: number } | null;
+  /** The dragon on the track, and until when it stays. */
+  dragon: { square: number; until: number } | null;
+  /** The turn number the next dragon comes. */
+  dragonAt: number;
+  /** How many surprise events there have been. */
+  eventN?: number;
   /** Turns in a row each seat had nothing to move and no piece out of the hangar. */
   stuck: number[];
   turnNo: number;
@@ -283,6 +332,8 @@ export interface Capture {
   streak: number;
   /** The piece knocked out was a king. */
   king: boolean;
+  /** Bounty claimed with it, included in points. */
+  bounty?: number;
 }
 
 /** A piece landing on a bomb: it goes back to the hangar and the bomb is used up. */
@@ -363,6 +414,8 @@ export interface MovePlan {
   bridge?: BridgeHit;
   /** The move ends on a power square, so the mover picks a power. */
   power?: boolean;
+  /** The piece landed on the dragon and slew it, for DRAGON_PRIZE (in points). */
+  dragon?: { square: number; atStep: number };
 }
 
 export type RollOutcome = 'move' | 'pass' | 'again' | 'forfeit' | 'penalty';
@@ -379,6 +432,8 @@ export interface RollEvent {
   bomb?: boolean;
   /** STUCK_TURNS turns in a row lost with nothing out of the hangar. */
   stuck?: boolean;
+  /** The dragon moving with the roll, and the pieces it ate where it stopped. */
+  dragon?: { from: number; to: number; eaten: { seat: Seat; piece: number; from: number }[] };
 }
 
 export interface PowerEvent {
@@ -490,6 +545,11 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     safe: [],
     ambush: null,
     usedPowers: [],
+    event: null,
+    eventAt: 1 + EVENT_EVERY_ROUNDS * order.length,
+    bounty: null,
+    dragon: null,
+    dragonAt: 1 + DRAGON_EVERY_ROUNDS * order.length,
     stuck: SEATS.map(() => 0),
     turnNo: 1,
     seq: 0,
@@ -526,6 +586,7 @@ export function ambushStart(over: Seat): number {
  * ambush from the ambush square when it's that piece's colour, unless that would take it past its turn home.
  */
 function flightOver(state: GameState, seat: Seat, pos: number): Seat | null {
+  if (state.event?.kind === 'storm') return null;
   if (pos === FLIGHT_FROM) return flightCrossedSeat(seat);
   const sb = state.ambush;
   if (!sb || !isOnTrack(pos) || pos + FLIGHT_DISTANCE > TRACK_LAST) return null;
@@ -618,8 +679,12 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
   const worth = (hitter: Seat, victim: Seat, victimPiece: number, pos: number, streak = 0) => {
     const revenge = state.lastHitBy?.[hitter] === victim;
     const king = isKing(state, victimPiece);
-    const times = (revenge ? REVENGE : 1) * (king ? KING : 1) * killStreakBonus(streak);
-    return { points: Math.min(POINTS.firstHome, Math.round(captureValue(pos) * times)), revenge, king };
+    const night = state.event?.kind === 'darkNight' ? 2 : 1;
+    const times = (revenge ? REVENGE : 1) * (king ? KING : 1) * killStreakBonus(streak) * night;
+    // The leader's bounty comes on top, for whoever knocks out one of their pieces.
+    const bounty = state.rules.bounty && state.bounty?.seat === victim && hitter !== victim ? state.bounty.value : 0;
+    const points = Math.min(POINTS.firstHome, Math.round(captureValue(pos) * times) + bounty);
+    return { points, revenge, king, ...(bounty ? { bounty } : {}) };
   };
   // Every knock-out in a move is the moving piece's, so its streak counts on from what it had.
   const killsBefore = state.kills?.[seat]?.[piece] ?? 0;
@@ -681,6 +746,11 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     }
     const knocked = plan.captures.length;
     captureAt(pos);
+    // Landing on the dragon slays it, and the piece stops there.
+    if (state.dragon?.square === square && !plan.dragon) {
+      plan.dragon = { square, atStep };
+      return 'stay';
+    }
     // Anyone's piece opens a box, its owner's included.
     const box = state.boxes?.find((b) => b.square === square);
     if (box && !plan.box) {
@@ -698,7 +768,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
   };
 
   let landed = land(cur);
-  if (landed === 'hangar') return finishPlan(plan, HANGAR);
+  if (landed === 'hangar') return finishPlan(plan, HANGAR, state);
   if (landed === 'on' && isOnTrack(cur)) {
     for (;;) {
       // A bridge carries the piece on, and the move ends where it puts it down.
@@ -708,7 +778,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
         plan.bridge = { owner: bridge.owner, kind: bridge.kind, square: bridge.square, from: cur, to: across, atStep: plan.path.length };
         cur = across;
         plan.path.push({ pos: cur, kind: 'bridge' });
-        if (land(cur) === 'hangar') return finishPlan(plan, HANGAR);
+        if (land(cur) === 'hangar') return finishPlan(plan, HANGAR, state);
         break;
       }
       const crossed = rules.flights && !plan.flew ? flightOver(state, seat, cur) : null;
@@ -730,7 +800,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
         plan.flew = true;
         plan.path.push({ pos: cur, kind: 'fly' });
         landed = land(cur);
-        if (landed === 'hangar') return finishPlan(plan, HANGAR);
+        if (landed === 'hangar') return finishPlan(plan, HANGAR, state);
         if (landed === 'stay') break;
         continue;
       }
@@ -742,7 +812,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
         plan.jumped = true;
         plan.path.push({ pos: cur, kind: 'jump' });
         landed = land(cur);
-        if (landed === 'hangar') return finishPlan(plan, HANGAR);
+        if (landed === 'hangar') return finishPlan(plan, HANGAR, state);
         if (landed === 'stay') break;
         continue;
       }
@@ -750,16 +820,19 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     }
   }
 
-  finishPlan(plan, cur);
+  finishPlan(plan, cur, state);
   if (isOnTrack(cur) && state.power?.includes(trackIndex(seat, cur))) plan.power = true;
   return plan;
 }
 
-function finishPlan(plan: MovePlan, to: number): MovePlan {
+function finishPlan(plan: MovePlan, to: number, state: GameState): MovePlan {
   plan.to = to;
+  // Gold rain doubles what a piece reaching the centre scores.
+  const home = POINTS.home * (state.event?.kind === 'goldRain' ? 2 : 1);
   plan.points =
     plan.captures.reduce((sum, c) => sum + c.points, 0) +
-    (to === GOAL ? POINTS.home : 0) +
+    (to === GOAL ? home : 0) +
+    (plan.dragon ? DRAGON_PRIZE : 0) +
     (plan.box?.outcome === 'plus' ? POINTS.boxBonus : 0) -
     (plan.box?.outcome === 'minus' ? POINTS.boxPenalty : 0);
   return plan;
@@ -841,10 +914,67 @@ function nextTurn(s: GameState, rand: Rand): void {
       if (s.rules.powerSquares && s.turnNo >= (s.powerMovesAt ?? 0)) movePower(s, rand);
       s.safe = (s.safe ?? []).filter((x) => x.until > s.turnNo);
       if (s.ambush && s.ambush.until <= s.turnNo) s.ambush = null;
+      newRound(s, rand);
       return;
     }
   }
   s.phase = 'over';
+}
+
+/** Rounds of the players still playing, in turns. */
+const roundsOf = (s: GameState, rounds: number) => rounds * Math.max(1, s.active.filter((x) => !s.ranking.includes(x)).length);
+
+/** What comes and goes with the turns: surprise events, the dragon, and the bounty on the leader. */
+function newRound(s: GameState, rand: Rand): void {
+  if (s.event && s.turnNo >= s.event.until) s.event = null;
+  if (s.rules.events && s.turnNo >= (s.eventAt ?? 0)) {
+    startEvent(s, rand);
+    s.eventAt = s.turnNo + roundsOf(s, EVENT_EVERY_ROUNDS);
+  }
+  if (s.dragon && s.turnNo >= s.dragon.until) s.dragon = null;
+  if (s.rules.dragon && !s.dragon && s.turnNo >= (s.dragonAt ?? 0)) {
+    const free = freeSquares(s);
+    if (free.length) s.dragon = { square: free[rand(free.length)], until: s.turnNo + roundsOf(s, DRAGON_ROUNDS) };
+    s.dragonAt = s.turnNo + roundsOf(s, DRAGON_EVERY_ROUNDS);
+  }
+  updateBounty(s);
+}
+
+/** Starts a surprise event at random, among those that would change something. */
+function startEvent(s: GameState, rand: Rand): void {
+  const kinds = (Object.keys(WORLD_EVENTS) as WorldEventKind[]).filter(
+    (k) => (k !== 'earthquake' || s.bombs.length > 0) && (k !== 'fog' || (s.boxes ?? []).length > 0),
+  );
+  const kind = kinds[rand(kinds.length)];
+  s.eventN = (s.eventN ?? 0) + 1;
+  s.event = { kind, n: s.eventN, until: s.turnNo + roundsOf(s, WORLD_EVENTS[kind].rounds) };
+  if (kind === 'earthquake') {
+    // Every bomb jumps to a free square, never one another bomb has just taken.
+    const bombs = s.bombs;
+    s.bombs = [];
+    for (const b of bombs) {
+      const free = freeSquares(s).filter((sq) => sq !== b.square);
+      s.bombs.push({ ...b, square: free.length ? free[rand(free.length)] : b.square });
+    }
+  }
+}
+
+/**
+ * The bounty sits on whoever leads on points among those still playing (nobody on a tie). It starts at
+ * BOUNTY.start when someone takes the lead and grows by BOUNTY.perRound each time their turn comes round.
+ */
+function updateBounty(s: GameState): void {
+  if (!s.rules.bounty) {
+    s.bounty = null;
+    return;
+  }
+  const playing = s.active.filter((x) => !s.ranking.includes(x));
+  const top = Math.max(...playing.map((x) => s.stats[x].points));
+  const leaders = playing.filter((x) => s.stats[x].points === top);
+  const leader = leaders.length === 1 && top > 0 ? leaders[0] : null;
+  if (leader === null) s.bounty = null;
+  else if (s.bounty?.seat !== leader) s.bounty = { seat: leader, value: BOUNTY.start };
+  else if (s.turn === leader) s.bounty.value = Math.min(BOUNTY.max, s.bounty.value + BOUNTY.perRound);
 }
 
 /**
@@ -863,6 +993,25 @@ function countStuck(s: GameState, seat: Seat): boolean {
   return true;
 }
 
+/** The dragon goes as far as the dice says and eats every piece where it stops, unless on its own safe square. */
+function moveDragon(s: GameState, dice: number, event: RollEvent): void {
+  const from = s.dragon!.square;
+  const to = (from + dice) % TRACK_LEN;
+  const eaten: { seat: Seat; piece: number; from: number }[] = [];
+  for (const seat of s.active) {
+    s.pieces[seat].forEach((p, j) => {
+      if (!isOnTrack(p) || trackIndex(seat, p) !== to || isSafe(s, seat, to)) return;
+      eaten.push({ seat, piece: j, from: p });
+      s.pieces[seat][j] = HANGAR;
+      if (s.frozen) s.frozen[seat][j] = 0;
+      if (s.kills) s.kills[seat][j] = 0;
+      s.stats[seat].lost++;
+    });
+  }
+  s.dragon!.square = to;
+  event.dragon = { from, to, eaten };
+}
+
 export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRand): { state: GameState; event: RollEvent } {
   if (state.phase !== 'roll') throw new RuleError('Not time to roll');
   if (!Number.isInteger(dice) || dice < 1 || dice > 6) throw new RuleError('Bad dice value');
@@ -872,6 +1021,7 @@ export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRa
   s.seq++;
   s.dice = dice;
   const event: RollEvent = { type: 'roll', seat, dice, outcome: 'move', movable: [], penalized: [] };
+  if (s.dragon) moveDragon(s, dice, event);
 
   if (dice === 6) {
     s.sixStreak++;
@@ -951,6 +1101,17 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
     s.stats[c.seat].lost++;
   }
   if (plan.bridge) s.bridges = s.bridges.filter((b) => b.square !== plan.bridge!.square);
+  if (plan.dragon) {
+    s.dragon = null;
+    s.stats[seat].dragons = (s.stats[seat].dragons ?? 0) + 1;
+  }
+  // A claimed bounty goes back to its starting value; it stays on the leader.
+  const claimed =
+    plan.captures.some((c) => c.bounty) ||
+    (plan.bombed && !plan.bombed.saved && plan.bombed.owner !== seat && s.bounty?.seat === seat) ||
+    (plan.bombed?.blast ?? []).some((v) => !v.saved && v.seat === s.bounty?.seat && v.seat !== plan.bombed!.owner) ||
+    (plan.box?.outcome === 'bomb' && !plan.box.saved && plan.box.owner !== seat && s.bounty?.seat === seat);
+  if (claimed && s.bounty) s.bounty.value = BOUNTY.start;
   s.stats[seat].captures += plan.captures.length;
   s.stats[seat].points += plan.points;
   // Report and medal bookkeeping; a bomb's owner is credited with what it blew up.

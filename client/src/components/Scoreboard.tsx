@@ -7,6 +7,15 @@ import { describe, seatName } from '../events.ts';
 
 export const MEDALS = ['🥇', '🥈', '🥉', '4th'];
 
+const EVENT_CHIPS = { storm: '🌪 Storm', goldRain: '💰 Gold rain', earthquake: '🌋 Earthquake', darkNight: '🌙 Dark night', fog: '🌫 Fog' };
+
+/** "1 round" or "2 rounds" left until turn `until`. */
+function roundsLeft(game: GameState, until: number): string {
+  const playing = Math.max(1, game.active.filter((s) => !game.ranking.includes(s)).length);
+  const n = Math.max(1, Math.ceil((until - game.turnNo) / playing));
+  return n === 1 ? 'last round' : `${n} rounds`;
+}
+
 interface Props {
   game: GameState;
   seats: SeatView[];
@@ -72,6 +81,21 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
           {spectators > 0 && ` · 👀 ${spectators}`}
         </span>
       </div>
+      {(game.event || game.dragon || (game.rules.bounty && game.bounty)) && game.phase !== 'over' && (
+        <div className="scoreboard-chips">
+          {game.event && game.event.kind !== 'earthquake' && (
+            <span className="pill">
+              {EVENT_CHIPS[game.event.kind]} · {roundsLeft(game, game.event.until)}
+            </span>
+          )}
+          {game.dragon && <span className="pill">🐉 Dragon · {roundsLeft(game, game.dragon.until)}</span>}
+          {game.rules.bounty && game.bounty && (
+            <span className="pill" title="Knock out one of their pieces for this on top">
+              🎯 {seatName(seats, game.bounty.seat)} +{game.bounty.value}
+            </span>
+          )}
+        </div>
+      )}
       <table>
         <thead>
           <tr>

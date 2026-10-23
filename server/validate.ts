@@ -32,6 +32,9 @@ export function parseRules(input: unknown): Rules {
     walls: bool(r.walls, d.walls),
     powerSquares: bool(r.powerSquares, d.powerSquares),
     kings: bool(r.kings, d.kings),
+    events: bool(r.events, d.events),
+    bounty: bool(r.bounty, d.bounty),
+    dragon: bool(r.dragon, d.dragon),
     playUntil: oneOf(r.playUntil, ['winner', 'all'], d.playUntil),
     winBy: oneOf(r.winBy, ['points', 'race'], d.winBy),
   };
@@ -46,6 +49,7 @@ export function parseSettings(input: unknown, fallbackName: string): RoomSetting
     isPublic: bool(s.isPublic, true),
     turnSeconds,
     gifs: bool(s.gifs, true),
+    cinematic: bool(s.cinematic, true),
     rules: parseRules(s.rules),
   };
 }

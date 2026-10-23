@@ -1,6 +1,7 @@
 import { COLOR_NAMES, GOAL, TAKEOFF, type Seat } from '../../shared/board.ts';
 import type { SeatView } from '../../shared/protocol.ts';
-import type { GameEvent } from '../../shared/rules.ts';
+import type { GameEvent, RollEvent } from '../../shared/rules.ts';
+import { DRAGON_PRIZE } from '../../shared/rules.ts';
 import { POINTS, killStreakName } from '../../shared/scoring.ts';
 
 export function seatName(seats: SeatView[], seat: Seat): string {
@@ -10,12 +11,18 @@ export function seatName(seats: SeatView[], seat: Seat): string {
   return COLOR_NAMES[seat];
 }
 
+/** What the dragon did with a roll, if it ate anyone. */
+function dragonText(ev: RollEvent, seats: SeatView[]): string {
+  const eaten = ev.dragon?.eaten ?? [];
+  return eaten.length ? ` · the dragon 🐉 ate ${eaten.map((e) => `${seatName(seats, e.seat)}'s piece`).join(' and ')}` : '';
+}
+
 export function describe(ev: GameEvent, seats: SeatView[]): string {
   const who = seatName(seats, ev.seat);
   if (ev.type === 'roll') {
     switch (ev.outcome) {
       case 'pass':
-        return `${who} rolled ${ev.dice} — no move`;
+        return `${who} rolled ${ev.dice} — no move${dragonText(ev, seats)}`;
       case 'again':
         return `${who} rolled 6 — no move, rolls again`;
       case 'forfeit':
@@ -23,7 +30,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
       case 'penalty':
         return `${who} rolled a third 6 — pieces sent back to the hangar!${ev.bomb ? ' 💣 Bomb time.' : ''}`;
       default:
-        return `${who} rolled ${ev.dice}`;
+        return `${who} rolled ${ev.dice}${dragonText(ev, seats)}`;
     }
   }
   if (ev.type === 'bomb') return ev.super ? `${who} put down a super bomb 💥` : `${who} dropped a bomb 💣`;
@@ -47,7 +54,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     if (step.kind === 'fly') bits.push('took the shortcut ✈');
   }
   for (const c of ev.captures) {
-    const extras = [c.king && '👑 a king', c.revenge && '⚔️ revenge', killStreakName(c.streak ?? 1)].filter(Boolean);
+    const extras = [c.king && '👑 a king', c.revenge && '⚔️ revenge', killStreakName(c.streak ?? 1), c.bounty && `🎯 bounty +${c.bounty}`].filter(Boolean);
     bits.push(`sent ${seatName(seats, c.seat)} back 💥 +${c.points}${extras.length ? ` (${extras.join(', ')})` : ''}`);
   }
   if (ev.bombed) {
@@ -76,6 +83,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     bits.push(ev.bridge.kind === 'heaven' ? `crossed ${whose} heaven bridge 🌈 +10` : `fell through ${whose} hell bridge 🔥`);
   }
   if (ev.power) bits.push('landed on a power square ⚡');
+  if (ev.dragon) bits.push(`slew the dragon 🐉 +${DRAGON_PRIZE}`);
   if (ev.to === GOAL) bits.push(`piece home 🏁 +${POINTS.home}`);
   let text = bits.join(' · ');
   if (ev.seatFinished) text += ev.bonus ? ` — ${who} brought all pieces home first! 🏆 +${ev.bonus}` : ` — ${who} brought all pieces home!`;

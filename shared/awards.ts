@@ -37,6 +37,7 @@ export function gameAwards(state: GameState): Award[] {
   add(leader(state, (st) => st.bombKills), 'bomber', '💣', 'Demolition expert', (st) => `blew up ${st.bombKills}`);
   add(leader(state, (st) => st.flights, 2), 'flyer', '✈', 'Frequent flyer', (st) => `${st.flights} flights`);
   add(leader(state, (st) => st.sixes, 3), 'sixes', '🎲', 'Six machine', (st) => `${st.sixes} sixes`);
+  add(leader(state, (st) => st.dragons), 'dragon', '🐉', 'Dragon slayer', (st) => (st.dragons > 1 ? `slew ${st.dragons} dragons` : 'slew the dragon'));
   add(leader(state, (st) => st.lost), 'unlucky', '🤕', 'Unluckiest', (st) => `knocked out ${st.lost} times`);
   return out;
 }
@@ -59,6 +60,7 @@ export const MEDALS: readonly Medal[] = [
   { id: 'sniper', icon: '🎯', name: 'Sniper', how: 'One knock-out worth 30 points or more', won: (st) => st.bestHit >= 30 },
   { id: 'demolisher', icon: '💣', name: 'Demolisher', how: 'Blow up 3 or more pieces in one game', won: (st) => st.bombKills >= 3 },
   { id: 'untouchable', icon: '🛡', name: 'Untouchable', how: 'Bring all four home without losing a piece', won: (st) => st.lost === 0 && st.home === PIECES_PER_SEAT },
+  { id: 'dragonSlayer', icon: '🐉', name: 'Dragon slayer', how: 'Land on the dragon', won: (st) => (st.dragons ?? 0) > 0 },
   { id: 'phoenix', icon: '🔥', name: 'Phoenix', how: 'Knocked out 6 or more times, and still in the top two', won: (st, state, seat) => st.lost >= 6 && state.standings.slice(0, 2).includes(seat) },
 ];
 export const MEDAL_BY_ID = new Map(MEDALS.map((m) => [m.id, m]));

@@ -85,7 +85,8 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 - **Auto-save:** every change is written to SQLite, and games survive a server restart. Leaving mid-game hands your seat to a computer player.
 - **Game clock:** the scoreboard shows the time played (pauses left out), and the results the whole game's length.
 - **End-of-game report:** with the results come the game's highlights (player of the match, top hunter, biggest hit, longest kill streak, demolition expert, frequent flyer, six machine, unluckiest) and the medals each person won.
-- **Medals and titles** (`shared/awards.ts`): in games that count, players win medals for good (Rocket, Hunter, Triple kill, Sniper, Demolisher, Untouchable, Phoenix), shown on the leaderboard and the Settings page. A title comes with total points: Rookie, Pilot (150), Captain (500), Ace (1200), Legend (2500).
+- **Medals and titles** (`shared/awards.ts`): in games that count, players win medals for good (Rocket, Hunter, Triple kill, Sniper, Demolisher, Untouchable, Dragon slayer, Phoenix), shown on the leaderboard and the Settings page. A title comes with total points: Rookie, Pilot (150), Captain (500), Ace (1200), Legend (2500).
+- **Cinematic moments 🎬:** the board shakes when a super bomb goes off; double kills, knocked-out kings and revenge play in slow motion with a short banner. A game setting, like the GIFs.
 - **Sounds:** short sounds for the dice, steps, jumps, flights, knock-outs, bombs, boxes, pieces home and wins, made with the Web Audio API (no files). The 🔊 button turns them off.
 - **Version:** the top bar (and the sign-in page) shows the version, build date and commit, e.g. `v1.0.0 · 2026-10-23 · 5d3749c`.
 - **Full screen:** the ⛶ button in the top bar fills the screen with the game. On an iPad or phone, *Add to Home Screen* installs it as an app that always opens full screen (iPhones only allow full screen this way).
@@ -118,12 +119,15 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
     - **Safe square 🛡:** pick a track square (not a home column), even one your piece stands on. For 2 rounds your pieces there can't be knocked out; others can still land there and share it.
     - **Ambush 🏹 (شبیخون, once called the Sirat bridge):** pick another player. For 5 rounds a second flight line crosses their home column. The corner square holding the ✈ that flies over it is two triangles of two colours, and the second colour now flies too, from its triangle to the square of its colour on the far side (if that doesn't take it past its own turn home). Every flight over the column knocks out every piece in it, not only the middle one.
 
-    - **Super bomb 💥:** put a big bomb on a free track square. The first piece to land on it blows up, and so does every piece within 2 squares ahead or behind, whatever its colour, the owner's included. Home columns are out of reach; a vest or the piece's own safe square saves it. The owner scores each opponent piece blown up as a knock-out.
+    - **Super bomb 💥:** put a big bomb on a free track square. The first piece to land on it blows up, and so does every piece within 3 squares ahead or behind, whatever its colour, the owner's included. Home columns are out of reach; a vest or the piece's own safe square saves it. The owner scores each opponent piece blown up as a knock-out.
 
     The heaven bridge, hell bridge, ambush and super bomb can each be picked once a game: whoever picks one first uses it up for everyone. Magic boxes and safe squares can be picked any number of times.
 
     A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on the power square.
-13. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
+13. **Surprise events 🌪:** every 6 rounds one happens at random, announced with a banner and a sound: a storm (no flights, 1 round), gold rain (pieces reaching the centre score double, 2 rounds), an earthquake (every bomb jumps to another free square), a dark night (knock-outs score double, 2 rounds) or fog (magic boxes hidden, 1 round).
+14. **Bounty on the leader 🎯:** whoever leads on points (alone) gets a MOST WANTED poster by their hangar. Knocking out one of their pieces, bombs included, pays the bounty on top: it starts at 5, grows by 3 each time their turn comes round in the lead (up to 30), and starts again at 5 once claimed.
+15. **Dragon 🐉:** every 5 rounds a dragon appears on a free square for 2 rounds. It belongs to nobody and moves with every roll, as far as the dice says. Any piece where it stops is eaten (back to the hangar), unless on its own safe square. A piece that lands on the dragon slays it for 40 points.
+16. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
 
 ### Points
 
@@ -175,6 +179,8 @@ The weights live in `shared/dice.ts`.
 - Power square (on or off)
 - Walls (on or off)
 - Kings (on or off)
+- Surprise events, bounty on the leader, dragon (each on or off)
+- Cinematic moments (on or off)
 - Reaction GIFs (on or off)
 - Home: bounce back on overshoot / exact roll needed
 - Colour jumps (on or off)

@@ -3,6 +3,7 @@ import { GOAL, HANGAR_SLOTS, TRACK_CELLS, piecePoint, type Point, type Seat } fr
 import type { RoomUpdate, RoomView } from '../../shared/protocol.ts';
 import { REACTION_MS } from '../../shared/reactions.ts';
 import { blastOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind } from '../../shared/rules.ts';
+import { DRAGON_PRIZE, type WorldEventKind } from '../../shared/rules.ts';
 import { POINTS, killStreakName } from '../../shared/scoring.ts';
 import {
   BOMB_MS,
@@ -44,6 +45,60 @@ export interface BoxReveal {
   key: number;
   seat: Seat;
   box: BoxHit;
+}
+
+/** A short banner across the board for a big moment. */
+export interface Banner {
+  key: number;
+  text: string;
+  tone: 'kill' | 'gold' | 'event';
+}
+
+const BANNER_MS = 1700;
+
+/** What each surprise event's banner says. */
+export const EVENT_BANNERS: Record<WorldEventKind, string> = {
+  storm: '🌪 طوفان! پروازها یک دور بسته‌اند',
+  goldRain: '💰 باران طلا! رسیدن به خانه دو برابر، دو دور',
+  earthquake: '🌋 زلزله! بمب‌ها جابه‌جا شدند',
+  darkNight: '🌙 شب تاریک! زدن دو برابر، دو دور',
+  fog: '🌫 مه! جعبه‌ها یک دور پنهان‌اند',
+};
+
+/**
+ * The banner a move earns, with when it shows. Kill streaks, kings and revenge are cinematic (`slow`: the move
+ * plays in slow motion); the dragon and a bounty always show.
+ */
+function moveBanner(ev: MoveEvent): { at: number; text: string; tone: Banner['tone']; slow: boolean } | null {
+  const spree = ev.captures.find((c) => (c.streak ?? 1) >= 2);
+  if (spree) return { at: captureAt(ev, spree), text: `💀 ${killStreakName(spree.streak)!.toUpperCase()}!`, tone: 'kill', slow: true };
+  const king = ev.captures.find((c) => c.king);
+  if (king) return { at: captureAt(ev, king), text: '👑 KING DOWN!', tone: 'kill', slow: true };
+  const revenge = ev.captures.find((c) => c.revenge);
+  if (revenge) return { at: captureAt(ev, revenge), text: '⚔️ انتقام!', tone: 'kill', slow: true };
+  if (ev.dragon) return { at: arrivalAt(ev), text: `🐉 اژدها شکار شد! +${DRAGON_PRIZE}`, tone: 'gold', slow: false };
+  const bounty = ev.captures.find((c) => c.bounty);
+  if (bounty) return { at: captureAt(ev, bounty), text: `🎯 جایزه گرفت! +${bounty.bounty}`, tone: 'gold', slow: false };
+  return null;
+}
+
+/** The dragon stepping along with a roll, and the pieces it eats where it stops flying home. */
+function dragonTimeline(ev: RollEvent): Timeline {
+  const d = ev.dragon!;
+  const segments: Segment[] = [];
+  for (let k = 0; k < ev.dice; k++) {
+    const from = TRACK_CELLS[(d.from + k) % TRACK_CELLS.length];
+    const to = TRACK_CELLS[(d.from + k + 1) % TRACK_CELLS.length];
+    segments.push({ from, to, start: k * STEP_MS.step, dur: STEP_MS.step, kind: 'step' });
+  }
+  const end = ev.dice * STEP_MS.step;
+  const tl: Timeline = { motions: [{ key: 'dragon', startAngle: 0, segments }], booms: [], total: end };
+  for (const e of d.eaten) {
+    tl.motions.push(returnHome(e.seat, e.piece, e.from, end));
+    tl.booms.push({ at: piecePoint(e.seat, e.piece, e.from), start: end });
+    tl.total = end + CAPTURE_MS;
+  }
+  return tl;
 }
 
 /** A reaction GIF showing over a seat's hangar. */
@@ -95,9 +150,10 @@ interface ScoreMoment {
   big?: boolean;
 }
 
-function scoreMoments(ev: MoveEvent): ScoreMoment[] {
+/** With cinematic moments on, a kill streak gets a banner (see moveBanner), so its popup shows just the points. */
+function scoreMoments(ev: MoveEvent, cinematic: boolean): ScoreMoment[] {
   const out = ev.captures.map((c): ScoreMoment => {
-    const spree = killStreakName(c.streak ?? 1);
+    const spree = cinematic ? null : killStreakName(c.streak ?? 1);
     const marks = `${c.king ? '👑 ' : ''}${c.revenge ? '⚔️ ' : ''}`;
     return {
       at: piecePoint(c.seat, c.piece, c.from),
@@ -277,6 +333,8 @@ export function useRoomStream(code: string) {
   const [popups, setPopups] = useState<Popup[]>([]);
   const [reactions, setReactions] = useState<ActiveReaction[]>([]);
   const [reveal, setReveal] = useState<BoxReveal | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
+  const [shake, setShake] = useState(false);
   /**
    * A roll that couldn't be played. Among people it stays on the dice until the next roll; with a computer
    * in the game it shows for a few seconds while the next player waits (`wait`), so people see it before a
@@ -322,6 +380,13 @@ export function useRoomStream(code: string) {
     });
   }, []);
 
+  const showBanner = useCallback((text: string, tone: Banner['tone']) => {
+    const shown: Banner = { key: ++popupIds, text, tone };
+    setBanner(shown);
+    sfx.sting();
+    setTimeout(() => setBanner((b) => (b?.key === shown.key ? null : b)), BANNER_MS);
+  }, []);
+
   const pump = useCallback(async () => {
     if (running.current) return;
     running.current = true;
@@ -337,6 +402,20 @@ export function useRoomStream(code: string) {
           setHeld(null);
         }
         const wait = u.room.seats.some((s) => s.kind === 'bot');
+        const cinematic = u.room.settings.cinematic !== false;
+        // Announced once the update has played: a new surprise event, or the dragon arriving.
+        const before = current.current?.game;
+        const announce = () => {
+          const after = u.room.game;
+          if (!before || !after || skip) return;
+          if (after.event && after.event.n !== before.event?.n) {
+            showBanner(EVENT_BANNERS[after.event.kind], 'event');
+            sfx.event(after.event.kind);
+          } else if (after.dragon && !before.dragon) {
+            showBanner('🐉 اژدها آمد! مراقب باشید', 'event');
+            sfx.roar();
+          }
+        };
         if (ev && current.current?.game && !skip) {
           setAnimating(true);
           // Reactions can come with any event (a move, or a roll of three sixes), timed from its start.
@@ -356,10 +435,16 @@ export function useRoomStream(code: string) {
             setRolling(false);
             if (ev.outcome === 'penalty' || ev.outcome === 'forfeit') sfx.bad();
             else sfx.land();
+            if (ev.dragon) {
+              sfx.roar();
+              if (ev.dragon.eaten.length) setTimeout(() => alive.current && sfx.hit(), (ev.dice * STEP_MS.step) / speed);
+              await play(dragonTimeline(ev), speed);
+            }
             if (ev.penalized.length) await play(penaltyTimeline(ev), speed);
             if (ev.outcome === 'pass') {
               // Show the turn moving on, but keep the number up (and, with a bot about, the next player waiting).
               commit(u.room);
+              announce();
               setHeld({ seat: ev.seat, value: ev.dice, wait });
               if (wait) {
                 // Then the dice clears for the next player, in their colour.
@@ -371,35 +456,49 @@ export function useRoomStream(code: string) {
           } else if (ev.type === 'power' || ev.type === 'vest') {
             (ev.type === 'power' ? sfx.power : sfx.good)();
             commit(u.room);
+            announce();
             continue;
           } else if (ev.type === 'bomb' || ev.type === 'box' || ev.type === 'bridge' || ev.type === 'safe') {
             // The bomb or box drops in (CSS) once the new state is shown.
             sfx.place();
             commit(u.room);
+            announce();
             await sleep(BOMB_MS / speed);
             continue;
           } else {
-            for (const s of moveSounds(ev)) setTimeout(() => alive.current && s.play(), s.at / speed);
-            for (const m of scoreMoments(ev)) {
+            // A big knock-out plays in slow motion, with its banner; a super bomb shakes the board.
+            const big = moveBanner(ev);
+            const pace = big?.slow && cinematic ? speed * 0.6 : speed;
+            if (big && (!big.slow || cinematic)) setTimeout(() => alive.current && showBanner(big.text, big.tone), big.at / pace);
+            if (cinematic && ev.bombed?.blast?.some((v) => !v.saved)) {
+              setTimeout(() => {
+                if (!alive.current) return;
+                setShake(true);
+                setTimeout(() => setShake(false), 650);
+              }, stepEnd(ev, ev.bombed.atStep) / pace);
+            }
+            for (const s of moveSounds(ev)) setTimeout(() => alive.current && s.play(), s.at / pace);
+            for (const m of scoreMoments(ev, cinematic)) {
               const popup: Popup = { ...m.at, id: ++popupIds, text: m.text, seat: m.seat, big: m.big };
               setTimeout(() => {
                 if (!alive.current) return;
                 setPopups((list) => [...list, popup]);
                 setTimeout(() => setPopups((list) => list.filter((p) => p.id !== popup.id)), POPUP_MS);
-              }, m.delay / speed);
+              }, m.delay / pace);
             }
             if (ev.box?.outcome) {
               const shown: BoxReveal = { key: ++popupIds, seat: ev.seat, box: ev.box };
               setTimeout(() => {
                 if (!alive.current) return;
                 setReveal(shown);
-                setTimeout(() => setReveal((r) => (r?.key === shown.key ? null : r)), BOX_REVEAL_MS / speed);
-              }, boxOpenAt(ev) / speed);
+                setTimeout(() => setReveal((r) => (r?.key === shown.key ? null : r)), BOX_REVEAL_MS / pace);
+              }, boxOpenAt(ev) / pace);
             }
-            await play(moveTimeline(ev), speed);
+            await play(moveTimeline(ev), pace);
           }
         }
         commit(u.room);
+        announce();
       }
     } finally {
       running.current = false;
@@ -407,7 +506,7 @@ export function useRoomStream(code: string) {
       setRolling(false);
       setHeld((h) => (h?.wait ? null : h));
     }
-  }, [commit, play]);
+  }, [commit, play, showBanner]);
 
   useEffect(() => {
     alive.current = true;
@@ -447,5 +546,5 @@ export function useRoomStream(code: string) {
 
   const now = useCallback(() => Date.now() + clockOffset.current, []);
 
-  return { view, error, anim, rolling, lastRoll, held, animating, popups, reactions, reveal, now };
+  return { view, error, anim, rolling, lastRoll, held, animating, popups, reactions, reveal, banner, shake, now };
 }

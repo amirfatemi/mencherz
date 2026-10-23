@@ -131,6 +131,8 @@ export function reactionsFor(ev: GameEvent, pick: (group: ReactionGroup) => stri
   };
   // A third six is bad luck: sad as soon as the dice stops.
   if (ev.type === 'roll' && (ev.outcome === 'penalty' || ev.outcome === 'forfeit')) show(ev.seat, 'sad', ROLL_MS);
+  // The dragon eating a piece is bad luck too.
+  if (ev.type === 'roll') for (const e of ev.dragon?.eaten ?? []) show(e.seat, 'sad', ROLL_MS);
   // So is a third lost turn in a row with everything still in the hangar.
   if (ev.type === 'roll' && ev.stuck) show(ev.seat, 'sad', ROLL_MS);
   if (ev.type !== 'move') return out;
@@ -161,6 +163,6 @@ export function reactionsFor(ev: GameEvent, pick: (group: ReactionGroup) => stri
   }
   const spree = ev.captures.find((c) => (c.streak ?? 1) >= 2);
   if (spree) show(ev.seat, 'happy', captureAt(ev, spree));
-  if (ev.to === GOAL) show(ev.seat, 'happy', arrivalAt(ev));
+  if (ev.to === GOAL || ev.dragon) show(ev.seat, 'happy', arrivalAt(ev));
   return out;
 }

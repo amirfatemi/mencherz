@@ -130,6 +130,25 @@ export const sfx = {
   place: () => tone({ f: 160, to: 80, dur: 0.15, vol: 0.2 }),
   /** It's your turn. */
   turn: () => notes([880, 1320], 0.09, { type: 'sine', vol: 0.08 }),
+  /** The dragon: a low growl that rises. */
+  roar: () => {
+    tone({ f: 70, to: 150, dur: 0.55, type: 'sawtooth', vol: 0.12 });
+    noise({ dur: 0.5, vol: 0.12, freq: 300, to: 900, type: 'lowpass' });
+  },
+  /** A big moment's banner: a short bright sting. */
+  sting: () => notes([784, 1047, 1319], 0.06, { type: 'square', vol: 0.06 }),
+  /** A surprise event starting. */
+  event: (kind: 'storm' | 'goldRain' | 'earthquake' | 'darkNight' | 'fog') => {
+    if (kind === 'storm') {
+      noise({ dur: 1.1, vol: 0.18, freq: 300, to: 1600 });
+      noise({ at: 0.35, dur: 0.6, vol: 0.3, freq: 900, to: 80, type: 'lowpass' });
+    } else if (kind === 'goldRain') notes([1319, 1568, 1760, 2093, 2637], 0.07, { type: 'sine', vol: 0.08 });
+    else if (kind === 'earthquake') {
+      tone({ f: 45, to: 35, dur: 1, type: 'sawtooth', vol: 0.18 });
+      noise({ dur: 1, vol: 0.2, freq: 160, type: 'lowpass' });
+    } else if (kind === 'darkNight') notes([220, 207, 185], 0.22, { type: 'sine', vol: 0.12 });
+    else noise({ dur: 1.2, vol: 0.1, freq: 700, to: 300 });
+  },
   /** A player brings everything home, or the game ends. */
   win: () => {
     notes([392, 523, 659, 784], 0.11, { vol: 0.13 });

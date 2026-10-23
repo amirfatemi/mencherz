@@ -39,6 +39,7 @@ export function CreateGameDialog({ mode, user, onClose }: { mode: CreateMode; us
     isPublic: mode === 'online',
     turnSeconds: mode === 'online' ? 30 : 0,
     gifs: true,
+    cinematic: true,
     rules: DEFAULT_RULES,
   });
   const [error, setError] = useState<string | null>(null);

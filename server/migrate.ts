@@ -1,5 +1,5 @@
 import { GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, type Seat } from '../shared/board.ts';
-import { DEFAULT_RULES, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
+import { DEFAULT_RULES, DRAGON_EVERY_ROUNDS, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
 import { POINTS } from '../shared/scoring.ts';
 
 /** Brings a saved game up to date: board numbering first, then fields added since it was saved. */
@@ -44,6 +44,12 @@ export function upgradeGame(game: GameState): GameState {
   g.ambush ??= renamed.sirat ?? null;
   delete renamed.sirat;
   g.usedPowers = (g.usedPowers ?? []).map((c) => ((c as string) === 'sirat' ? 'ambush' : c));
+  // Events and the dragon start their count from now in older games.
+  g.event ??= null;
+  g.eventAt ??= g.turnNo + EVENT_EVERY_ROUNDS * g.active.length;
+  g.bounty ??= null;
+  g.dragon ??= null;
+  g.dragonAt ??= g.turnNo + DRAGON_EVERY_ROUNDS * g.active.length;
   // Roll-again cards were dropped: the phase that placed bridges also places boxes now, and a roll that
   // waited for a card or a pass is simply rolled again.
   const old = g as Omit<GameState, 'phase'> & { rerolls?: unknown; preRoll?: unknown; phase: string };

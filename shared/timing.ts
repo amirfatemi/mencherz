@@ -1,5 +1,5 @@
 import { HANGAR } from './board.ts';
-import type { Capture, GameEvent, MoveEvent, StepKind } from './rules.ts';
+import type { Capture, GameEvent, MoveEvent, RollEvent, StepKind } from './rules.ts';
 
 // Animation lengths in ms. The client plays them; the server waits for them before a bot acts.
 export const STEP_MS: Record<StepKind, number> = {
@@ -28,7 +28,7 @@ export const POWER_MS = 300;
 export function eventDuration(event: GameEvent | null | undefined, holdPasses = true): number {
   if (!event) return 0;
   if (event.type === 'roll') {
-    return ROLL_MS + (event.penalized.length ? CAPTURE_MS : 0) + (event.outcome === 'pass' && holdPasses ? PASS_HOLD_MS : 0);
+    return ROLL_MS + dragonMs(event) + (event.penalized.length ? CAPTURE_MS : 0) + (event.outcome === 'pass' && holdPasses ? PASS_HOLD_MS : 0);
   }
   if (event.type === 'bomb' || event.type === 'box' || event.type === 'bridge' || event.type === 'safe') return BOMB_MS;
   if (event.type === 'power' || event.type === 'vest') return POWER_MS;
@@ -36,6 +36,12 @@ export function eventDuration(event: GameEvent | null | undefined, holdPasses = 
   // Knocked-out pieces, the mover itself after a bomb, or a super bomb's blast fly back to the hangar.
   if (event.captures.length || event.to === HANGAR || event.bombed?.blast?.some((v) => !v.saved)) ms += CAPTURE_MS;
   return ms;
+}
+
+/** The dragon stepping along with a roll, square by square, and anything it ate flying home. */
+export function dragonMs(event: RollEvent): number {
+  if (!event.dragon) return 0;
+  return event.dice * STEP_MS.step + (event.dragon.eaten.length ? CAPTURE_MS : 0);
 }
 
 /** When step `i` of a move's path ends, in ms from the start of the move. Steps after an opened box wait for its reveal. */

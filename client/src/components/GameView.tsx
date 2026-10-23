@@ -230,7 +230,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   return (
     <div className="game">
       <div className="board-area">
-        <div className="board-frame">
+        <div className={`board-frame${stream.shake ? ' shake' : ''}`}>
           <Board
             game={game}
             seats={view.seats}
@@ -245,6 +245,11 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
             onTarget={(sq) => act(hidingBox ? 'game:box' : placing ? 'game:place' : 'game:bomb', sq)}
           />
           {stream.reveal && <BoxRevealCard key={stream.reveal.key} reveal={stream.reveal} seats={view.seats} />}
+          {stream.banner && (
+            <div key={stream.banner.key} className={`board-banner ${stream.banner.tone}`} role="status">
+              {stream.banner.text}
+            </div>
+          )}
           {paused && (
             <div className="paused-overlay">
               <div className="paused-card">

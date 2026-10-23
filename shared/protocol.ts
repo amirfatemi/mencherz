@@ -30,6 +30,8 @@ export interface RoomSettings {
   turnSeconds: number;
   /** Show players' reaction GIFs over their hangar after big moments. */
   gifs: boolean;
+  /** Cinematic moments: a shaking board for a super bomb, slow motion and a banner for the big knock-outs. */
+  cinematic: boolean;
   rules: Rules;
 }
 

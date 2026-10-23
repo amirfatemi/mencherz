@@ -1,6 +1,18 @@
 import { TRACK_LAST } from '../../../shared/board.ts';
 import { TITLES } from '../../../shared/awards.ts';
-import { AMBUSH_ROUNDS, BRIDGE_SPAN, POWER_EVERY_ROUNDS, SAFE_ROUNDS, SUPER_BOMB_REACH } from '../../../shared/rules.ts';
+import {
+  AMBUSH_ROUNDS,
+  BOUNTY,
+  BRIDGE_SPAN,
+  DRAGON_EVERY_ROUNDS,
+  DRAGON_PRIZE,
+  DRAGON_ROUNDS,
+  EVENT_EVERY_ROUNDS,
+  POWER_EVERY_ROUNDS,
+  SAFE_ROUNDS,
+  SUPER_BOMB_REACH,
+  WORLD_EVENTS,
+} from '../../../shared/rules.ts';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { BOX_REVEAL_MS, PASS_HOLD_MS } from '../../../shared/timing.ts';
 import { Modal } from './Modal.tsx';
@@ -269,6 +281,38 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
           </li>
         </ul>
 
+        <h3>اتفاق‌های غافلگیرکننده 🌪</h3>
+        <p>هر {fa(EVENT_EVERY_ROUNDS)} دور یکی از این اتفاق‌ها به‌طور تصادفی پیش می‌آید و با یک بنر و صدا اعلام می‌شود:</p>
+        <ul>
+          <li>🌪 طوفان: همهٔ پروازها {fa(WORLD_EVENTS.storm.rounds)} دور بسته‌اند (پل‌ها کار می‌کنند).</li>
+          <li>💰 باران طلا: تا {fa(WORLD_EVENTS.goldRain.rounds)} دور، رسیدن هر مهره به مرکز دو برابر امتیاز دارد.</li>
+          <li>🌋 زلزله: همهٔ بمب‌ها همان لحظه به خانه‌های دیگری می‌پرند.</li>
+          <li>🌙 شب تاریک: تا {fa(WORLD_EVENTS.darkNight.rounds)} دور، زدن مهره دو برابر امتیاز دارد.</li>
+          <li>🌫 مه: جعبه‌های جادو {fa(WORLD_EVENTS.fog.rounds)} دور دیده نمی‌شوند (ولی سر جایشان هستند).</li>
+        </ul>
+
+        <h3>جایزه روی سر نفر اول 🎯</h3>
+        <p>
+          کسی که امتیازش از همه بیشتر است، کنار آشیانه‌اش برچسب «MOST WANTED» می‌گیرد. هر کس یکی از مهره‌های او را بزند (یا با بمب منفجر
+          کند)، علاوه بر امتیاز زدن، جایزه را هم می‌گیرد. جایزه از {fa(BOUNTY.start)} شروع می‌شود و هر دوری که او همچنان اول بماند{' '}
+          {fa(BOUNTY.perRound)} امتیاز بیشتر می‌شود (تا {fa(BOUNTY.max)}). وقتی کسی جایزه را بگیرد، دوباره از {fa(BOUNTY.start)} شروع می‌شود.
+          اگر دو نفر با هم اول باشند، جایزه‌ای در کار نیست.
+        </p>
+
+        <h3>اژدها 🐉</h3>
+        <p>
+          هر {fa(DRAGON_EVERY_ROUNDS)} دور یک اژدها روی مسیر ظاهر می‌شود و {fa(DRAGON_ROUNDS)} دور می‌ماند. اژدها مال هیچ‌کس نیست و با تاس
+          همه حرکت می‌کند: اگر شما ۳ بیاورید سه خانه جلو می‌رود، و اگر نفر بعدی ۲ بیاورد دو خانه. هر مهره‌ای که اژدها رویش بایستد خورده
+          می‌شود و به آشیانه برمی‌گردد (مگر روی خانهٔ امن خودش باشد). ولی اگر مهرهٔ شما روی خود اژدها فرود بیاید، شکارش می‌کنید و{' '}
+          {fa(DRAGON_PRIZE)} امتیاز می‌گیرید.
+        </p>
+
+        <h3>لحظه‌های سینمایی 🎬</h3>
+        <p>
+          وقتی ابر بمب منفجر می‌شود صفحه می‌لرزد، و برای دابل کیل، زدن پادشاه و انتقام، حرکت کمی آهسته پخش می‌شود و یک بنر کوچک نشان داده
+          می‌شود. این را هم مثل بقیهٔ امکان‌ها می‌شود موقع ساختن بازی خاموش کرد.
+        </p>
+
         <h3>گزارش پایان بازی، مدال‌ها و لقب‌ها 🏅</h3>
         <p>
           آخر هر بازی، کنار رتبه‌ها و مدت بازی، گزارش بازی هم می‌آید: بهترین بازیکن 🏆، بهترین شکارچی 🏹، بزرگ‌ترین ضربه 🎯، طولانی‌ترین
@@ -282,6 +326,7 @@ export function HowToPlay({ onClose }: { onClose: () => void }) {
           <li>🎯 تک‌تیرانداز: یک زدن که سی امتیاز یا بیشتر بیارزد.</li>
           <li>💣 تخریب‌گر: منفجر کردن سه مهره یا بیشتر در یک بازی، با بمب، جعبه یا ابر بمب.</li>
           <li>🛡 شکست‌ناپذیر: هر چهار مهره را برسانید بی‌آنکه حتی یک مهره زده شود.</li>
+          <li>🐉 اژدهاکش: روی اژدها فرود بیایید و شکارش کنید.</li>
           <li>🔥 ققنوس: شش بار یا بیشتر زده شوید و باز هم اول یا دوم شوید.</li>
         </ul>
         <p>
