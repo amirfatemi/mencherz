@@ -41,25 +41,6 @@ export function HeroMedal({ kind, r }: { kind: HeroKind; r: number }) {
   );
 }
 
-/** A hero's portrait for its card: the medal on a burst of light. */
-export function HeroPortrait({ kind, size = 120 }: { kind: HeroKind; size?: number }) {
-  const look = HERO_LOOK[kind];
-  return (
-    <svg className="hero-portrait" viewBox="-60 -60 120 120" width={size} height={size} aria-hidden>
-      <defs>
-        <HeroDefs />
-      </defs>
-      <g className="hero-rays">
-        {Array.from({ length: 12 }, (_, i) => (
-          <path key={i} d="M0 0 L-6 -58 L6 -58 Z" fill={look.light} opacity={0.55} transform={`rotate(${i * 30})`} />
-        ))}
-      </g>
-      <circle r={50} fill="url(#hero-glow)" />
-      <HeroMedal kind={kind} r={40} />
-    </svg>
-  );
-}
-
 interface TokenProps {
   hero: Hero;
   seat: Seat;

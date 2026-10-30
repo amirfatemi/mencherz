@@ -1,4 +1,10 @@
 import { HERO_DEFUSE, HERO_STEAL, DRAGON_PRIZE, type HeroKind } from '../../shared/rules.ts';
+import archerArt from './assets/heroes/archer.webp';
+import engineerArt from './assets/heroes/engineer.webp';
+import frostArt from './assets/heroes/frost.webp';
+import guardianArt from './assets/heroes/guardian.webp';
+import riderArt from './assets/heroes/rider.webp';
+import thiefArt from './assets/heroes/thief.webp';
 
 const fa = (n: number) => n.toLocaleString('fa-IR');
 
@@ -15,6 +21,16 @@ export interface HeroLook {
   /** What it does, in Persian. */
   power: string;
 }
+
+/** Each hero's picture, for its card. */
+export const HERO_ART: Record<HeroKind, string> = {
+  archer: archerArt,
+  engineer: engineerArt,
+  guardian: guardianArt,
+  frost: frostArt,
+  thief: thiefArt,
+  rider: riderArt,
+};
 
 /** How each hero looks and what its card says. */
 export const HERO_LOOK: Record<HeroKind, HeroLook> = {
