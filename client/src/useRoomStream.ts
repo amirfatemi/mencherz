@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GOAL, HANGAR_SLOTS, TRACK_CELLS, piecePoint, type Point, type Seat } from '../../shared/board.ts';
+import { GOAL, HANGAR, HANGAR_CENTERS, HANGAR_SLOTS, TRACK_CELLS, type Point, type Seat } from '../../shared/board.ts';
 import type { RoomUpdate, RoomView } from '../../shared/protocol.ts';
 import { REACTION_MS } from '../../shared/reactions.ts';
-import { blastOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind } from '../../shared/rules.ts';
-import type { GameState, WorldEventKind } from '../../shared/rules.ts';
+import { HERO, blastOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind } from '../../shared/rules.ts';
+import type { Bomb, GameState, WorldEventKind } from '../../shared/rules.ts';
 import { POINTS, killStreakName } from '../../shared/scoring.ts';
 import {
   BOMB_MS,
   BOX_REVEAL_MS,
   PASS_HOLD_MS,
   CAPTURE_MS,
+  COUNTDOWN_MS,
   DRAGON_PAUSE_MS,
+  HERO_MS,
   ROLL_MS,
   STEP_MS,
   arrivalAt,
@@ -20,7 +22,9 @@ import {
   settledAt,
   stepEnd,
 } from '../../shared/timing.ts';
-import { dragonPoint, heading, lerpAngle, restHeading } from './geometry.ts';
+import { seatName } from './events.ts';
+import { dragonPoint, heading, lerpAngle, movePoint, restHeading } from './geometry.ts';
+import { HERO_LOOK } from './heroes.ts';
 import { sfx } from './sound.ts';
 import { getSocket, call } from './socket.ts';
 
@@ -47,6 +51,15 @@ export interface BoxReveal {
   seat: Seat;
   box: BoxHit;
 }
+
+/** The 1, 2, 3 counted over something about to go off. */
+export interface Countdown {
+  n: number;
+  at: Point;
+}
+
+/** A hero's moves are keyed like its first move, forward or back. */
+const pieceKey = (seat: Seat, piece: number) => `${seat}:${Math.min(piece, HERO)}`;
 
 /** A short banner across the board for a big moment. */
 export interface Banner {
@@ -80,9 +93,17 @@ function moveBanner(ev: MoveEvent): { at: number; text: string; tone: Banner['to
   const revenge = ev.captures.find((c) => c.revenge);
   if (revenge) return { at: captureAt(ev, revenge), text: '⚔️ انتقام!', tone: 'kill', slow: true };
   if (ev.dragon) {
-    const text = ev.dragon.king ? `👑🐉 پادشاه اژدها را کشت! +${ev.dragon.points}` : `🐉 اژدها شکار شد! +${ev.dragon.points}`;
+    const killer = ev.hero ? `${HERO_LOOK[ev.hero.kind].face} ${HERO_LOOK[ev.hero.kind].fa}` : '👑 پادشاه';
+    const text = ev.dragon.king ? `${killer} اژدها را کشت! +${ev.dragon.points}` : `🐉 اژدها شکار شد! +${ev.dragon.points}`;
     return { at: arrivalAt(ev), text, tone: 'gold', slow: false };
   }
+  const hero = ev.hero;
+  if (hero?.stolen.length) {
+    const took = hero.stolen.reduce((n, x) => n + x.points, 0) + (hero.bounty ?? 0);
+    return { at: arrivalAt(ev), text: `🥷 دزدی! +${took}`, tone: 'gold', slow: false };
+  }
+  if (hero?.froze.length) return { at: arrivalAt(ev), text: '❄️ یخ زدند!', tone: 'event', slow: false };
+  if (hero?.defused.length) return { at: arrivalAt(ev), text: `🧨 بمب خنثی شد! +${hero.defused.length * 5}`, tone: 'gold', slow: false };
   const bounty = ev.captures.find((c) => c.bounty);
   if (bounty) return { at: captureAt(ev, bounty), text: `🎯 جایزه گرفت! +${bounty.bounty}`, tone: 'gold', slow: false };
   return null;
@@ -103,7 +124,7 @@ function dragonTimeline(ev: RollEvent): Timeline {
   const tl: Timeline = { motions: [{ key: 'dragon', startAngle: 0, segments }], booms: [], total: end };
   for (const e of d.eaten) {
     tl.motions.push(returnHome(e.seat, e.piece, e.from, end));
-    tl.booms.push({ at: piecePoint(e.seat, e.piece, e.from), start: end });
+    tl.booms.push({ at: movePoint(e.seat, e.piece, e.from), start: end });
     tl.total = end + CAPTURE_MS;
   }
   return tl;
@@ -115,7 +136,19 @@ function dragonBlastTimeline(blast: NonNullable<GameState['dragonBlast']>): Time
   const stay: Motion = { key: 'dragon', startAngle: 0, segments: [{ from: here, to: here, start: 0, dur: CAPTURE_MS, kind: 'step' }] };
   const tl: Timeline = { motions: [stay], booms: [{ at: here, start: 0 }], total: CAPTURE_MS };
   for (const v of blast.hit) {
-    tl.booms.push({ at: piecePoint(v.seat, v.piece, v.from), start: 0 });
+    tl.booms.push({ at: movePoint(v.seat, v.piece, v.from), start: 0 });
+    if (!v.saved) tl.motions.push(returnHome(v.seat, v.piece, v.from, 0));
+  }
+  return tl;
+}
+
+/** The engineer going off: a blast where it stood, it gone, and what it took flying home. */
+function heroBlastTimeline(blast: NonNullable<GameState['heroBlast']>): Timeline {
+  const here = TRACK_CELLS[blast.square];
+  const gone: Motion = { key: pieceKey(blast.seat, HERO), startAngle: 0, segments: [{ from: here, to: HANGAR_CENTERS[blast.seat], start: 0, dur: CAPTURE_MS, kind: 'capture' }] };
+  const tl: Timeline = { motions: [gone], booms: [{ at: here, start: 0 }], total: CAPTURE_MS };
+  for (const v of blast.hit) {
+    tl.booms.push({ at: movePoint(v.seat, v.piece, v.from), start: 0 });
     if (!v.saved) tl.motions.push(returnHome(v.seat, v.piece, v.from, 0));
   }
   return tl;
@@ -176,7 +209,7 @@ function scoreMoments(ev: MoveEvent, cinematic: boolean): ScoreMoment[] {
     const spree = cinematic ? null : killStreakName(c.streak ?? 1);
     const marks = `${c.king ? '👑 ' : ''}${c.revenge ? '⚔️ ' : ''}`;
     return {
-      at: piecePoint(c.seat, c.piece, c.from),
+      at: movePoint(c.seat, c.piece, c.from),
       delay: captureAt(ev, c),
       text: spree ? `${spree}! ${marks}+${c.points}` : `${marks}+${c.points}`,
       seat: ev.seat,
@@ -187,9 +220,18 @@ function scoreMoments(ev: MoveEvent, cinematic: boolean): ScoreMoment[] {
     const text = ev.bridge.kind === 'heaven' ? '🌈 +10' : `🔥 ${ev.bridge.to - ev.bridge.from}`;
     out.push({ at: TRACK_CELLS[ev.bridge.square], delay: stepEnd(ev, ev.bridge.atStep - 1), text, seat: ev.seat, big: false });
   }
-  if (ev.to === GOAL) {
+  if (ev.to === GOAL && !ev.hero) {
     const text = ev.bonus ? `+${POINTS.home} · 🏆 +${ev.bonus}` : `+${POINTS.home}`;
-    out.push({ at: piecePoint(ev.seat, ev.piece, GOAL), delay: arrivalAt(ev), text, seat: ev.seat });
+    out.push({ at: movePoint(ev.seat, ev.piece, GOAL), delay: arrivalAt(ev), text, seat: ev.seat });
+  }
+  const hero = ev.hero;
+  if (hero) {
+    for (const sq of hero.defused) {
+      const i = ev.path.findIndex((step) => step.pos === sq);
+      out.push({ at: TRACK_CELLS[sq], delay: stepEnd(ev, i), text: '🧨 +5', seat: ev.seat });
+    }
+    const took = hero.stolen.reduce((n, x) => n + x.points, 0) + (hero.bounty ?? 0);
+    if (hero.stolen.length) out.push({ at: TRACK_CELLS[ev.to], delay: arrivalAt(ev), text: `💰 +${took}`, seat: ev.seat });
   }
   const b = ev.bombed;
   if (b) {
@@ -198,28 +240,29 @@ function scoreMoments(ev: MoveEvent, cinematic: boolean): ScoreMoment[] {
     const bomber = b.owner ?? ev.seat;
     out.push({ at: TRACK_CELLS[b.square], delay: stepEnd(ev, b.atStep), text, seat: b.saved ? ev.seat : bomber });
     for (const v of b.blast ?? []) {
-      const at = piecePoint(v.seat, v.piece, v.from);
-      out.push({ at, delay: stepEnd(ev, b.atStep), text: v.saved ? '🦺 Saved!' : v.points ? `💥 +${v.points}` : '💥', seat: v.saved ? v.seat : bomber });
+      out.push({ at: movePoint(v.seat, v.piece, v.from), delay: stepEnd(ev, b.atStep), text: v.saved ? '🦺 Saved!' : v.points ? `💥 +${v.points}` : '💥', seat: v.saved ? v.seat : bomber });
     }
   }
   // What a magic box held is shown on its own card (see BoxReveal), not as a popup.
   return out;
 }
 
+/** A knocked-out piece flying back to its hangar; a hero flies to its player's hangar and is gone. */
 function returnHome(seat: Seat, piece: number, from: number, start: number): Motion {
-  const at = piecePoint(seat, piece, from);
+  const at = movePoint(seat, piece, from);
+  const hero = piece >= HERO;
   return {
-    key: `${seat}:${piece}`,
-    startAngle: restHeading(seat, piece, from),
-    segments: [{ from: at, to: HANGAR_SLOTS[seat][piece], start, dur: CAPTURE_MS, kind: 'capture' }],
+    key: pieceKey(seat, piece),
+    startAngle: hero ? 0 : restHeading(seat, piece, from),
+    segments: [{ from: at, to: hero ? HANGAR_CENTERS[seat] : HANGAR_SLOTS[seat][piece], start, dur: CAPTURE_MS, kind: 'capture' }],
   };
 }
 
 function moveTimeline(ev: MoveEvent): Timeline {
   const segments: Segment[] = [];
-  let from = piecePoint(ev.seat, ev.piece, ev.from);
+  let from = movePoint(ev.seat, ev.piece, ev.from);
   ev.path.forEach((step, i) => {
-    const to = piecePoint(ev.seat, ev.piece, step.pos);
+    const to = movePoint(ev.seat, ev.piece, step.pos);
     const dur = STEP_MS[step.kind];
     // stepEnd counts the pause while an opened magic box shows its contents; the piece waits on the box.
     segments.push({ from, to, start: stepEnd(ev, i) - dur, dur, kind: step.kind });
@@ -227,14 +270,16 @@ function moveTimeline(ev: MoveEvent): Timeline {
   });
   const t = settledAt(ev);
   const tl: Timeline = {
-    motions: [{ key: `${ev.seat}:${ev.piece}`, startAngle: restHeading(ev.seat, ev.piece, ev.from), segments }],
+    motions: [{ key: pieceKey(ev.seat, ev.piece), startAngle: ev.hero ? 0 : restHeading(ev.seat, ev.piece, ev.from), segments }],
     booms: [],
     total: t,
   };
+  // A hero whose lap is done leaves with a puff where it stopped (the engineer goes off later, with a countdown).
+  if (ev.hero?.ends && ev.hero.kind !== 'engineer' && ev.to !== HANGAR) tl.booms.push({ at: TRACK_CELLS[ev.to], start: t });
   for (const c of ev.captures) {
     const start = captureAt(ev, c);
     tl.motions.push(returnHome(c.seat, c.piece, c.from, start));
-    tl.booms.push({ at: piecePoint(c.seat, c.piece, c.from), start });
+    tl.booms.push({ at: movePoint(c.seat, c.piece, c.from), start });
     tl.total = Math.max(tl.total, start + CAPTURE_MS);
   }
   const blast = blastOf(ev);
@@ -250,7 +295,7 @@ function moveTimeline(ev: MoveEvent): Timeline {
     if (v.saved) continue;
     const at = stepEnd(ev, ev.bombed!.atStep);
     tl.motions.push(returnHome(v.seat, v.piece, v.from, at));
-    tl.booms.push({ at: piecePoint(v.seat, v.piece, v.from), start: at });
+    tl.booms.push({ at: movePoint(v.seat, v.piece, v.from), start: at });
     tl.total = Math.max(tl.total, at + CAPTURE_MS);
   }
   return tl;
@@ -260,7 +305,7 @@ function penaltyTimeline(ev: RollEvent): Timeline {
   const tl: Timeline = { motions: [], booms: [], total: CAPTURE_MS };
   for (const p of ev.penalized) {
     tl.motions.push(returnHome(ev.seat, p.piece, p.from, 0));
-    tl.booms.push({ at: piecePoint(ev.seat, p.piece, p.from), start: 0 });
+    tl.booms.push({ at: movePoint(ev.seat, p.piece, p.from), start: 0 });
   }
   return tl;
 }
@@ -359,6 +404,9 @@ export function useRoomStream(code: string) {
   const [reveal, setReveal] = useState<BoxReveal | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [shake, setShake] = useState(false);
+  const [countdown, setCountdown] = useState<Countdown | null>(null);
+  /** The engineer's last super bomb, shown going down before the state with it comes in. */
+  const [dropped, setDropped] = useState<Bomb | null>(null);
   /**
    * A roll that couldn't be played. Among people it stays on the dice until the next roll; with a computer
    * in the game it shows for a few seconds while the next player waits (`wait`), so people see it before a
@@ -375,6 +423,7 @@ export function useRoomStream(code: string) {
   const commit = useCallback((room: RoomView) => {
     setAnim(null);
     setLanded(false);
+    setDropped(null);
     if (current.current && room.serverNow < current.current.serverNow) return;
     current.current = room;
     clockOffset.current = room.serverNow - Date.now();
@@ -439,19 +488,36 @@ export function useRoomStream(code: string) {
           } else if (after.dragon && !before.dragon) {
             showBanner('🐉 اژدها آمد! مراقب باشید', 'event');
             sfx.roar();
+          } else {
+            const earned = after.active.find((seat) => (after.heroPicks?.[seat] ?? 0) > (before.heroPicks?.[seat] ?? 0));
+            if (earned !== undefined) showBanner(`🦸 ${seatName(u.room.seats, earned)} یک هیرو گرفت!`, 'gold');
           }
         };
-        // The dragon exploding at the turn's end plays just before the new state shows.
-        const blast = !skip && before && u.room.game?.dragonBlast && u.room.game.dragonBlast.n !== before.dragonBlast?.n ? u.room.game.dragonBlast : null;
+        // The dragon or the engineer going off: it stays where it is for a 1, 2, 3, then blows, just before the new state shows.
+        const after = u.room.game;
+        const blasts: { at: Point; text: string; timeline: Timeline }[] = [];
+        if (!skip && before && after?.dragonBlast && after.dragonBlast.n !== before.dragonBlast?.n) {
+          blasts.push({ at: dragonPoint(after.dragonBlast.at), text: '🐉💥 اژدها منفجر شد!', timeline: dragonBlastTimeline(after.dragonBlast) });
+        }
+        if (!skip && before && after?.heroBlast && after.heroBlast.n !== before.heroBlast?.n) {
+          blasts.push({ at: TRACK_CELLS[after.heroBlast.square], text: '👷💥 مهندس بمب منفجر شد!', timeline: heroBlastTimeline(after.heroBlast) });
+        }
         const explode = async () => {
-          if (!blast) return;
-          showBanner('🐉💥 اژدها منفجر شد!', 'kill');
-          sfx.boom();
-          if (cinematic) {
-            setShake(true);
-            setTimeout(() => setShake(false), 650);
+          for (const b of blasts) {
+            for (let n = 1; n <= 3; n++) {
+              setCountdown({ n, at: b.at });
+              sfx.tick(n === 3);
+              await sleep(COUNTDOWN_MS / 3 / speed);
+            }
+            setCountdown(null);
+            showBanner(b.text, 'kill');
+            sfx.boom();
+            if (cinematic) {
+              setShake(true);
+              setTimeout(() => setShake(false), 650);
+            }
+            await play(b.timeline, speed);
           }
-          await play(dragonBlastTimeline(blast), speed);
         };
         if (ev && current.current?.game && !skip) {
           setAnimating(true);
@@ -508,6 +574,24 @@ export function useRoomStream(code: string) {
             commit(u.room);
             announce();
             continue;
+          } else if (ev.type === 'hero') {
+            // A hero comes on with a fanfare and a banner, and grows in on its square (CSS).
+            const look = HERO_LOOK[ev.kind];
+            sfx.hero();
+            commit(u.room);
+            announce();
+            showBanner(`${look.face} ${look.fa} آمد! ${look.badge}`, 'gold');
+            await sleep(HERO_MS / speed);
+            continue;
+          } else if (ev.type === 'bomb' && ev.ends) {
+            // The engineer's last super bomb goes down, then it counts to three where it stands and goes off.
+            setDropped({ square: ev.square, owner: ev.seat, super: true });
+            sfx.place();
+            await sleep(BOMB_MS / speed);
+            await explode();
+            commit(u.room);
+            announce();
+            continue;
           } else if (ev.type === 'bomb' || ev.type === 'box' || ev.type === 'bridge' || ev.type === 'safe') {
             // The bomb or box drops in (CSS) once the new state is shown.
             sfx.place();
@@ -557,6 +641,7 @@ export function useRoomStream(code: string) {
       setAnimating(false);
       setRolling(false);
       setLanded(false);
+      setCountdown(null);
       setHeld((h) => (h?.wait ? null : h));
     }
   }, [commit, play, showBanner]);
@@ -599,5 +684,5 @@ export function useRoomStream(code: string) {
 
   const now = useCallback(() => Date.now() + clockOffset.current, []);
 
-  return { view, error, anim, rolling, landed, lastRoll, held, animating, popups, reactions, reveal, banner, shake, now };
+  return { view, error, anim, rolling, landed, lastRoll, held, animating, popups, reactions, reveal, banner, shake, countdown, dropped, now };
 }

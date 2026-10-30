@@ -77,6 +77,12 @@ export interface Rules {
    * takes no bridge.
    */
   dragon: boolean;
+  /**
+   * Heroes: a fifth piece a player picks (see HERO_KINDS) on reaching each of HERO_THRESHOLDS points, after a
+   * triple kill, and, once all four pieces are home, every HERO_FINISHED_ROUNDS rounds. It goes round the track
+   * only, never up a home column, for HERO_LIFE squares, each kind with its own power. Moving it uses the roll.
+   */
+  heroes: boolean;
   /** Stop when the first player finishes, or play on until only one is left (the full ranking). */
   playUntil: 'winner' | 'all';
   /** Rank by points (pieces home and knock-outs), or by who brought everything home first. */
@@ -101,15 +107,18 @@ export const DEFAULT_RULES: Rules = {
   events: true,
   bounty: true,
   dragon: true,
+  heroes: true,
   playUntil: 'all',
   winBy: 'points',
 };
 
 /**
- * 'place': putting down what was picked on a power square (a bridge, a magic box or a safe square).
+ * 'place': putting down what was picked on a power square (a bridge, a magic box or a safe square), or the
+ * engineer's last super bomb.
  * 'vest': picking which piece wears a vest from a magic box.
+ * 'hero': picking a hero, at the start of a turn.
  */
-export type Phase = 'box' | 'roll' | 'move' | 'bomb' | 'power' | 'place' | 'vest' | 'over';
+export type Phase = 'box' | 'roll' | 'move' | 'bomb' | 'power' | 'place' | 'vest' | 'hero' | 'over';
 
 export interface Bomb {
   /** Absolute track index (0..51), as in TRACK. */
@@ -171,7 +180,7 @@ export const DRAGON_PATH: readonly DragonCell[] = (() => {
   return out;
 })();
 
-/** The pieces standing on a cell of the dragon's route. */
+/** The pieces and heroes standing on a cell of the dragon's route. A hero's `from` is its square. */
 function piecesOn(s: GameState, cell: DragonCell): { seat: Seat; piece: number; from: number }[] {
   const out: { seat: Seat; piece: number; from: number }[] = [];
   for (const seat of s.active) {
@@ -179,6 +188,8 @@ function piecesOn(s: GameState, cell: DragonCell): { seat: Seat; piece: number; 
       const here = 'square' in cell ? isOnTrack(p) && trackIndex(seat, p) === cell.square : seat === cell.seat && p === cell.pos;
       if (here) out.push({ seat, piece: j, from: p });
     });
+    const h = s.heroes?.[seat];
+    if (h && 'square' in cell && h.square === cell.square) out.push({ seat, piece: HERO, from: h.square });
   }
   return out;
 }
@@ -297,6 +308,61 @@ export const POWER_EVERY_ROUNDS = 5;
 /** Turns in a row without a piece out of the hangar that earn a sad reaction. */
 export const STUCK_TURNS = 3;
 
+/**
+ * The heroes. Each goes round the track for HERO_LIFE squares, then it's gone; a player has each kind once a game.
+ * - archer: goes forward or back, as its player likes, with every roll.
+ * - engineer: defuses every bomb it passes or stops on (HERO_DEFUSE each) and no bomb hurts it. At the end of its
+ *   life its player puts down a super bomb, then it goes off where it stands (DRAGON_BLAST_REACH either side).
+ * - guardian: its player's pieces on its square and GUARD_REACH either side can't be knocked out, bombed or eaten.
+ * - frost: where it stops, other colours' pieces and heroes within FROST_REACH freeze for a turn.
+ * - thief: knocks nobody out; where it stops it takes HERO_STEAL points and the vests of each other colour there,
+ *   and the bounty if the leader is one of them. A magic box is always good for it (points or a vest).
+ * - rider: the dragon leaves its player's pieces alone, and the rider slays it as a king would.
+ */
+export type HeroKind = 'archer' | 'engineer' | 'guardian' | 'frost' | 'thief' | 'rider';
+export const HERO_KINDS: readonly HeroKind[] = ['archer', 'engineer', 'guardian', 'frost', 'thief', 'rider'];
+/** Points at which a player earns a hero, each once. */
+export const HERO_THRESHOLDS: readonly number[] = [60, 140, 240];
+/** How many squares a hero goes before it's gone: once round the track. */
+export const HERO_LIFE = TRACK_LEN;
+/** Knocking out a hero, by any means. */
+export const HERO_KILL = 15;
+export const HERO_DEFUSE = 5;
+export const HERO_STEAL = 10;
+export const FROST_REACH = 2;
+export const GUARD_REACH = 1;
+/** Once all its pieces are home, a player gets a hero this many rounds after finishing, and after each one goes. */
+export const HERO_FINISHED_ROUNDS = 5;
+/** The piece number a hero's move goes by, and the archer's move back. */
+export const HERO = 4;
+export const HERO_BACK = 5;
+/** What a magic box can hold for the thief. */
+const THIEF_BOX: readonly BoxOutcome[] = ['plus', 'vest'];
+
+export interface Hero {
+  kind: HeroKind;
+  /** Absolute track square. */
+  square: number;
+  /** Squares it has left to go. */
+  left: number;
+  /** Its knock-outs, for kill streaks. */
+  kills: number;
+  /** Vests it wears (the thief's): each stops a bomb. */
+  vests: number;
+  /** Turns of its player's it can't move (frost). */
+  frozen: number;
+}
+
+/** A piece or hero caught in a blast: the dragon's, or the engineer's. A hero's `from` is its square. */
+export interface BlastVictim {
+  seat: Seat;
+  piece: number;
+  from: number;
+  saved: boolean;
+  /** Points for whoever set it off. */
+  points?: number;
+}
+
 export interface SeatStats {
   points: number;
   /** Pieces brought to the centre. */
@@ -380,16 +446,30 @@ export interface GameState {
   /** Who has the bounty on them, and what knocking out one of their pieces pays on top. */
   bounty: { seat: Seat; value: number } | null;
   /**
-   * The dragon: where it is along DRAGON_PATH, how many cells of its lap it has gone, and whether the last
-   * roll it moved with was a six (a second one leaves a bomb).
+   * The dragon: where it is along DRAGON_PATH, how many cells of its lap it has gone, and how many sixes in a
+   * row it has moved with (a second leaves a bomb, a third a super bomb).
    */
-  dragon: { at: number; moved: number; six: boolean } | null;
+  dragon: { at: number; moved: number; sixes: number } | null;
   /** The turn number the next dragon comes. */
   dragonAt: number;
   /** A king slew the dragon: no more dragons this game. */
   dragonGone: boolean;
   /** The dragon's last explosion, numbered so it's shown once: where, and what it took (or a vest saved). */
-  dragonBlast: { n: number; at: number; hit: { seat: Seat; piece: number; from: number; saved: boolean }[] } | null;
+  dragonBlast: { n: number; at: number; hit: BlastVictim[] } | null;
+  /** Each seat's hero on the board. */
+  heroes: (Hero | null)[];
+  /** Heroes each seat has earned and not yet picked. */
+  heroPicks: number[];
+  /** The hero kinds each seat has had this game. */
+  heroesUsed: HeroKind[][];
+  /** How many of HERO_THRESHOLDS each seat has reached. */
+  heroMilestones: number[];
+  /** For a seat with every piece home: the turn number it earns its next hero. */
+  heroAt: number[];
+  /** The engineer at the end of its life, waiting for its player to put down its super bomb. */
+  heroEnding: Seat | null;
+  /** The engineer's last blast, numbered so it's shown once. */
+  heroBlast: { n: number; seat: Seat; square: number; hit: BlastVictim[] } | null;
   /** How many surprise events there have been. */
   eventN?: number;
   /** Turns in a row each seat had nothing to move and no piece out of the hangar. */
@@ -436,6 +516,8 @@ export interface BombHit {
   points: number;
   /** A protective vest took the blast: the piece carries on and the vest is used up. */
   saved: boolean;
+  /** It was its guardian that saved it, not a vest. */
+  guarded?: boolean;
   revenge: boolean;
   /** The piece blown up was a king. */
   king: boolean;
@@ -467,6 +549,8 @@ export interface BoxHit {
   outcome?: BoxOutcome;
   /** It was a bomb and a vest stopped it. */
   saved: boolean;
+  /** It was its guardian that stopped it, not a vest. */
+  guarded?: boolean;
   /** Points for the box's owner when its bomb goes off. */
   points: number;
   revenge: boolean;
@@ -504,6 +588,24 @@ export interface MovePlan {
   power?: boolean;
   /** The piece landed on the dragon and slew it, for DRAGON_PRIZE (in points); a king does for good. */
   dragon?: { at: number; atStep: number; points: number; king: boolean };
+  /** A hero's move. Its `from`, `to` and `path` positions are absolute track squares; `to` is HANGAR when a bomb got it. */
+  hero?: HeroMove;
+}
+
+export interface HeroMove {
+  kind: HeroKind;
+  /** The archer going back. */
+  back: boolean;
+  /** Squares of the bombs the engineer defused. */
+  defused: number[];
+  /** What the thief took from each colour where it stopped. */
+  stolen: { seat: Seat; points: number; vests: number }[];
+  /** The bounty the thief took. */
+  bounty?: number;
+  /** What the frost froze where it stopped. */
+  froze: { seat: Seat; piece: number }[];
+  /** Its life is over with this move. */
+  ends: boolean;
 }
 
 export type RollOutcome = 'move' | 'pass' | 'again' | 'forfeit' | 'penalty';
@@ -525,7 +627,16 @@ export interface RollEvent {
    * its lap ends there), the pieces it ate where it stopped, the square of a bomb it left there, and whether its
    * lap ended, so it exploded (see dragonBlast).
    */
-  dragon?: { from: number; to: number; steps: number; eaten: { seat: Seat; piece: number; from: number }[]; bomb?: number; exploded?: boolean };
+  dragon?: {
+    from: number;
+    to: number;
+    steps: number;
+    eaten: { seat: Seat; piece: number; from: number }[];
+    bomb?: number;
+    /** The bomb it left is a super bomb: three sixes in a row. */
+    superBomb?: boolean;
+    exploded?: boolean;
+  };
 }
 
 export interface PowerEvent {
@@ -561,8 +672,18 @@ export interface BombEvent {
   type: 'bomb';
   seat: Seat;
   square: number;
-  /** A super bomb, from a power square. */
+  /** A super bomb, from a power square, or the engineer's last. */
   super?: boolean;
+  /** The engineer put it down at the end of its life, and went off (see heroBlast). */
+  ends?: boolean;
+}
+
+/** A hero picked: it comes on at its player's first track square. */
+export interface HeroEvent {
+  type: 'hero';
+  seat: Seat;
+  kind: HeroKind;
+  square: number;
 }
 
 export interface BoxEvent {
@@ -580,7 +701,7 @@ export interface MoveEvent extends MovePlan {
   gameOver: boolean;
 }
 
-export type GameEvent = RollEvent | MoveEvent | BombEvent | BoxEvent | PowerEvent | BridgeEvent | SafeEvent | VestEvent;
+export type GameEvent = RollEvent | MoveEvent | BombEvent | BoxEvent | PowerEvent | BridgeEvent | SafeEvent | VestEvent | HeroEvent;
 
 /** `rand(n)` gives an integer in [0, n). */
 export type Rand = (n: number) => number;
@@ -644,6 +765,13 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     dragonAt: 1 + DRAGON_FIRST_ROUNDS * order.length,
     dragonGone: false,
     dragonBlast: null,
+    heroes: SEATS.map(() => null),
+    heroPicks: SEATS.map(() => 0),
+    heroesUsed: SEATS.map(() => []),
+    heroMilestones: SEATS.map(() => 0),
+    heroAt: SEATS.map(() => 0),
+    heroEnding: null,
+    heroBlast: null,
     stuck: SEATS.map(() => 0),
     turnNo: 1,
     seq: 0,
@@ -658,13 +786,32 @@ function movePower(s: GameState, rand: Rand): void {
   const flights = new Set(SEATS.map((seat) => trackIndex(seat, FLIGHT_FROM)));
   const free = freeSquares(s).filter((i) => !flights.has(i));
   s.power = free.length ? [free[rand(free.length)]] : [];
-  const playing = s.active.filter((x) => !s.ranking.includes(x)).length;
-  s.powerMovesAt = s.turnNo + POWER_EVERY_ROUNDS * Math.max(1, playing);
+  s.powerMovesAt = s.turnNo + roundsOf(s, POWER_EVERY_ROUNDS);
 }
 
-/** The turn number a power used now runs until: that many rounds of the players still playing. */
+/** The turn number a power used now runs until: that many rounds of the players taking turns. */
 function holdUntil(s: GameState, rounds: number): number {
-  return s.turnNo + rounds * Math.max(1, s.active.filter((x) => !s.ranking.includes(x)).length);
+  return s.turnNo + roundsOf(s, rounds);
+}
+
+/** Hero kinds a seat hasn't had yet this game. */
+export function heroOptions(state: GameState, seat: Seat): HeroKind[] {
+  return HERO_KINDS.filter((k) => !(state.heroesUsed?.[seat] ?? []).includes(k));
+}
+
+/**
+ * Whether a seat takes turns: still playing, or with every piece home but a hero on the board or one to pick,
+ * so it's never just out of the game.
+ */
+export function takesTurns(state: GameState, seat: Seat): boolean {
+  if (!state.ranking.includes(seat)) return true;
+  if (!state.rules.heroes) return false;
+  return !!state.heroes?.[seat] || ((state.heroPicks?.[seat] ?? 0) > 0 && heroOptions(state, seat).length > 0);
+}
+
+/** Rounds of the seats taking turns, in turns. */
+function roundsOf(s: GameState, rounds: number): number {
+  return rounds * Math.max(1, s.active.filter((x) => takesTurns(s, x)).length);
 }
 
 /**
@@ -731,11 +878,105 @@ export function wallSquares(state: GameState): number[] {
   return [...count].filter(([, n]) => n > 1).map(([k]) => Number(k.split(':')[1]));
 }
 
+/** Track squares apart, the shorter way round. */
+const apart = (a: number, b: number) => Math.min((a - b + TRACK_LEN) % TRACK_LEN, (b - a + TRACK_LEN) % TRACK_LEN);
+
+/** Whether a piece of `seat` on track square `square` is under its guardian's watch: it can't be knocked out, bombed or eaten. */
+function guarded(state: GameState, seat: Seat, square: number): boolean {
+  const h = state.heroes?.[seat];
+  return h?.kind === 'guardian' && apart(h.square, square) <= GUARD_REACH;
+}
+
+/** Vests a piece wears; a hero's are its own. */
+const vestsOf = (state: GameState, seat: Seat, piece: number) =>
+  piece >= HERO ? (state.heroes?.[seat]?.vests ?? 0) : (state.vested?.[seat]?.[piece] ?? 0);
+
+function useVest(s: GameState, seat: Seat, piece: number): void {
+  if (piece >= HERO) s.heroes[seat]!.vests--;
+  else s.vested[seat][piece]--;
+}
+
+/** Whether the dragon stands on this absolute track square. */
+function dragonOn(state: GameState, square: number): boolean {
+  const cell = state.dragon ? DRAGON_PATH[state.dragon.at] : undefined;
+  return !!cell && 'square' in cell && cell.square === square;
+}
+
+/**
+ * A knock-out's points: by how far the victim had come, times REVENGE when the victim last knocked out one of
+ * the hitter's pieces, KING when the victim is a king, and the moving piece's kill streak (bombs have none),
+ * capped at the biggest award. A hero is worth HERO_KILL. The dragon's bombs score for nobody.
+ */
+function worth(state: GameState, hitter: Seat | null, victim: Seat, victimPiece: number, pos: number, streak = 0) {
+  const king = isKing(state, victimPiece);
+  if (hitter === null) return { points: 0, revenge: false, king };
+  // The leader's bounty comes on top, for whoever knocks out one of their pieces.
+  const bounty = state.rules.bounty && state.bounty?.seat === victim && hitter !== victim ? state.bounty.value : 0;
+  const extra = bounty ? { bounty } : {};
+  if (victimPiece >= HERO) return { points: HERO_KILL + bounty, revenge: false, king: false, ...extra };
+  const revenge = state.lastHitBy?.[hitter] === victim;
+  const night = state.event?.kind === 'darkNight' ? EVENT_BOOST : 1;
+  const times = (revenge ? REVENGE : 1) * (king ? KING : 1) * killStreakBonus(streak) * night;
+  const points = Math.min(POINTS.firstHome, Math.round(captureValue(pos) * times) + bounty);
+  return { points, revenge, king, ...extra };
+}
+
+/**
+ * Everyone `seat` knocks out by landing on track square `square`: other colours' pieces and heroes, unless on
+ * their own safe square or (pieces) under their guardian's watch. `taken` (keys "seat:piece") are already out,
+ * and the mover's kill streak counts on from `streakFrom`.
+ */
+function knockOutsAt(state: GameState, seat: Seat, square: number, taken: Set<string>, streakFrom: number, atStep: number): Capture[] {
+  const out: Capture[] = [];
+  const hit = (other: Seat, piece: number, from: number) => {
+    taken.add(`${other}:${piece}`);
+    const streak = streakFrom + out.length + 1;
+    out.push({ seat: other, piece, from, atStep, byFlight: false, streak, ...worth(state, seat, other, piece, from, streak) });
+  };
+  for (const other of state.active) {
+    if (other === seat || isSafe(state, other, square)) continue;
+    state.pieces[other].forEach((p, j) => {
+      if (taken.has(`${other}:${j}`) || !isOnTrack(p) || trackIndex(other, p) !== square || guarded(state, other, square)) return;
+      hit(other, j, p);
+    });
+    const h = state.heroes?.[other];
+    if (h && h.square === square && !taken.has(`${other}:${HERO}`)) hit(other, HERO, square);
+  }
+  return out;
+}
+
+/**
+ * The pieces and heroes on track squares within reach of a super bomb on `center`: anyone's, the owner's too,
+ * unless on their own safe square, under their guardian's watch, the engineer (no bomb hurts it), or in `skip`.
+ * A vest saves its wearer.
+ */
+function blastAround(state: GameState, owner: Seat | null, center: number, skip: Set<string>): BlastHit[] {
+  const out: BlastHit[] = [];
+  const add = (other: Seat, piece: number, from: number) => {
+    const saved = vestsOf(state, other, piece) > 0;
+    const hit = saved || other === owner ? { points: 0, revenge: false } : worth(state, owner, other, piece, from);
+    out.push({ seat: other, piece, from, saved, points: hit.points, revenge: hit.revenge, king: isKing(state, piece) });
+  };
+  for (const other of state.active) {
+    state.pieces[other].forEach((p, j) => {
+      if (skip.has(`${other}:${j}`) || !isOnTrack(p)) return;
+      const sq = trackIndex(other, p);
+      if (apart(sq, center) > SUPER_BOMB_REACH || isSafe(state, other, sq) || guarded(state, other, sq)) return;
+      add(other, j, p);
+    });
+    const h = state.heroes?.[other];
+    if (!h || h.kind === 'engineer' || skip.has(`${other}:${HERO}`)) continue;
+    if (apart(h.square, center) <= SUPER_BOMB_REACH && !isSafe(state, other, h.square)) add(other, HERO, h.square);
+  }
+  return out;
+}
+
 /**
  * Works out where a piece would go with this roll, or null if the move is not allowed. Does not change `state`.
  * `openBox` draws what a magic box holds; without it (previews, bots) a box's outcome is left unknown.
  */
-export function planMove(state: GameState, seat: Seat, piece: number, dice: number, openBox?: () => BoxOutcome): MovePlan | null {
+export function planMove(state: GameState, seat: Seat, piece: number, dice: number, openBox?: OpenBox): MovePlan | null {
+  if (piece >= HERO) return planHeroMove(state, seat, dice, piece === HERO_BACK, openBox);
   const { rules } = state;
   const from = state.pieces[seat][piece];
   if (from === GOAL || state.frozen?.[seat]?.[piece]) return null;
@@ -767,20 +1008,6 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
   const wallAt = (pos: number) => isOnTrack(pos) && walls.has(trackIndex(seat, pos));
   if (plan.path.slice(0, -1).some((step) => wallAt(step.pos))) return null;
 
-  // A knock-out's points: by how far the victim had come, times REVENGE when the victim last knocked out one
-  // of the hitter's pieces, KING when the victim is a king, and the moving piece's kill streak (bombs have
-  // none), capped at the biggest award. The dragon's bombs score for nobody.
-  const worth = (hitter: Seat | null, victim: Seat, victimPiece: number, pos: number, streak = 0) => {
-    if (hitter === null) return { points: 0, revenge: false, king: isKing(state, victimPiece) };
-    const revenge = state.lastHitBy?.[hitter] === victim;
-    const king = isKing(state, victimPiece);
-    const night = state.event?.kind === 'darkNight' ? EVENT_BOOST : 1;
-    const times = (revenge ? REVENGE : 1) * (king ? KING : 1) * killStreakBonus(streak) * night;
-    // The leader's bounty comes on top, for whoever knocks out one of their pieces.
-    const bounty = state.rules.bounty && state.bounty?.seat === victim && hitter !== victim ? state.bounty.value : 0;
-    const points = Math.min(POINTS.firstHome, Math.round(captureValue(pos) * times) + bounty);
-    return { points, revenge, king, ...(bounty ? { bounty } : {}) };
-  };
   // Every knock-out in a move is the moving piece's, so its streak counts on from what it had.
   const killsBefore = state.kills?.[seat]?.[piece] ?? 0;
   const nextStreak = () => killsBefore + plan.captures.length + 1;
@@ -789,35 +1016,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
   const taken = new Set<string>();
   const captureAt = (pos: number) => {
     if (!isOnTrack(pos)) return;
-    const idx = trackIndex(seat, pos);
-    for (const other of state.active) {
-      if (other === seat) continue;
-      state.pieces[other].forEach((p, j) => {
-        const key = `${other}:${j}`;
-        if (taken.has(key) || !isOnTrack(p) || trackIndex(other, p) !== idx || isSafe(state, other, idx)) return;
-        taken.add(key);
-        const streak = nextStreak();
-        plan.captures.push({ seat: other, piece: j, from: p, atStep: plan.path.length - 1, byFlight: false, streak, ...worth(seat, other, j, p, streak) });
-      });
-    }
-  };
-
-  // The other pieces on track squares within reach of a super bomb: anyone's, the owner's too, unless on
-  // their own safe square or already knocked out on the way. A vest saves its wearer.
-  const blastAround = (owner: Seat | null, center: number): BlastHit[] => {
-    const out: BlastHit[] = [];
-    for (const other of state.active) {
-      state.pieces[other].forEach((p, j) => {
-        if ((other === seat && j === piece) || !isOnTrack(p) || taken.has(`${other}:${j}`)) return;
-        const sq = trackIndex(other, p);
-        const apart = Math.min((sq - center + TRACK_LEN) % TRACK_LEN, (center - sq + TRACK_LEN) % TRACK_LEN);
-        if (apart > SUPER_BOMB_REACH || isSafe(state, other, sq)) return;
-        const saved = (state.vested?.[other]?.[j] ?? 0) > 0;
-        const hit = saved || other === owner ? { points: 0, revenge: false } : worth(owner, other, j, p);
-        out.push({ seat: other, piece: j, from: p, saved, points: hit.points, revenge: hit.revenge, king: isKing(state, j) });
-      });
-    }
-    return out;
+    plan.captures.push(...knockOutsAt(state, seat, trackIndex(seat, pos), taken, killsBefore + plan.captures.length, plan.path.length - 1));
   };
 
   // Everything that happens where the piece lands: a bomb, knock-outs, then a magic box. A blast sends the
@@ -837,14 +1036,16 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     if (!isOnTrack(pos)) return slay(pos) ? 'stay' : 'on';
     const square = trackIndex(seat, pos);
     const atStep = plan.path.length - 1;
+    // The piece's guardian saves it from bombs as a vest would, without using one up.
+    const guard = guarded(state, seat, square);
     const bomb = state.bombs.find((b) => b.square === square);
     if (bomb && !plan.bombed) {
-      const saved = vests > 0;
-      if (saved) vests--;
-      const { points, revenge } = saved || bomb.owner === seat ? { points: 0, revenge: false } : worth(bomb.owner, seat, piece, pos);
-      plan.bombed = { owner: bomb.owner, square, pos, atStep, saved, points, revenge, king: isKing(state, piece) };
+      const saved = guard || vests > 0;
+      if (saved && !guard) vests--;
+      const { points, revenge } = saved || bomb.owner === seat ? { points: 0, revenge: false } : worth(state, bomb.owner, seat, piece, pos);
+      plan.bombed = { owner: bomb.owner, square, pos, atStep, saved, points, revenge, king: isKing(state, piece), ...(guard ? { guarded: true } : {}) };
       // A super bomb goes off even when a vest saves the piece that set it off.
-      if (bomb.super) plan.bombed.blast = blastAround(bomb.owner, square);
+      if (bomb.super) plan.bombed.blast = blastAround(state, bomb.owner, square, new Set([...taken, `${seat}:${piece}`]));
       if (!saved) return 'hangar';
     }
     const knocked = plan.captures.length;
@@ -854,13 +1055,13 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     // Anyone's piece opens a box, its owner's included.
     const box = state.boxes?.find((b) => b.square === square);
     if (box && !plan.box) {
-      const outcome = openBox?.();
+      const outcome = openBox?.(BOX_OUTCOMES);
       const blast = outcome === 'bomb';
-      const saved = blast && vests > 0;
-      if (saved) vests--;
+      const saved = blast && (guard || vests > 0);
+      if (saved && !guard) vests--;
       const scores = blast && !saved && box.owner !== seat;
-      const { points, revenge } = scores ? worth(box.owner, seat, piece, pos) : { points: 0, revenge: false };
-      plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, points, revenge, king: isKing(state, piece) };
+      const { points, revenge } = scores ? worth(state, box.owner, seat, piece, pos) : { points: 0, revenge: false };
+      plan.box = { owner: box.owner, square, pos, atStep, outcome, saved, points, revenge, king: isKing(state, piece), ...(saved && guard ? { guarded: true } : {}) };
       if (blast && !saved) return 'hangar';
       if (outcome === 'freeze') return 'stay';
     }
@@ -892,7 +1093,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
               if (taken.has(key) || (open ? p < HOME_FIRST || p > HOME_LAST : p !== FLIGHT_CROSSES)) return;
               taken.add(key);
               const streak = nextStreak();
-              plan.captures.push({ seat: crossed, piece: j, from: p, atStep: plan.path.length, byFlight: true, streak, ...worth(seat, crossed, j, p, streak) });
+              plan.captures.push({ seat: crossed, piece: j, from: p, atStep: plan.path.length, byFlight: true, streak, ...worth(state, seat, crossed, j, p, streak) });
             });
           }
         }
@@ -939,6 +1140,84 @@ function finishPlan(plan: MovePlan, to: number, state: GameState): MovePlan {
   return plan;
 }
 
+/** Draws what a magic box holds, from these outcomes. */
+export type OpenBox = (options: readonly BoxOutcome[]) => BoxOutcome;
+
+/**
+ * Where a hero would go with this roll, or null if it can't move. It goes round the track only, as far as the
+ * dice says (the archer forward or back) but no further than its life has left, and can't pass another
+ * colour's wall. Where it stops it knocks out other colours (the thief robs them instead), slays the dragon and
+ * sets off a bomb (the engineer defuses every bomb on its way instead). It takes no colour jump, flight, bridge
+ * or power square, and opens no magic box, but the thief, for whom it's always good.
+ */
+function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean, openBox?: OpenBox): MovePlan | null {
+  const h = state.heroes?.[seat];
+  if (!state.rules.heroes || !h || h.frozen > 0 || (back && h.kind !== 'archer')) return null;
+  const steps = Math.min(dice, h.left);
+  const at = (k: number) => (((h.square + (back ? -k : k)) % TRACK_LEN) + TRACK_LEN) % TRACK_LEN;
+  const path: PathStep[] = Array.from({ length: steps }, (_, i) => ({ pos: at(i + 1), kind: 'step' }));
+  const walls = wallsAgainst(state, seat);
+  if (path.slice(0, -1).some((step) => walls.has(step.pos))) return null;
+  const to = at(steps);
+  const atStep = steps - 1;
+  const move: HeroMove = { kind: h.kind, back, defused: [], stolen: [], froze: [], ends: steps >= h.left };
+  const plan: MovePlan = { seat, piece: back ? HERO_BACK : HERO, dice, from: h.square, to, path, captures: [], jumped: false, flew: false, points: 0, hero: move };
+  const taken = new Set([`${seat}:${HERO}`]);
+
+  if (h.kind === 'engineer') {
+    move.defused = state.bombs.filter((b) => path.some((step) => step.pos === b.square)).map((b) => b.square);
+  } else {
+    const bomb = state.bombs.find((b) => b.square === to);
+    if (bomb) {
+      const saved = h.vests > 0;
+      const { points, revenge } = saved || bomb.owner === seat ? { points: 0, revenge: false } : worth(state, bomb.owner, seat, HERO, to);
+      plan.bombed = { owner: bomb.owner, square: to, pos: to, atStep, saved, points, revenge, king: false };
+      if (bomb.super) plan.bombed.blast = blastAround(state, bomb.owner, to, taken);
+      if (!saved) return finishHeroPlan(plan, HANGAR, state);
+    }
+  }
+
+  if (h.kind === 'thief') {
+    const here = (o: Seat) => state.pieces[o].some((p) => isOnTrack(p) && trackIndex(o, p) === to) || state.heroes?.[o]?.square === to;
+    for (const o of state.active.filter((o) => o !== seat && here(o))) {
+      const vests =
+        state.pieces[o].reduce((n, p, j) => n + (isOnTrack(p) && trackIndex(o, p) === to ? vestsOf(state, o, j) : 0), 0) +
+        (state.heroes?.[o]?.square === to ? state.heroes[o]!.vests : 0);
+      move.stolen.push({ seat: o, points: Math.max(0, Math.min(HERO_STEAL, state.stats[o].points)), vests });
+    }
+    if (state.rules.bounty && state.bounty && move.stolen.some((x) => x.seat === state.bounty!.seat)) move.bounty = state.bounty.value;
+    const box = state.boxes?.find((b) => b.square === to);
+    if (box) plan.box = { owner: box.owner, square: to, pos: to, atStep, outcome: openBox?.(THIEF_BOX), saved: false, points: 0, revenge: false, king: false };
+  } else {
+    plan.captures = knockOutsAt(state, seat, to, taken, h.kills, atStep);
+  }
+
+  if (dragonOn(state, to)) {
+    // The dragon rider slays it as a king would; any other hero as a plain piece.
+    const king = h.kind === 'rider';
+    plan.dragon = { at: state.dragon!.at, atStep, points: king ? DRAGON_PRIZE.king : DRAGON_PRIZE.piece, king };
+  }
+
+  if (h.kind === 'frost') {
+    for (const o of state.active) {
+      if (o === seat) continue;
+      state.pieces[o].forEach((p, j) => {
+        if (isOnTrack(p) && apart(trackIndex(o, p), to) <= FROST_REACH && !taken.has(`${o}:${j}`)) move.froze.push({ seat: o, piece: j });
+      });
+      const oh = state.heroes?.[o];
+      if (oh && apart(oh.square, to) <= FROST_REACH && !taken.has(`${o}:${HERO}`)) move.froze.push({ seat: o, piece: HERO });
+    }
+  }
+  return finishHeroPlan(plan, to, state);
+}
+
+function finishHeroPlan(plan: MovePlan, to: number, state: GameState): MovePlan {
+  finishPlan(plan, to, state);
+  const move = plan.hero!;
+  plan.points += move.defused.length * HERO_DEFUSE + move.stolen.reduce((n, x) => n + x.points, 0) + (move.bounty ?? 0);
+  return plan;
+}
+
 /** The bomb (placed, or from a magic box) that blew this move's piece back to the hangar, if any. */
 export function blastOf(plan: MovePlan): { owner: Seat | null; square: number; pos: number; atStep: number; points: number } | null {
   if (plan.bombed && !plan.bombed.saved) return plan.bombed;
@@ -982,6 +1261,8 @@ export function legalPieces(state: GameState, seat: Seat, dice: number): number[
   for (let j = 0; j < PIECES_PER_SEAT; j++) {
     if (planMove(state, seat, j, dice)) out.push(j);
   }
+  // A hero moves instead of a piece; the archer may go either way.
+  for (const j of [HERO, HERO_BACK]) if (planHeroMove(state, seat, dice, j === HERO_BACK)) out.push(j);
   return out;
 }
 
@@ -990,8 +1271,8 @@ export function distinctMoves(state: GameState): number[] {
   const seen = new Set<string>();
   const out: number[] = [];
   for (const j of state.movable) {
-    // A king scores differently from the pieces sharing its square, so moving it is a move of its own.
-    const key = `${state.pieces[state.turn][j]}:${isKing(state, j)}`;
+    // A king scores differently from the pieces sharing its square, so moving it is a move of its own; so is a hero's.
+    const key = j >= HERO ? `hero${j}` : `${state.pieces[state.turn][j]}:${isKing(state, j)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(j);
@@ -1006,6 +1287,8 @@ export function seatFinished(state: GameState, seat: Seat): boolean {
 function nextTurn(s: GameState, rand: Rand): void {
   s.frozen ??= perPiece();
   s.frozen[s.turn] = s.frozen[s.turn].map((n) => Math.max(0, n - 1));
+  const hero = s.heroes?.[s.turn];
+  if (hero && hero.frozen > 0) hero.frozen--;
   s.sixStreak = 0;
   s.streakMoved = [];
   s.dice = null;
@@ -1014,7 +1297,7 @@ function nextTurn(s: GameState, rand: Rand): void {
   const idx = order.indexOf(s.turn);
   for (let i = 1; i <= order.length; i++) {
     const cand = order[(idx + i) % order.length];
-    if (!s.ranking.includes(cand)) {
+    if (takesTurns(s, cand)) {
       s.turn = cand;
       s.phase = 'roll';
       s.turnNo++;
@@ -1022,14 +1305,13 @@ function nextTurn(s: GameState, rand: Rand): void {
       s.safe = (s.safe ?? []).filter((x) => x.until > s.turnNo);
       if (s.ambush && s.ambush.until <= s.turnNo) s.ambush = null;
       newRound(s, rand);
+      // A hero earned and waiting is picked before the roll, once the last one has gone.
+      if (s.rules.heroes && !s.heroes[cand] && s.heroPicks[cand] > 0 && heroOptions(s, cand).length) s.phase = 'hero';
       return;
     }
   }
   s.phase = 'over';
 }
-
-/** Rounds of the players still playing, in turns. */
-const roundsOf = (s: GameState, rounds: number) => rounds * Math.max(1, s.active.filter((x) => !s.ranking.includes(x)).length);
 
 /** What comes and goes with the turns: surprise events, the dragon, and the bounty on the leader. */
 function newRound(s: GameState, rand: Rand): void {
@@ -1042,22 +1324,42 @@ function newRound(s: GameState, rand: Rand): void {
     const free = freeSquares(s);
     if (free.length) {
       const square = free[rand(free.length)];
-      s.dragon = { at: DRAGON_PATH.findIndex((c) => 'square' in c && c.square === square), moved: 0, six: false };
+      s.dragon = { at: DRAGON_PATH.findIndex((c) => 'square' in c && c.square === square), moved: 0, sixes: 0 };
     } else s.dragonAt = s.turnNo + 1;
+  }
+  // A seat with every piece home earns a hero every HERO_FINISHED_ROUNDS rounds, while it has kinds left.
+  if (s.rules.heroes) {
+    for (const seat of s.ranking) {
+      if (s.heroes[seat] || s.heroPicks[seat] > 0 || !heroOptions(s, seat).length || s.turnNo < s.heroAt[seat]) continue;
+      s.heroPicks[seat]++;
+    }
   }
   updateBounty(s);
 }
 
-/** Sends a piece back to the hangar for something no player did: the dragon. */
-function sendHome(s: GameState, seat: Seat, piece: number): void {
+/** Takes a piece off the board: a piece back to its hangar, a hero gone for good. */
+function knockOut(s: GameState, seat: Seat, piece: number): void {
+  s.stats[seat].lost++;
+  if (piece >= HERO) return heroGone(s, seat);
   s.pieces[seat][piece] = HANGAR;
   if (s.frozen) s.frozen[seat][piece] = 0;
   if (s.kills) s.kills[seat][piece] = 0;
-  s.stats[seat].lost++;
 }
 
-/** Whether a piece stands on its owner's safe square. */
-const onOwnSafe = (s: GameState, seat: Seat, pos: number) => isOnTrack(pos) && isSafe(s, seat, trackIndex(seat, pos));
+/** A hero leaves the board. A seat with every piece home earns its next one HERO_FINISHED_ROUNDS rounds on. */
+function heroGone(s: GameState, seat: Seat): void {
+  s.heroes[seat] = null;
+  if (s.ranking.includes(seat)) s.heroAt[seat] = s.turnNo + roundsOf(s, HERO_FINISHED_ROUNDS);
+}
+
+/** Whether the dragon leaves a piece alone: on its own safe square, under its guardian's watch, or its player's dragon rider is out. */
+function spared(s: GameState, v: { seat: Seat; piece: number; from: number }): boolean {
+  if (s.heroes?.[v.seat]?.kind === 'rider') return true;
+  if (v.piece >= HERO) return isSafe(s, v.seat, v.from);
+  if (!isOnTrack(v.from)) return false;
+  const sq = trackIndex(v.seat, v.from);
+  return isSafe(s, v.seat, sq) || guarded(s, v.seat, sq);
+}
 
 /**
  * The dragon's lap is done: it explodes, and every piece where it is or DRAGON_BLAST_REACH squares either side
@@ -1065,14 +1367,14 @@ const onOwnSafe = (s: GameState, seat: Seat, pos: number) => isOnTrack(pos) && i
  */
 function dragonExplodes(s: GameState): void {
   const at = s.dragon!.at;
-  const hit: { seat: Seat; piece: number; from: number; saved: boolean }[] = [];
+  const hit: BlastVictim[] = [];
   for (const cell of cellsAround(DRAGON_PATH[at], DRAGON_BLAST_REACH)) {
     for (const v of piecesOn(s, cell)) {
-      if (onOwnSafe(s, v.seat, v.from)) continue;
-      const saved = (s.vested?.[v.seat]?.[v.piece] ?? 0) > 0;
+      if (spared(s, v)) continue;
+      const saved = vestsOf(s, v.seat, v.piece) > 0;
       hit.push({ ...v, saved });
-      if (saved) s.vested[v.seat][v.piece]--;
-      else sendHome(s, v.seat, v.piece);
+      if (saved) useVest(s, v.seat, v.piece);
+      else knockOut(s, v.seat, v.piece);
     }
   }
   s.dragonBlast = { n: (s.dragonBlast?.n ?? 0) + 1, at, hit };
@@ -1082,19 +1384,24 @@ function dragonExplodes(s: GameState): void {
 
 /** Starts a surprise event at random, among those that would change something. */
 function startEvent(s: GameState, rand: Rand): void {
-  const hidden = s.bombs.length + (s.boxes ?? []).length + (s.bridges ?? []).length;
-  const kinds = (Object.keys(WORLD_EVENTS) as WorldEventKind[]).filter((k) => (k !== 'earthquake' || s.bombs.length > 0) && (k !== 'fog' || hidden > 0));
+  const shaken = s.bombs.length + (s.boxes ?? []).length;
+  const hidden = shaken + (s.bridges ?? []).length;
+  const kinds = (Object.keys(WORLD_EVENTS) as WorldEventKind[]).filter((k) => (k !== 'earthquake' || shaken > 0) && (k !== 'fog' || hidden > 0));
   const kind = kinds[rand(kinds.length)];
   s.eventN = (s.eventN ?? 0) + 1;
   s.event = { kind, n: s.eventN, until: s.turnNo + roundsOf(s, WORLD_EVENTS[kind].rounds) };
   if (kind === 'earthquake') {
-    // Every bomb jumps to a free square, never one another bomb has just taken.
+    // Every bomb, super bomb and magic box jumps to a free square, never one another has just taken.
     const bombs = s.bombs;
+    const boxes = s.boxes ?? [];
     s.bombs = [];
-    for (const b of bombs) {
-      const free = freeSquares(s).filter((sq) => sq !== b.square);
-      s.bombs.push({ ...b, square: free.length ? free[rand(free.length)] : b.square });
-    }
+    s.boxes = [];
+    const elsewhere = (from: number) => {
+      const free = freeSquares(s).filter((sq) => sq !== from);
+      return free.length ? free[rand(free.length)] : from;
+    };
+    for (const b of bombs) s.bombs.push({ ...b, square: elsewhere(b.square) });
+    for (const b of boxes) s.boxes.push({ ...b, square: elsewhere(b.square) });
   }
 }
 
@@ -1122,7 +1429,7 @@ function updateBounty(s: GameState): void {
  */
 function countStuck(s: GameState, seat: Seat): boolean {
   s.stuck ??= SEATS.map(() => 0);
-  if (s.pieces[seat].some((p) => p !== HANGAR && p !== GOAL)) {
+  if (s.pieces[seat].some((p) => p !== HANGAR && p !== GOAL) || s.heroes?.[seat]) {
     s.stuck[seat] = 0;
     return false;
   }
@@ -1134,8 +1441,8 @@ function countStuck(s: GameState, seat: Seat): boolean {
 
 /**
  * The dragon goes as far along its route as the dice says, setting nothing off on the way, and eats every
- * piece where it stops, unless on its own safe square. A second six in a row leaves a bomb where it stops,
- * on a free track square. Back where it started, its lap is done and it explodes there.
+ * piece and hero where it stops, unless spared. A second six in a row leaves a bomb where it stops, a third a
+ * super bomb, on a free track square. Back where it started, its lap is done and it explodes there.
  */
 function moveDragon(s: GameState, dice: number, event: RollEvent): void {
   const d = s.dragon!;
@@ -1150,16 +1457,19 @@ function moveDragon(s: GameState, dice: number, event: RollEvent): void {
     event.dragon.exploded = true;
     return;
   }
-  const eaten = piecesOn(s, DRAGON_PATH[to]).filter((v) => !onOwnSafe(s, v.seat, v.from));
-  for (const v of eaten) sendHome(s, v.seat, v.piece);
+  const eaten = piecesOn(s, DRAGON_PATH[to]).filter((v) => !spared(s, v));
+  for (const v of eaten) knockOut(s, v.seat, v.piece);
   event.dragon.eaten = eaten;
   const cell = DRAGON_PATH[to];
-  if (dice === 6 && d.six && 'square' in cell && freeSquares(s).includes(cell.square)) {
-    s.bombs.push({ square: cell.square, owner: null });
+  d.sixes = dice === 6 ? (d.sixes ?? 0) + 1 : 0;
+  if (d.sixes >= 2 && 'square' in cell && freeSquares(s).includes(cell.square)) {
+    const big = d.sixes >= 3;
+    s.bombs.push({ square: cell.square, owner: null, ...(big ? { super: true } : {}) });
     event.dragon.bomb = cell.square;
+    if (big) event.dragon.superBomb = true;
   }
-  // Each pair of sixes counts once, bomb or not.
-  d.six = dice === 6 && !d.six;
+  // Three in a row is as far as it goes: the count starts over.
+  if (d.sixes >= 3) d.sixes = 0;
 }
 
 export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRand): { state: GameState; event: RollEvent } {
@@ -1233,7 +1543,7 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
 
   const seat = state.turn;
   const dice = state.dice;
-  const plan = planMove(state, seat, piece, dice, () => BOX_OUTCOMES[rand(BOX_OUTCOMES.length)]);
+  const plan = planMove(state, seat, piece, dice, (options) => options[rand(options.length)]);
   if (!plan) throw new RuleError('That plane cannot move');
 
   const s = structuredClone(state);
@@ -1242,14 +1552,17 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   s.kills ??= perPiece();
   s.stuck ??= SEATS.map(() => 0);
   s.stuck[seat] = 0;
-  s.pieces[seat][piece] = plan.to;
-  s.kills[seat][piece] = plan.to === HANGAR ? 0 : s.kills[seat][piece] + plan.captures.length;
-  for (const c of plan.captures) {
-    s.pieces[c.seat][c.piece] = HANGAR;
-    s.frozen[c.seat][c.piece] = 0;
-    s.kills[c.seat][c.piece] = 0;
-    s.stats[c.seat].lost++;
+  // A hero keeps its square and counts down its life; a bomb that gets it takes it off the board (below).
+  const hero = plan.hero ? s.heroes[seat]! : null;
+  if (hero) {
+    if (plan.to !== HANGAR) hero.square = plan.to;
+    hero.left -= plan.path.length;
+    hero.kills += plan.captures.length;
+  } else {
+    s.pieces[seat][piece] = plan.to;
+    s.kills[seat][piece] = plan.to === HANGAR ? 0 : s.kills[seat][piece] + plan.captures.length;
   }
+  for (const c of plan.captures) knockOut(s, c.seat, c.piece);
   if (plan.bridge) s.bridges = s.bridges.filter((b) => b.square !== plan.bridge!.square);
   if (plan.dragon) {
     // Slain by a king, it's gone for good; by any other piece, another comes later.
@@ -1286,11 +1599,13 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   for (const v of plan.bombed?.blast ?? []) if (!v.saved && v.seat !== plan.bombed!.owner) credit(plan.bombed!.owner, v.points);
   if (plan.box?.outcome === 'bomb' && !plan.box.saved && plan.box.owner !== seat) credit(plan.box.owner, plan.box.points);
   if (plan.bombed) {
-    const { owner, square, points, saved } = plan.bombed;
+    const { owner, square, points, saved, guarded: guard } = plan.bombed;
     s.bombs = s.bombs.filter((b) => b.square !== square);
-    if (saved) s.vested[seat][piece]--;
-    else {
+    if (saved) {
+      if (!guard) useVest(s, seat, piece);
+    } else {
       s.stats[seat].lost++;
+      if (hero) heroGone(s, seat);
       if (owner !== null && owner !== seat) {
         s.stats[owner].captures++;
         s.stats[owner].points += points;
@@ -1298,13 +1613,10 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
     }
     for (const v of plan.bombed.blast ?? []) {
       if (v.saved) {
-        s.vested[v.seat][v.piece]--;
+        useVest(s, v.seat, v.piece);
         continue;
       }
-      s.pieces[v.seat][v.piece] = HANGAR;
-      s.frozen[v.seat][v.piece] = 0;
-      s.kills[v.seat][v.piece] = 0;
-      s.stats[v.seat].lost++;
+      knockOut(s, v.seat, v.piece);
       if (owner !== null && owner !== v.seat) {
         s.stats[owner].captures++;
         s.stats[owner].points += v.points;
@@ -1312,10 +1624,12 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
     }
   }
   if (plan.box) {
-    const { owner, square, points, saved, outcome } = plan.box;
+    const { owner, square, points, saved, outcome, guarded: guard } = plan.box;
     s.boxes = s.boxes.filter((b) => b.square !== square);
     if (outcome === 'freeze') s.frozen[seat][piece] = FROZEN_TURNS;
-    if (outcome === 'bomb' && saved) s.vested[seat][piece]--;
+    if (outcome === 'bomb' && saved && !guard) useVest(s, seat, piece);
+    // The thief wears a vest it finds itself.
+    if (outcome === 'vest' && hero) hero.vests++;
     if (outcome === 'bomb' && !saved) {
       s.stats[seat].lost++;
       if (owner !== seat) {
@@ -1324,8 +1638,9 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
       }
     }
   }
-  if (plan.to === GOAL) s.stats[seat].home++;
-  if (dice === 6) s.streakMoved.push(piece);
+  if (plan.hero) heroDoes(s, plan, hero);
+  if (plan.to === GOAL && !hero) s.stats[seat].home++;
+  if (dice === 6 && !hero) s.streakMoved.push(piece);
 
   // Revenge settles a score; each new knock-out opens one.
   s.lastHitBy ??= SEATS.map(() => null);
@@ -1345,15 +1660,27 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
     s.lastHitBy[v.seat] = bomber;
   }
 
+  // A triple kill earns a hero, as do points (heroMilestones).
+  if (s.rules.heroes && plan.captures.some((c) => c.streak === 3)) s.heroPicks[seat]++;
+  // A hero's life is over: it's gone, but for the engineer, whose player puts down its super bomb first.
+  if (hero && plan.hero!.ends && s.heroes[seat]) {
+    if (hero.kind === 'engineer') {
+      s.heroEnding = seat;
+      if (!freeSquares(s).length) engineerExplodes(s);
+    } else heroGone(s, seat);
+  }
+
   const event: MoveEvent = { ...plan, type: 'move', extraRoll: false, seatFinished: false, bonus: 0, gameOver: false };
 
-  if (seatFinished(s, seat)) {
+  if (!hero && seatFinished(s, seat)) {
     event.seatFinished = true;
     if (s.ranking.length === 0) {
       event.bonus = POINTS.firstHome;
       s.stats[seat].points += POINTS.firstHome;
     }
+    heroMilestones(s);
     s.ranking.push(seat);
+    s.heroAt[seat] = s.turnNo + roundsOf(s, HERO_FINISHED_ROUNDS);
     const remaining = s.active
       .filter((x) => !s.ranking.includes(x))
       .sort((a, b) => progressOf(s, b) - progressOf(s, a));
@@ -1370,6 +1697,7 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
     return { state: s, event };
   }
 
+  heroMilestones(s);
   const extra =
     (dice === 6 && s.rules.bonusRollOnSix) || (s.rules.bonusRollOnCapture && plan.captures.length > 0);
   event.extraRoll = extra;
@@ -1377,9 +1705,12 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
     s.sixStreak = 0;
     s.streakMoved = [];
   }
-  if (plan.box?.outcome === 'vest' || plan.power) {
-    // The turn waits while the mover picks who wears the vest, then a power, and carries on as it would have.
-    s.phase = plan.box?.outcome === 'vest' ? 'vest' : 'power';
+  const vest = plan.box?.outcome === 'vest' && !hero;
+  if (s.heroEnding !== null || vest || plan.power) {
+    // The turn waits while the mover puts down the engineer's super bomb, or picks who wears the vest, then a
+    // power, and carries on as it would have.
+    s.phase = s.heroEnding !== null ? 'place' : vest ? 'vest' : 'power';
+    if (s.phase === 'place') s.placing = 'superBomb';
     s.powerAfterVest = s.phase === 'vest' && !!plan.power;
     s.powerThen = extra ? 'roll' : 'next';
     s.dice = null;
@@ -1392,6 +1723,94 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
     nextTurn(s, rand);
   }
   return { state: s, event };
+}
+
+/** What a hero's move does besides moving and knocking out: bombs defused, things stolen, pieces frozen. */
+function heroDoes(s: GameState, plan: MovePlan, hero: Hero | null): void {
+  const move = plan.hero!;
+  s.bombs = s.bombs.filter((b) => !move.defused.includes(b.square));
+  for (const x of move.stolen) {
+    s.stats[x.seat].points -= x.points;
+    s.pieces[x.seat].forEach((p, j) => {
+      if (isOnTrack(p) && trackIndex(x.seat, p) === plan.to) s.vested[x.seat][j] = 0;
+    });
+    const theirs = s.heroes[x.seat];
+    if (theirs && theirs.square === plan.to) theirs.vests = 0;
+    if (hero) hero.vests += x.vests;
+  }
+  if (move.bounty && s.bounty) s.bounty.value = BOUNTY.start;
+  for (const f of move.froze) {
+    if (f.piece < HERO) s.frozen[f.seat][f.piece] = Math.max(s.frozen[f.seat][f.piece], 1);
+    else if (s.heroes[f.seat]) s.heroes[f.seat]!.frozen = Math.max(s.heroes[f.seat]!.frozen, 1);
+  }
+}
+
+/** Heroes earned by points: one the first time a seat reaches each of HERO_THRESHOLDS. */
+function heroMilestones(s: GameState): void {
+  if (!s.rules.heroes) return;
+  for (const seat of s.active) {
+    while (s.heroMilestones[seat] < HERO_THRESHOLDS.length && s.stats[seat].points >= HERO_THRESHOLDS[s.heroMilestones[seat]]) {
+      s.heroMilestones[seat]++;
+      s.heroPicks[seat]++;
+    }
+  }
+}
+
+/**
+ * The engineer's life is over: it goes off where it stands, taking other colours' pieces and heroes on its
+ * square and DRAGON_BLAST_REACH squares either side (vests, safe squares and guardians save them; other
+ * engineers don't mind), each scored as a knock-out for its player.
+ */
+function engineerExplodes(s: GameState): void {
+  const seat = s.heroEnding!;
+  s.heroEnding = null;
+  const h = s.heroes[seat];
+  if (!h) return;
+  const hit: BlastVictim[] = [];
+  for (const other of s.active) {
+    if (other === seat) continue;
+    s.pieces[other].forEach((p, j) => {
+      if (!isOnTrack(p)) return;
+      const sq = trackIndex(other, p);
+      if (apart(sq, h.square) <= DRAGON_BLAST_REACH && !isSafe(s, other, sq) && !guarded(s, other, sq)) hit.push({ seat: other, piece: j, from: p, saved: false });
+    });
+    const theirs = s.heroes[other];
+    if (theirs && theirs.kind !== 'engineer' && apart(theirs.square, h.square) <= DRAGON_BLAST_REACH && !isSafe(s, other, theirs.square)) {
+      hit.push({ seat: other, piece: HERO, from: theirs.square, saved: false });
+    }
+  }
+  const mine = s.stats[seat];
+  for (const v of hit) {
+    v.saved = vestsOf(s, v.seat, v.piece) > 0;
+    if (v.saved) {
+      useVest(s, v.seat, v.piece);
+      continue;
+    }
+    v.points = worth(s, seat, v.seat, v.piece, v.from).points;
+    knockOut(s, v.seat, v.piece);
+    mine.captures++;
+    mine.points += v.points;
+    mine.bombKills = (mine.bombKills ?? 0) + 1;
+    mine.bestHit = Math.max(mine.bestHit ?? 0, v.points);
+    s.lastHitBy[v.seat] = seat;
+  }
+  s.heroBlast = { n: (s.heroBlast?.n ?? 0) + 1, seat, square: h.square, hit };
+  heroGone(s, seat);
+}
+
+/** Picks a hero, at the start of a turn: it comes on at the player's first track square, and the turn goes on to the roll. */
+export function applyHero(state: GameState, kind: HeroKind): { state: GameState; event: HeroEvent } {
+  if (state.phase !== 'hero') throw new RuleError('Not time to pick a hero');
+  if (!heroOptions(state, state.turn).includes(kind)) throw new RuleError("That hero can't be picked");
+  const s = structuredClone(state);
+  s.seq++;
+  const seat = s.turn;
+  s.heroPicks[seat]--;
+  s.heroesUsed[seat].push(kind);
+  const square = trackIndex(seat, TRACK_FIRST);
+  s.heroes[seat] = { kind, square, left: HERO_LIFE, kills: 0, vests: 0, frozen: 0 };
+  s.phase = 'roll';
+  return { state: s, event: { type: 'hero', seat, kind, square } };
 }
 
 /** Carries on after a power was used: another roll for the same seat, or the next turn. */
@@ -1471,6 +1890,7 @@ export function applyPower(state: GameState, choice: PowerChoice, rand: Rand = d
  * there, or a magic box that opens for whoever lands on it first, its owner too.
  */
 export function applyPlace(state: GameState, square: number, rand: Rand = defaultRand): { state: GameState; event: BridgeEvent | BoxEvent | SafeEvent | BombEvent } {
+  // The engineer's last super bomb goes down like the power square's, and then it goes off.
   if (state.phase !== 'place' || !state.placing) throw new RuleError('Not time to place that');
   if (!placeOptions(state).includes(square)) throw new RuleError("That can't go on that square");
   const s = structuredClone(state);
@@ -1484,6 +1904,11 @@ export function applyPlace(state: GameState, square: number, rand: Rand = defaul
   } else if (kind === 'superBomb') {
     s.bombs.push({ square, owner: s.turn, super: true });
     event = { type: 'bomb', seat: s.turn, square, super: true };
+    if (s.heroEnding !== null) {
+      engineerExplodes(s);
+      heroMilestones(s);
+      event.ends = true;
+    }
   } else if (kind === 'box') {
     s.boxes ??= [];
     s.boxes.push({ square, owner: s.turn });

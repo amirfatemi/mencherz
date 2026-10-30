@@ -25,12 +25,13 @@ import {
 } from './board.ts';
 import { MEANNESS, rollWeighted, rollWeights } from './dice.ts';
 import { REACTIONS, REACTION_BY_ID, reactionsFor } from './reactions.ts';
-import { BOX_REVEAL_MS, CAPTURE_MS, DRAGON_PAUSE_MS, PASS_HOLD_MS, ROLL_MS, STEP_MS, blastAt, boxOpenAt, eventDuration } from './timing.ts';
+import { BOX_REVEAL_MS, CAPTURE_MS, COUNTDOWN_MS, DRAGON_PAUSE_MS, PASS_HOLD_MS, ROLL_MS, STEP_MS, blastAt, boxOpenAt, eventDuration } from './timing.ts';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, captureValue, killStreakBonus } from './scoring.ts';
 import {
   DEFAULT_RULES,
   applyBomb,
   applyBox,
+  applyHero,
   applyMove,
   applyPlace,
   applyPower,
@@ -52,6 +53,19 @@ import {
   DRAGON_PATH,
   DRAGON_PRIZE,
   asSeen,
+  heroOptions,
+  legalPieces,
+  HERO,
+  HERO_BACK,
+  HERO_DEFUSE,
+  HERO_FINISHED_ROUNDS,
+  HERO_KILL,
+  HERO_KINDS,
+  HERO_LIFE,
+  HERO_STEAL,
+  HERO_THRESHOLDS,
+  type BombEvent,
+  type HeroKind,
   EVENT_BOOST,
   EVENT_EVERY_ROUNDS,
   WORLD_EVENTS,
@@ -65,8 +79,8 @@ import {
 
 // Magic boxes are off unless a test turns them on, so games start straight at the first roll.
 // Power squares are off too, so no move stops on one by chance, and so are kings, so piece 0 scores like
-// any other, and surprise events, the bounty and the dragon; tests for those turn them on.
-const QUIET: Partial<Rules> = { magicBoxes: false, powerSquares: false, kings: false, events: false, bounty: false, dragon: false };
+// any other, and surprise events, the bounty, the dragon and heroes; tests for those turn them on.
+const QUIET: Partial<Rules> = { magicBoxes: false, powerSquares: false, kings: false, events: false, bounty: false, dragon: false, heroes: false };
 function game(seats: Seat[] = [0, 1, 2, 3], rules: Partial<Rules> = {}): GameState {
   return createGame(seats, { ...DEFAULT_RULES, ...QUIET, ...rules });
 }
@@ -103,6 +117,8 @@ function botStep(g: GameState, level: BotLevel) {
       return applyPower(g, a.choice, randInt, a.over);
     case 'vest':
       return applyVest(g, a.piece, randInt);
+    case 'hero':
+      return applyHero(g, a.kind);
   }
 }
 
@@ -602,7 +618,7 @@ describe('three sixes and bombs', () => {
       }
       assert.equal(g.phase, 'over');
     }
-    for (const phase of ['box', 'roll', 'move', 'power', 'place']) assert.ok(seen.has(phase), `reached the ${phase} phase`);
+    for (const phase of ['box', 'roll', 'move', 'power', 'place', 'hero']) assert.ok(seen.has(phase), `reached the ${phase} phase`);
   });
 });
 
@@ -1276,16 +1292,20 @@ describe('surprise events', () => {
     assert.equal(planMove(g, 0, 1, 2)!.points, Math.round(EVENT_BOOST * captureValue(g.pieces[1][0])));
   });
 
-  test('an earthquake moves every bomb', () => {
+  test('an earthquake moves every bomb, super bomb and magic box', () => {
     let g = game([0, 1], { events: true });
-    g.bombs = [{ square: 10, owner: 1 }];
+    g.bombs = [{ square: 10, owner: 1 }, { square: 30, owner: 0, super: true }];
+    g.boxes = [{ square: 20, owner: 0 }];
     g.eventAt = g.turnNo + 1;
     const last = (k: number) => k - 1;
     // With a bomb down, all five can happen; the third is the earthquake.
     g = applyRoll(g, 3, (k) => (k === 5 ? 2 : last(k))).state;
     assert.equal(g.event?.kind, 'earthquake');
-    assert.equal(g.bombs.length, 1);
+    assert.deepEqual([g.bombs.length, g.boxes.length, g.bombs[1].super], [2, 1, true]);
     assert.notEqual(g.bombs[0].square, 10);
+    assert.notEqual(g.bombs[1].square, 30);
+    assert.notEqual(g.boxes[0].square, 20);
+    assert.equal(new Set([...g.bombs, ...g.boxes].map((b) => b.square)).size, 3, 'each on a square of its own');
   });
 
   test('fog needs something to hide, and hides bombs, boxes and bridges for three rounds, from bots too', () => {
@@ -1361,8 +1381,8 @@ describe('the dragon', () => {
     for (let i = 0; i < DRAGON_FIRST_ROUNDS * 2 - 1; i++) g = applyRoll(g, 3, () => 0).state;
     assert.equal(g.dragon, null);
     g = applyRoll(g, 3, () => 0).state;
-    assert.deepEqual(g.dragon && { moved: g.dragon.moved, six: g.dragon.six }, { moved: 0, six: false }, 'here after ten rounds');
-    g.dragon = { at: onTrack(20), moved: 0, six: false };
+    assert.deepEqual(g.dragon && { moved: g.dragon.moved, sixes: g.dragon.sixes }, { moved: 0, sixes: 0 }, 'here after ten rounds');
+    g.dragon = { at: onTrack(20), moved: 0, sixes: 0 };
     at(g, 1, [blueAt(24)]);
     const r = applyRoll(g, 4);
     assert.deepEqual(r.event.dragon, { from: onTrack(20), to: onTrack(24), steps: 4, eaten: [{ seat: 1, piece: 0, from: blueAt(24) }] });
@@ -1374,12 +1394,12 @@ describe('the dragon', () => {
 
   test('it goes up home columns too, eating what it finds there, and comes back down', () => {
     const g = at(game([0, 1], { dragon: true }), 1, [HOME_FIRST + 1]);
-    g.dragon = { at: onTrack(trackIndex(1, TRACK_LAST) - 1), moved: 0, six: false };
+    g.dragon = { at: onTrack(trackIndex(1, TRACK_LAST) - 1), moved: 0, sixes: 0 };
     const up = applyRoll(g, 3);
     assert.equal(up.event.dragon?.to, inHome(1, HOME_FIRST + 1));
     assert.deepEqual(up.event.dragon?.eaten, [{ seat: 1, piece: 0, from: HOME_FIRST + 1 }]);
     const g2 = at(game([0, 1], { dragon: true }), 1, []);
-    g2.dragon = { at: inHome(1, HOME_FIRST + 2), moved: 0, six: false };
+    g2.dragon = { at: inHome(1, HOME_FIRST + 2), moved: 0, sixes: 0 };
     // From the third square, a 5: up to the end and back down to the second.
     const down = DRAGON_PATH.findIndex((c, i) => i > inHome(1, HOME_LAST) && !('square' in c) && c.pos === HOME_FIRST + 1);
     assert.equal(applyRoll(g2, 5).state.dragon?.at, down, 'past the end and back down');
@@ -1387,7 +1407,7 @@ describe('the dragon', () => {
 
   test("it sets off no bomb or box on its way, and doesn't take bridges", () => {
     const g = at(game([0, 1], { dragon: true }), 0, []);
-    g.dragon = { at: onTrack(20), moved: 0, six: false };
+    g.dragon = { at: onTrack(20), moved: 0, sixes: 0 };
     g.bombs = [{ square: 22, owner: 1 }];
     g.boxes = [{ square: 24, owner: 1 }];
     g.bridges = [{ square: 24, to: 34, kind: 'heaven', owner: 1 }];
@@ -1396,16 +1416,20 @@ describe('the dragon', () => {
     assert.deepEqual([r.bombs.length, r.boxes.length, r.bridges.length], [1, 1, 1]);
   });
 
-  test('two sixes in a row leave a bomb where it stops, for nobody, but not in a home column', () => {
+  test('two sixes in a row leave a bomb where it stops and three a super bomb, for nobody, but not in a home column', () => {
     let g = at(game([0, 1], { dragon: true }), 0, []);
     g.frozen[0] = [99, 99, 99, 99];
-    g.dragon = { at: onTrack(0), moved: 0, six: false };
+    // From square 10 a six takes it up blue's home column; the next to square 13, the third to 19.
+    g.dragon = { at: onTrack(10), moved: 0, sixes: 0 };
     g = applyRoll(g, 6).state;
-    assert.deepEqual([g.dragon?.six, g.bombs.length, g.phase, g.turn], [true, 0, 'roll', 0]);
+    assert.deepEqual([g.dragon?.sixes, g.bombs.length, g.phase, g.turn], [1, 0, 'roll', 0]);
     const r = applyRoll(g, 6);
-    assert.equal(r.event.dragon?.bomb, 12);
-    assert.deepEqual(r.state.bombs, [{ square: 12, owner: null }]);
-    assert.equal(r.state.dragon?.six, false, 'the next pair starts over');
+    assert.deepEqual([r.event.dragon?.bomb, r.event.dragon?.superBomb], [13, undefined]);
+    assert.deepEqual(r.state.bombs, [{ square: 13, owner: null }]);
+    const third = applyRoll(r.state, 6);
+    assert.deepEqual([third.event.dragon?.bomb, third.event.dragon?.superBomb], [19, true]);
+    assert.deepEqual(third.state.bombs[1], { square: 19, owner: null, super: true });
+    assert.equal(third.state.dragon?.sixes, 0, 'and the count starts over');
     // Landing on the dragon's bomb blows a piece up and scores for nobody.
     const blown = at(game([0, 1], { dragon: true }), 1, [blueAt(24)]);
     blown.bombs = [{ square: 26, owner: null }];
@@ -1416,7 +1440,7 @@ describe('the dragon', () => {
     assert.deepEqual(applyMove(blown, 0).state.stats.map((st) => st.points), [0, 0, 0, 0]);
     // A second six that takes it up a home column leaves none.
     const home = at(game([0, 1], { dragon: true }), 0, []);
-    home.dragon = { at: onTrack(trackIndex(1, TRACK_LAST)) - 3, moved: 0, six: true };
+    home.dragon = { at: onTrack(trackIndex(1, TRACK_LAST)) - 3, moved: 0, sixes: 1 };
     const up = applyRoll(home, 6);
     assert.equal(up.event.dragon?.bomb, undefined);
     assert.deepEqual(up.state.bombs, []);
@@ -1424,7 +1448,7 @@ describe('the dragon', () => {
 
   test('a king that lands on it slays it for good; any other piece earns a little, and another comes later', () => {
     const g = at(game([0, 1], { dragon: true, kings: true }), 0, [10, 10]);
-    g.dragon = { at: onTrack(trackIndex(0, 13)), moved: 5, six: false };
+    g.dragon = { at: onTrack(trackIndex(0, 13)), moved: 5, sixes: 0 };
     const king = planMove(g, 0, 0, 3)!;
     assert.deepEqual(king.dragon, { at: onTrack(trackIndex(0, 13)), atStep: 2, points: DRAGON_PRIZE.king, king: true });
     assert.equal(king.points, DRAGON_PRIZE.king);
@@ -1442,14 +1466,14 @@ describe('the dragon', () => {
     assert.equal(byPawn.dragonAt, byPawn.turnNo + DRAGON_EVERY_ROUNDS * 2 - 1, 'the next one comes twenty rounds on');
     // In a home column too; with kings off, any piece slays it like a king.
     const home = at(game([0, 1], { dragon: true }), 0, [HOME_FIRST]);
-    home.dragon = { at: inHome(0, HOME_FIRST + 2), moved: 0, six: false };
+    home.dragon = { at: inHome(0, HOME_FIRST + 2), moved: 0, sixes: 0 };
     assert.equal(planMove(home, 0, 0, 2)!.dragon?.king, true);
   });
 
   test('once round the board it explodes where it started, taking the pieces next to it; the next comes twenty rounds later', () => {
     const g = at(game([0, 1], { dragon: true }), 0, []);
     // Four cells left of its lap, from square 2 (no arrow squares near): a 6 takes it just the 4, to square 6.
-    g.dragon = { at: onTrack(2), moved: DRAGON_PATH.length - 4, six: false };
+    g.dragon = { at: onTrack(2), moved: DRAGON_PATH.length - 4, sixes: 0 };
     at(g, 1, [blueAt(7), blueAt(5), blueAt(8)]);
     g.frozen[1] = [99, 99, 99, 0];
     g.vested[1][1] = 1;
@@ -1467,7 +1491,193 @@ describe('the dragon', () => {
     });
     assert.deepEqual(r.state.pieces[1].slice(0, 3), [HANGAR, blueAt(5), blueAt(8)], 'one away goes; two away stays; a vest saves');
     assert.equal(r.state.dragonAt, g.turnNo + DRAGON_EVERY_ROUNDS * 2);
-    assert.equal(eventDuration(r.event, false), ROLL_MS + DRAGON_PAUSE_MS + 4 * STEP_MS.step + CAPTURE_MS);
+    assert.equal(eventDuration(r.event, false), ROLL_MS + DRAGON_PAUSE_MS + 4 * STEP_MS.step + CAPTURE_MS + COUNTDOWN_MS, 'with its 1, 2, 3');
+  });
+});
+
+describe('heroes', () => {
+  const blueAt = (square: number) => [...Array(50).keys()].map((p) => p + 1).find((p) => trackIndex(1, p) === square)!;
+  const cell = (square: number) => DRAGON_PATH.findIndex((c) => 'square' in c && c.square === square);
+  /** Yellow with a hero of this kind on this square, and nothing else out. */
+  const withHero = (kind: HeroKind, square: number, rules: Partial<Rules> = {}) => {
+    const g = at(game([0, 1], { heroes: true, ...rules }), 0, []);
+    g.heroes[0] = { kind, square, left: HERO_LIFE, kills: 0, vests: 0, frozen: 0 };
+    return g;
+  };
+  const rollFor = (g: GameState, dice: number) => Object.assign(g, { turn: 0, phase: 'move', dice, movable: legalPieces(g, 0, dice) });
+
+  test('points and a triple kill earn one; it is picked when the turn comes round and comes on at the first square, each kind once', () => {
+    let g = at(game([0, 1], { heroes: true }), 0, [GOAL - 2]);
+    g.stats[0].points = HERO_THRESHOLDS[0] - POINTS.home;
+    Object.assign(g, { phase: 'move', dice: 2, movable: [0] });
+    g = applyMove(g, 0).state;
+    assert.deepEqual([g.heroPicks[0], g.heroMilestones[0], g.turn], [1, 1, 1]);
+    g = applyRoll(g, 3).state;
+    assert.deepEqual([g.turn, g.phase], [0, 'hero'], 'picked before the roll');
+    assert.throws(() => applyRoll(g, 3), /Not time to roll/);
+    const r = applyHero(g, 'archer');
+    assert.deepEqual(r.state.heroes[0], { kind: 'archer', square: trackIndex(0, 1), left: HERO_LIFE, kills: 0, vests: 0, frozen: 0 });
+    assert.deepEqual([r.state.phase, r.state.heroPicks[0]], ['roll', 0]);
+    assert.deepEqual(heroOptions(r.state, 0), HERO_KINDS.filter((k) => k !== 'archer'));
+    assert.throws(() => applyHero(r.state, 'thief'), /Not time/);
+    // A triple kill earns another.
+    const t = at(game([0, 1], { heroes: true }), 0, [20]);
+    t.kills[0][0] = 2;
+    at(t, 1, [sameSquare(0, 23, 1)]);
+    Object.assign(t, { phase: 'move', dice: 3, movable: [0] });
+    const k = applyMove(t, 0);
+    assert.equal(k.event.captures[0].streak, 3);
+    assert.equal(k.state.heroPicks[0], 1);
+  });
+
+  test('it goes round the track, never up a home column, uses the roll, and is gone after one lap', () => {
+    const arrow = trackIndex(0, TRACK_LAST);
+    const g = rollFor(withHero('guardian', arrow), 3);
+    assert.deepEqual(g.movable, [HERO], 'the pieces are all in the hangar');
+    const r = applyMove(g, HERO);
+    assert.deepEqual(r.event.path.map((p) => p.pos), [1, 2, 3].map((k) => (arrow + k) % 52), 'past the turn home');
+    assert.deepEqual([r.state.heroes[0]?.square, r.state.heroes[0]?.left], [(arrow + 3) % 52, HERO_LIFE - 3]);
+    assert.deepEqual(r.state.pieces[0], [HANGAR, HANGAR, HANGAR, HANGAR]);
+    // Two squares of life left: a 5 takes it just two, and then it's gone.
+    const end = withHero('frost', 20);
+    end.heroes[0]!.left = 2;
+    const e = applyMove(rollFor(end, 5), HERO);
+    assert.deepEqual([e.event.to, e.event.hero?.ends, e.state.heroes[0]], [22, true, null]);
+  });
+
+  test('the archer goes either way and knocks out what it lands on; whoever lands on a hero gets HERO_KILL', () => {
+    const g = withHero('archer', 30);
+    at(g, 1, [blueAt(28)]);
+    rollFor(g, 2);
+    assert.deepEqual(g.movable, [HERO, HERO_BACK]);
+    const back = applyMove(g, HERO_BACK);
+    assert.deepEqual(back.event.path.map((p) => p.pos), [29, 28]);
+    assert.deepEqual(back.event.captures.map((c) => [c.seat, c.piece]), [[1, 0]]);
+    assert.deepEqual([back.state.pieces[1][0], back.state.heroes[0]?.left], [HANGAR, HERO_LIFE - 2], 'going back uses up its life too');
+    assert.equal(back.state.stats[0].points, back.event.captures[0].points);
+    const h = withHero('guardian', 30);
+    at(h, 1, [blueAt(27)]);
+    Object.assign(h, { turn: 1, phase: 'move', dice: 3, movable: [0] });
+    const hit = applyMove(h, 0);
+    assert.deepEqual(hit.event.captures.map((c) => [c.seat, c.piece, c.points]), [[0, HERO, HERO_KILL]]);
+    assert.deepEqual([hit.state.heroes[0], hit.state.stats[1].points, hit.state.stats[0].lost], [null, HERO_KILL, 1]);
+  });
+
+  test('the engineer defuses bombs on its way and no bomb hurts it; at its end a super bomb goes down, then it goes off', () => {
+    const g = rollFor(withHero('engineer', 10), 4);
+    g.bombs = [{ square: 12, owner: 1 }, { square: 14, owner: 1, super: true }];
+    const r = applyMove(g, HERO);
+    assert.deepEqual([r.event.hero?.defused, r.event.points, r.state.bombs, r.state.heroes[0]?.square], [[12, 14], 2 * HERO_DEFUSE, [], 14]);
+    const end = withHero('engineer', 30);
+    end.heroes[0]!.left = 3;
+    at(end, 1, [blueAt(34), blueAt(32), blueAt(35)]);
+    const last = applyMove(rollFor(end, 3), HERO);
+    assert.deepEqual([last.state.phase, last.state.placing, last.state.heroEnding, last.state.turn], ['place', 'superBomb', 0, 0]);
+    assert.ok(last.state.heroes[0], 'it waits on its square for the super bomb');
+    const placed = applyPlace(last.state, 5);
+    assert.deepEqual([placed.event.type, (placed.event as BombEvent).super, (placed.event as BombEvent).ends], ['bomb', true, true]);
+    assert.ok(placed.state.bombs.some((b) => b.square === 5 && b.super && b.owner === 0));
+    assert.deepEqual(
+      placed.state.heroBlast?.hit.map((v) => [v.seat, v.from, v.saved]),
+      [
+        [1, blueAt(34), false],
+        [1, blueAt(32), false],
+      ],
+    );
+    assert.deepEqual(placed.state.pieces[1].slice(0, 3), [HANGAR, HANGAR, blueAt(35)], 'two away stays');
+    assert.equal(placed.state.heroes[0], null);
+    assert.equal(placed.state.stats[0].points, placed.state.heroBlast!.hit.reduce((n, v) => n + v.points!, 0));
+    assert.equal(placed.state.turn, 1, 'and the turn goes on');
+  });
+
+  test("the guardian's pieces next to it can't be knocked out, bombed or eaten", () => {
+    // Yellow's pieces on squares 21 (next to the guardian on 20) and 23 (two away).
+    const g = withHero('guardian', 20);
+    at(g, 0, [20, 22]);
+    at(g, 1, [blueAt(18)]);
+    assert.deepEqual(planMove(g, 1, 0, 3)!.captures, []);
+    assert.deepEqual(planMove(g, 1, 0, 5)!.captures.map((c) => [c.seat, c.piece]), [[0, 1]]);
+    const b = withHero('guardian', 20);
+    at(b, 0, [18]);
+    b.bombs = [{ square: 21, owner: 1 }];
+    const plan = planMove(b, 0, 0, 2)!;
+    assert.deepEqual([plan.to, plan.bombed?.saved, plan.bombed?.guarded], [20, true, true]);
+    Object.assign(b, { phase: 'move', dice: 2, movable: [0] });
+    assert.deepEqual(applyMove(b, 0).state.bombs, []);
+    const d = withHero('guardian', 20, { dragon: true });
+    at(d, 0, [20]);
+    d.dragon = { at: cell(19), moved: 0, sixes: 0 };
+    const r = applyRoll(d, 2);
+    assert.deepEqual([r.event.dragon?.to, r.event.dragon?.eaten, r.state.pieces[0][0]], [cell(21), [], 20]);
+  });
+
+  test('the frost freezes other colours within two squares of where it stops, for their next turn', () => {
+    const g = withHero('frost', 30);
+    at(g, 1, [blueAt(35), blueAt(36), blueAt(31)]);
+    const r = applyMove(rollFor(g, 3), HERO);
+    assert.deepEqual(r.event.hero?.froze, [
+      { seat: 1, piece: 0 },
+      { seat: 1, piece: 2 },
+    ]);
+    assert.deepEqual(r.state.frozen[1].slice(0, 3), [1, 0, 1]);
+    const blue = applyRoll(r.state, 1).state;
+    assert.deepEqual(blue.movable, [1]);
+    assert.deepEqual(applyMove(blue, 1).state.frozen[1], [0, 0, 0, 0], 'only for that turn');
+  });
+
+  test('the thief knocks nobody out: it takes points, vests and the bounty; a magic box is always good for it', () => {
+    const g = withHero('thief', 30, { bounty: true });
+    at(g, 1, [blueAt(33)]);
+    g.vested[1][0] = 1;
+    g.stats[1].points = 50;
+    g.bounty = { seat: 1, value: 5 };
+    const r = applyMove(rollFor(g, 3), HERO);
+    assert.deepEqual(r.event.captures, []);
+    assert.deepEqual([r.event.hero?.stolen, r.event.hero?.bounty], [[{ seat: 1, points: HERO_STEAL, vests: 1 }], 5]);
+    assert.deepEqual([r.state.stats[0].points, r.state.stats[1].points], [HERO_STEAL + 5, 50 - HERO_STEAL]);
+    assert.deepEqual([r.state.vested[1][0], r.state.heroes[0]?.vests, r.state.pieces[1][0]], [0, 1, blueAt(33)]);
+    const box = withHero('thief', 30);
+    box.boxes = [{ square: 33, owner: 1 }];
+    rollFor(box, 3);
+    const plus = applyMove(structuredClone(box), HERO, () => 0);
+    assert.deepEqual([plus.event.box?.outcome, plus.state.stats[0].points], ['plus', POINTS.boxBonus]);
+    const vest = applyMove(structuredClone(box), HERO, () => 1);
+    assert.deepEqual([vest.event.box?.outcome, vest.state.heroes[0]?.vests, vest.state.phase, vest.state.turn], ['vest', 1, 'roll', 1]);
+  });
+
+  test("the dragon leaves the rider's colour alone, and the rider slays it like a king", () => {
+    const g = withHero('rider', 40, { dragon: true });
+    at(g, 0, [20]);
+    g.dragon = { at: cell(19), moved: 0, sixes: 0 };
+    assert.deepEqual(applyRoll(g, 2).event.dragon?.eaten, []);
+    const slay = withHero('rider', 40, { dragon: true });
+    slay.dragon = { at: cell(43), moved: 0, sixes: 0 };
+    rollFor(slay, 3);
+    const plan = planMove(slay, 0, HERO, 3)!;
+    assert.deepEqual([plan.dragon?.king, plan.points], [true, DRAGON_PRIZE.king]);
+    const after = applyMove(slay, HERO).state;
+    assert.deepEqual([after.dragon, after.dragonGone], [null, true]);
+  });
+
+  test("a player with every piece home isn't out: a hero comes every five rounds, and they play it", () => {
+    let g = at(game([0, 1, 2], { heroes: true }), 0, [GOAL, GOAL, GOAL, GOAL - 1]);
+    g.heroMilestones[0] = HERO_THRESHOLDS.length;
+    Object.assign(g, { phase: 'move', dice: 1, movable: [3] });
+    g = applyMove(g, 3).state;
+    assert.deepEqual([g.ranking, g.heroPicks[0], g.turn], [[0], 0, 1]);
+    let passes = 0;
+    while (g.turn !== 0 && passes < 40) {
+      g = applyRoll(g, 3).state;
+      passes++;
+    }
+    assert.equal(g.phase, 'hero');
+    assert.ok(passes >= HERO_FINISHED_ROUNDS * 2 && passes <= HERO_FINISHED_ROUNDS * 2 + 2, `five rounds of the other two: ${passes} turns`);
+    g = applyHero(g, 'archer').state;
+    g = applyRoll(g, 4).state;
+    assert.deepEqual(g.movable, [HERO, HERO_BACK]);
+    g = applyMove(g, HERO).state;
+    assert.equal(g.turn, 1);
+    assert.equal(g.ranking.length, 1, 'still home, still first');
   });
 });
 

@@ -139,7 +139,7 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Surprise events 🌪"
-          hint="Every 15 rounds: a storm (no flights or colour jumps, 1 round), gold rain (pieces home score ×1.2, 2 rounds), an earthquake (bombs move), a dark night (knock-outs score ×1.2, 2 rounds) or fog (bombs, boxes and bridges hidden, 3 rounds)."
+          hint="Every 15 rounds: a storm (no flights or colour jumps, 1 round), gold rain (pieces home score ×1.2, 2 rounds), an earthquake (bombs and boxes move), a dark night (knock-outs score ×1.2, 2 rounds) or fog (bombs, boxes and bridges hidden, 3 rounds)."
           checked={rules.events}
           onChange={(v) => setRules({ events: v })}
         />
@@ -151,9 +151,15 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Dragon 🐉"
-          hint="After 10 rounds a dragon goes once round the board, moving with every roll, up home columns too. It eats what it stops on, and two sixes in a row leave a bomb. A king that lands on it gets 40 and ends dragons for the game; other pieces get 5. If nobody does, it explodes, taking the pieces next to it, and comes back every 20 rounds."
+          hint="After 10 rounds a dragon goes once round the board, moving with every roll, up home columns too. It eats what it stops on; two sixes in a row leave a bomb, three a super bomb. A king that lands on it gets 40 and ends dragons for the game; other pieces get 5. If nobody does, it counts to three and explodes, taking the pieces next to it, and comes back every 20 rounds."
           checked={rules.dragon}
           onChange={(v) => setRules({ dragon: v })}
+        />
+        <Toggle
+          label="Heroes 🦸"
+          hint="At 60, 140 and 240 points, after a triple kill, and every 5 rounds once all four pieces are home, a player calls in a hero: archer, bomb engineer, guardian, frost mage, thief or dragon rider. It goes once round the track, each with its own power; moving it uses the roll. Knocking one out pays 15."
+          checked={rules.heroes}
+          onChange={(v) => setRules({ heroes: v })}
         />
         <Toggle
           label="Kings 👑"

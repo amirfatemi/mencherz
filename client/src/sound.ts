@@ -149,6 +149,13 @@ export const sfx = {
     } else if (kind === 'darkNight') notes([220, 207, 185], 0.22, { type: 'sine', vol: 0.12 });
     else noise({ dur: 1.2, vol: 0.1, freq: 700, to: 300 });
   },
+  /** One beat of the 1, 2, 3 before a blast; the last is higher. */
+  tick: (last = false) => tone({ f: last ? 1320 : 880, dur: 0.12, type: 'square', vol: 0.09 }),
+  /** A hero comes on: a short fanfare. */
+  hero: () => {
+    notes([392, 523, 659, 784], 0.07, { type: 'square', vol: 0.07 });
+    tone({ f: 1047, dur: 0.45, at: 0.3, type: 'triangle', vol: 0.14 });
+  },
   /** A player brings everything home, or the game ends. */
   win: () => {
     notes([392, 523, 659, 784], 0.11, { vol: 0.13 });

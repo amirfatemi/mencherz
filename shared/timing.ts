@@ -23,6 +23,10 @@ export const BOX_REVEAL_MS = 3000;
 export const PASS_HOLD_MS = 5000;
 /** Picking a power on a power square. */
 export const POWER_MS = 300;
+/** A hero coming on to the board. */
+export const HERO_MS = 1100;
+/** The 1, 2, 3 counted on the board before the dragon or the engineer goes off. */
+export const COUNTDOWN_MS = 1800;
 
 /** How long an event plays. `holdPasses`: whether an unplayable roll is held for PASS_HOLD_MS (games with a bot). */
 export function eventDuration(event: GameEvent | null | undefined, holdPasses = true): number {
@@ -30,8 +34,11 @@ export function eventDuration(event: GameEvent | null | undefined, holdPasses = 
   if (event.type === 'roll') {
     return ROLL_MS + dragonMs(event) + (event.penalized.length ? CAPTURE_MS : 0) + (event.outcome === 'pass' && holdPasses ? PASS_HOLD_MS : 0);
   }
+  // The engineer's last super bomb drops, then it counts down and goes off.
+  if (event.type === 'bomb' && event.ends) return BOMB_MS + COUNTDOWN_MS + CAPTURE_MS;
   if (event.type === 'bomb' || event.type === 'box' || event.type === 'bridge' || event.type === 'safe') return BOMB_MS;
   if (event.type === 'power' || event.type === 'vest') return POWER_MS;
+  if (event.type === 'hero') return HERO_MS;
   let ms = settledAt(event);
   // Knocked-out pieces, the mover itself after a bomb, or a super bomb's blast fly back to the hangar.
   if (event.captures.length || event.to === HANGAR || event.bombed?.blast?.some((v) => !v.saved)) ms += CAPTURE_MS;
@@ -46,11 +53,11 @@ export function dragonStopsAt(event: RollEvent): number {
   return ROLL_MS + DRAGON_PAUSE_MS + (event.dragon?.steps ?? 0) * STEP_MS.step;
 }
 
-/** The dragon stepping along with a roll, square by square, then anything it ate, or its blast, flying home. */
+/** The dragon stepping along with a roll, square by square, then anything it ate flying home, or the 1, 2, 3 and its blast. */
 export function dragonMs(event: RollEvent): number {
   const d = event.dragon;
   if (!d) return 0;
-  return DRAGON_PAUSE_MS + d.steps * STEP_MS.step + (d.eaten.length || d.exploded ? CAPTURE_MS : 0);
+  return DRAGON_PAUSE_MS + d.steps * STEP_MS.step + (d.eaten.length || d.exploded ? CAPTURE_MS : 0) + (d.exploded ? COUNTDOWN_MS : 0);
 }
 
 /** When step `i` of a move's path ends, in ms from the start of the move. Steps after an opened box wait for its reveal. */

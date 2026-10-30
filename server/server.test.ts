@@ -104,6 +104,7 @@ function playAsBot(s: Client, code: string, g: GameState): Promise<unknown> {
   if (!a) return Promise.resolve();
   if (a.type === 'move' || a.type === 'vest') return call(s, `game:${a.type}`, { code, piece: a.piece });
   if (a.type === 'power') return call(s, 'game:power', { code, choice: a.choice, over: a.over });
+  if (a.type === 'hero') return call(s, 'game:hero', { code, kind: a.kind });
   if (a.type === 'bomb' || a.type === 'box' || a.type === 'place') return call(s, `game:${a.type}`, { code, square: a.square });
   return call(s, `game:${a.type}`, { code });
 }

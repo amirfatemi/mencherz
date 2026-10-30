@@ -1,5 +1,5 @@
 import { GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, type Seat } from '../shared/board.ts';
-import { DEFAULT_RULES, DRAGON_FIRST_ROUNDS, DRAGON_PATH, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
+import { DEFAULT_RULES, DRAGON_FIRST_ROUNDS, DRAGON_PATH, HERO_FINISHED_ROUNDS, HERO_THRESHOLDS, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
 import { POINTS } from '../shared/scoring.ts';
 
 /** Brings a saved game up to date: board numbering first, then fields added since it was saved. */
@@ -53,11 +53,22 @@ export function upgradeGame(game: GameState): GameState {
   g.dragonGone ??= false;
   g.dragonBlast ??= null;
   // A dragon that stayed a set time (and before that, saved by square) starts its lap where it is.
-  const oldDragon = g.dragon as unknown as { square?: number; at?: number; moved?: number } | null;
+  const oldDragon = g.dragon as unknown as { square?: number; at?: number; moved?: number; six?: boolean; sixes?: number } | null;
   if (oldDragon && oldDragon.moved === undefined) {
     const at = oldDragon.at ?? DRAGON_PATH.findIndex((c) => 'square' in c && c.square === oldDragon.square);
-    g.dragon = { at: Math.max(0, at), moved: 0, six: false };
+    g.dragon = { at: Math.max(0, at), moved: 0, sixes: 0 };
+  } else if (oldDragon && oldDragon.sixes === undefined) {
+    g.dragon = { at: oldDragon.at!, moved: oldDragon.moved!, sixes: oldDragon.six ? 1 : 0 };
   }
+  // Heroes: games already under way count the point marks players have passed as reached, so nobody gets a
+  // pile of heroes at once; players already home get theirs a few rounds on.
+  g.heroes ??= SEATS.map(() => null);
+  g.heroPicks ??= SEATS.map(() => 0);
+  g.heroesUsed ??= SEATS.map(() => []);
+  g.heroMilestones ??= SEATS.map((s) => HERO_THRESHOLDS.filter((t) => g.stats[s].points >= t).length);
+  g.heroAt ??= SEATS.map(() => g.turnNo + HERO_FINISHED_ROUNDS * g.active.length);
+  g.heroEnding ??= null;
+  g.heroBlast ??= null;
   // Roll-again cards were dropped: the phase that placed bridges also places boxes now, and a roll that
   // waited for a card or a pass is simply rolled again.
   const old = g as Omit<GameState, 'phase'> & { rerolls?: unknown; preRoll?: unknown; phase: string };

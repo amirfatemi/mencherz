@@ -18,6 +18,7 @@ import {
   availablePowers,
   ambushTargets,
   asSeen,
+  heroOptions,
   bridgeTarget,
   distinctMoves,
   freeSquares,
@@ -27,6 +28,7 @@ import {
   vestOptions,
   type BridgeKind,
   type GameState,
+  type HeroKind,
   type MovePlan,
   type PowerChoice,
 } from './rules.ts';
@@ -64,7 +66,25 @@ function applyPlan(state: GameState, plan: MovePlan): GameState {
   return { ...state, pieces };
 }
 
+/**
+ * A hero's move: what it scores or takes away from the others, less the hero itself if a bomb gets it. It has no
+ * progress to make, so a little goes to moving it at all, or bots would sit on it.
+ */
+function heroScore(plan: MovePlan): number {
+  let s = 2 + plan.points * 1.5 + plan.captures.length * 12 + plan.hero!.froze.length * 3;
+  if (plan.to === HANGAR) s -= 12;
+  return s;
+}
+
+/** Picks a hero: the dragon rider when the dragon is out, otherwise any it hasn't had. */
+export function chooseHero(state: GameState, rand: () => number = Math.random): HeroKind {
+  const options = heroOptions(state, state.turn);
+  if (state.dragon && options.includes('rider')) return 'rider';
+  return options[Math.floor(rand() * options.length)];
+}
+
 function score(state: GameState, plan: MovePlan, careful: boolean): number {
+  if (plan.hero) return heroScore(plan);
   const onBoard = state.pieces[plan.seat].filter((p) => p !== HANGAR && p !== GOAL).length;
   let s = value(plan.to) - value(plan.from);
   if (plan.from === HANGAR) s += 9 - onBoard * 2;
@@ -320,7 +340,8 @@ export type BotAction =
   | { type: 'roll' }
   | { type: 'move' | 'vest'; piece: number }
   | { type: 'bomb' | 'box' | 'place'; square: number }
-  | { type: 'power'; choice: PowerChoice; over?: Seat };
+  | { type: 'power'; choice: PowerChoice; over?: Seat }
+  | { type: 'hero'; kind: HeroKind };
 
 /** What a bot does next, whatever the phase; also plays the turn of a player whose time ran out. */
 export function botAction(state: GameState, level: BotLevel, rand: () => number = Math.random): BotAction | null {
@@ -337,6 +358,8 @@ export function botAction(state: GameState, level: BotLevel, rand: () => number 
       return { type: 'power', ...choosePower(state, level, rand) };
     case 'vest':
       return { type: 'vest', piece: chooseVest(state) };
+    case 'hero':
+      return { type: 'hero', kind: chooseHero(state, rand) };
     case 'place':
       // A box from a power square goes where a bomb would: in front of the others' pieces.
       if (state.placing === 'box') return { type: 'place', square: chooseBomb(state, level, rand) };

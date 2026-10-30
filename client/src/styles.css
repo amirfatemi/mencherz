@@ -2863,3 +2863,156 @@ svg.board {
 .password-form .field {
   margin-bottom: 0;
 }
+
+/* ---------- heroes ---------- */
+
+.hero-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: radial-gradient(circle at 50% 30%, rgba(40, 20, 90, 0.55), rgba(10, 15, 40, 0.75));
+  animation: fade 0.2s ease;
+  overflow: auto;
+}
+.hero-picker {
+  width: min(860px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border-top: 8px solid var(--seat);
+  animation: pop 0.22s ease;
+}
+.hero-picker-head h2 {
+  margin: 0 0 6px;
+}
+.hero-picker-head p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.hero-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+}
+.hero-card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 12px 14px;
+  border: 0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--hero-light), #fff 62%);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--hero-deep) 35%, transparent), 0 4px 12px rgba(18, 52, 97, 0.12);
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.hero-card:hover:not(:disabled) {
+  transform: translateY(-3px);
+}
+.hero-card.on {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: inset 0 0 0 3px var(--hero-deep), 0 0 0 4px #ffeb3b, 0 10px 24px rgba(18, 52, 97, 0.25);
+}
+.hero-card:disabled {
+  cursor: default;
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+.hero-card-name {
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: var(--hero-deep);
+}
+.hero-card-name small {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.hero-card-power {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.hero-card.on .hero-rays,
+.hero-card:hover:not(:disabled) .hero-rays {
+  animation: hero-spin 8s linear infinite;
+}
+.hero-rays {
+  transform-origin: 0 0;
+}
+@keyframes hero-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.hero-picker-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.hero-token {
+  transition: transform 0.12s linear;
+}
+.hero-token .hero-medal {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hero-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.hero-token.movable {
+  cursor: pointer;
+}
+.hero-token .hero-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: power-pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes hero-in {
+  from {
+    transform: scale(0);
+  }
+}
+
+.countdown-beat {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: count-beat 0.6s ease-out;
+}
+.countdown circle {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
+}
+@keyframes count-beat {
+  0% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-card,
+  .hero-rays,
+  .hero-token .hero-medal,
+  .countdown-beat {
+    animation: none !important;
+    transition: none;
+  }
+}

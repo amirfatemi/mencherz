@@ -127,15 +127,24 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
     The heaven bridge, hell bridge, ambush and super bomb can each be picked once a game: whoever picks one first uses it up for everyone. Magic boxes and safe squares can be picked any number of times.
 
     A bridge ends the move where it puts the piece down. Bombs, boxes and bridges can't go on the power square.
-13. **Surprise events 🌪:** every 15 rounds one happens at random, announced with a banner and a sound: a storm (no flights and no colour jumps, 1 round), gold rain (pieces reaching the centre score ×1.2, 2 rounds), an earthquake (every bomb jumps to another free square), a dark night (knock-outs score ×1.2, 2 rounds) or fog (3 rounds: bombs, super bombs, magic boxes and bridges can't be seen, by bots either, though they still work). While one lasts, a card between the dice and the board (the scoreboard, on a wide screen) says in Persian what it is, what it does and how many rounds are left.
+13. **Surprise events 🌪:** every 15 rounds one happens at random, announced with a banner and a sound: a storm (no flights and no colour jumps, 1 round), gold rain (pieces reaching the centre score ×1.2, 2 rounds), an earthquake (every bomb, super bomb and magic box jumps to another free square), a dark night (knock-outs score ×1.2, 2 rounds) or fog (3 rounds: bombs, super bombs, magic boxes and bridges can't be seen, by bots either, though they still work). While one lasts, a card between the dice and the board (the scoreboard, on a wide screen) says in Persian what it is, what it does and how many rounds are left.
 14. **Bounty on the leader 🎯:** whoever leads on points (alone) gets a MOST WANTED poster by their hangar. Knocking out one of their pieces, bombs included, pays the bounty on top: it starts at 3, grows by 1 each time their turn comes round in the lead (up to 8), and starts again at 3 once claimed. It's meant to make the leader a little juicier, not to outweigh the knock-out itself.
 15. **Dragon 🐉:** after 10 rounds a dragon appears on a random free square and goes once round its route (88 squares). It belongs to nobody and moves with every roll, as far as the dice says: the dice shows its number first, then the dragon moves, then the player moves. Its route is the track and, at each arrow square, up that home column to the end and back. A number by it shows the squares left of its lap.
     - Any piece where it stops is eaten (back to the hangar), unless on its own safe square. It sets off no bomb or box and takes no bridge.
-    - Two sixes in a row: it leaves a bomb where the second one takes it (not in a home column). The dragon's bomb blows up whoever lands on it and scores for nobody.
+    - Two sixes in a row: it leaves a bomb where the second one takes it; a third six in a row leaves a super bomb where that one takes it (never in a home column). The dragon's bombs blow up whoever lands on them and score for nobody.
     - A king that lands on it, in a home column too, slays it for 40 points, and no dragon comes again that game. Any other piece slays it for 5. With kings off, every piece counts as a king.
-    - If nobody slays it, it explodes when its lap is done, back where it started, taking the pieces on its square and one square either side (a vest or safe square saves them).
+    - If nobody slays it, it explodes when its lap is done, back where it started: it stops there, a 1, 2, 3 is counted on the board, then it goes off, taking the pieces on its square and one square either side (a vest or safe square saves them).
     - After it explodes or a piece other than a king slays it, the next one comes 20 rounds later.
-16. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
+16. **Heroes 🦸:** a hero is a fifth piece. A player earns one on reaching 60, 140 and 240 points (each once), when one of their pieces makes a triple kill, and, once all four pieces are home, every 5 rounds: a player with everything home isn't out of the game. The hero is picked from cards at the start of the player's next turn (one on the board at a time; each kind once a game) and comes on at their first track square.
+    - It goes round the track only, never up a home column, for 52 squares (one lap), then leaves; a number by it shows the squares left. Moving it uses the roll, like moving a piece. It takes no colour jump, flight, bridge or power square, and can't pass another colour's wall.
+    - Where it stops it knocks out other colours' pieces and heroes, scored as usual, and a bomb there blows it up. Knocking out a hero pays 15.
+    - **Archer 🧝🏹:** goes forward or back with each roll, as its player likes.
+    - **Bomb engineer 👷🧨:** defuses every bomb it passes or stops on (+5 each), and no bomb hurts it. When its lap is done its player puts down a super bomb; then the engineer counts to three where it stands and goes off, taking other colours' pieces and heroes on its square and one either side (scored for its player).
+    - **Guardian 💂🛡️:** its player's pieces on its square and one either side can't be knocked out, bombed or eaten by the dragon.
+    - **Frost mage 🧙❄️:** where it stops, other colours' pieces and heroes within two squares freeze for their next turn.
+    - **Thief 🥷💰:** knocks nobody out; where it stops it takes 10 points and the vests of each other colour there, and the bounty if the leader is one of them. A magic box always gives it +20 or a vest.
+    - **Dragon rider 🐲🔥:** while it's out, the dragon leaves its player's pieces alone; landing on the dragon it slays it as a king would (40, and no more dragons).
+17. The game goes on until only one player is left without all four planes in the centre. By default the most points wins (see below). In the classic race, the first player home wins.
 
 ### Points
 
@@ -187,7 +196,7 @@ The weights live in `shared/dice.ts`.
 - Power square (on or off)
 - Walls (on or off)
 - Kings (on or off)
-- Surprise events, bounty on the leader, dragon (each on or off)
+- Surprise events, bounty on the leader, dragon, heroes (each on or off)
 - Cinematic moments (on or off)
 - Reaction GIFs (on or off)
 - Home: bounce back on overshoot / exact roll needed

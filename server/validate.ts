@@ -35,6 +35,7 @@ export function parseRules(input: unknown): Rules {
     events: bool(r.events, d.events),
     bounty: bool(r.bounty, d.bounty),
     dragon: bool(r.dragon, d.dragon),
+    heroes: bool(r.heroes, d.heroes),
     playUntil: oneOf(r.playUntil, ['winner', 'all'], d.playUntil),
     winBy: oneOf(r.winBy, ['points', 'race'], d.winBy),
   };

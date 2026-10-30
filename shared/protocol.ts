@@ -2,7 +2,7 @@ import type { BotLevel } from './ai.ts';
 import type { Award } from './awards.ts';
 import type { Seat } from './board.ts';
 import type { ShownReaction } from './reactions.ts';
-import type { GameEvent, GameState, PowerChoice, Rules } from './rules.ts';
+import type { GameEvent, GameState, HeroKind, PowerChoice, Rules } from './rules.ts';
 
 export type SeatKind = 'open' | 'closed' | 'human' | 'bot';
 
@@ -224,6 +224,8 @@ export interface ClientToServer {
   'game:box': (req: { code: string; square: number }, ack: Ack<null>) => void;
   /** On a power square: pick a power. An ambush names whose home column it opens (`over`). */
   'game:power': (req: { code: string; choice: PowerChoice; over?: Seat }, ack: Ack<null>) => void;
+  /** Pick a hero, when the turn starts with one to pick. */
+  'game:hero': (req: { code: string; kind: HeroKind }, ack: Ack<null>) => void;
   /** Put the vest from a magic box on this piece. */
   'game:vest': (req: { code: string; piece: number }, ack: Ack<null>) => void;
   /** Put the bridge, box or safe square picked on a power square on this absolute track square. */

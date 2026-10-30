@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react';
 import { COLOR_HEX, PIECES_PER_SEAT, type Seat } from '../../../shared/board.ts';
 import type { SeatView } from '../../../shared/protocol.ts';
-import { DRAGON_PATH, type GameEvent, type GameState } from '../../../shared/rules.ts';
+import { DRAGON_PATH, type GameEvent, type GameState, type Hero } from '../../../shared/rules.ts';
+import { HERO_LOOK } from '../heroes.ts';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { describe, seatName } from '../events.ts';
 
@@ -19,10 +20,21 @@ interface Props {
   played: string;
 }
 
-/** Small marks after a name: computer, played at someone's device, away, wearing a vest. */
-function Marks({ s, vests, userId }: { s: SeatView; vests: number; userId: number }) {
+/** Small marks after a name: computer, played at someone's device, away, wearing a vest, a hero out or to pick. */
+function Marks({ s, vests, userId, hero, picks }: { s: SeatView; vests: number; userId: number; hero: Hero | null; picks: number }) {
   return (
     <>
+      {hero && (
+        <span className="mark" title={`${HERO_LOOK[hero.kind].en} (${HERO_LOOK[hero.kind].fa}) on the board · ${hero.left} squares left`}>
+          {HERO_LOOK[hero.kind].face}
+          {hero.left}
+        </span>
+      )}
+      {!hero && picks > 0 && (
+        <span className="mark" title="A hero to pick at the start of their turn">
+          🦸
+        </span>
+      )}
       {s.kind === 'bot' && (
         <span className="mark" title={s.left ? 'Left the game — a computer plays' : `Computer · ${s.botLevel}`}>
           🤖
@@ -111,7 +123,13 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
                 <td className="who">
                   <span className="swatch" />
                   <span className="who-name">{seatName(seats, seat)}</span>
-                  <Marks s={seats[seat]} vests={(game.vested?.[seat] ?? []).reduce((n, v) => n + v, 0)} userId={userId} />
+                  <Marks
+                    s={seats[seat]}
+                    vests={(game.vested?.[seat] ?? []).reduce((n, v) => n + v, 0)}
+                    userId={userId}
+                    hero={game.heroes?.[seat] ?? null}
+                    picks={game.rules.heroes ? (game.heroPicks?.[seat] ?? 0) : 0}
+                  />
                 </td>
                 <td>
                   {st.home}/{PIECES_PER_SEAT}

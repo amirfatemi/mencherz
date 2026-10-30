@@ -1,5 +1,5 @@
 import { GOAL, type Seat } from './board.ts';
-import { blastOf, type GameEvent, type Rand } from './rules.ts';
+import { HERO, blastOf, type GameEvent, type Rand } from './rules.ts';
 import { EARLY_UNTIL } from './scoring.ts';
 import { ROLL_MS, arrivalAt, blastAt, boxOpenAt, captureAt, dragonStopsAt } from './timing.ts';
 
@@ -144,7 +144,8 @@ export function reactionsFor(ev: GameEvent, pick: (group: ReactionGroup) => stri
     if (hurts) show(box.owner, 'happy', boxOpenAt(ev));
   }
   const blast = blastOf(ev);
-  if (blast && blast.pos >= HURT_FROM) {
+  // A hero has no way to go, so only pieces past halfway count as a loss (a hero's positions are squares).
+  if (blast && !ev.hero && blast.pos >= HURT_FROM) {
     const at = blastAt(ev);
     show(ev.seat, 'sad', at);
     if (blast.owner !== null && blast.owner !== ev.seat) show(blast.owner, 'happy', at);
@@ -154,10 +155,10 @@ export function reactionsFor(ev: GameEvent, pick: (group: ReactionGroup) => stri
   const bomber = ev.bombed?.owner ?? null;
   if (caught.length) {
     const at = blastAt(ev);
-    for (const v of caught) if (v.from >= HURT_FROM) show(v.seat, 'sad', at);
+    for (const v of caught) if (v.piece < HERO && v.from >= HURT_FROM) show(v.seat, 'sad', at);
     if (bomber !== null && caught.some((v) => v.seat !== bomber)) show(bomber, 'happy', at);
   }
-  const late = ev.captures.filter((c) => c.from >= HURT_FROM);
+  const late = ev.captures.filter((c) => c.piece < HERO && c.from >= HURT_FROM);
   if (late.length) {
     show(ev.seat, 'happy', captureAt(ev, late[0]));
     for (const c of late) show(c.seat, 'sad', captureAt(ev, c));

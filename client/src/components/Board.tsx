@@ -39,21 +39,25 @@ import {
   BRIDGE_SPAN,
   DRAGON_PATH,
   DRAGON_PRIZE,
+  GUARD_REACH,
+  HERO,
   KING_PIECE,
   SUPER_BOMB_REACH,
   asSeen,
   isKing,
   planMove,
   ambushStart,
+  type Bomb,
   type BridgeKind,
   type GameState,
   type Placeable,
 } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
-import { BOARD_PX, CELL, dragonPoint, heading, restHeading, toPx } from '../geometry.ts';
-import type { ActiveReaction, AnimFrame, Popup } from '../useRoomStream.ts';
+import { BOARD_PX, CELL, dragonPoint, heading, movePoint, restHeading, toPx } from '../geometry.ts';
+import type { ActiveReaction, AnimFrame, Countdown, Popup } from '../useRoomStream.ts';
 import { PLANE_PATH, Piece, PieceDefs, type PieceStyle } from './Piece.tsx';
 import { ReactionArt } from './Reaction.tsx';
+import { HeroDefs, HeroMedal, HeroToken } from './HeroArt.tsx';
 
 const PIECE_SIZE = CELL * 0.42;
 /** Without hover, the first tap on a piece shows its move and the second makes it. */
@@ -165,6 +169,7 @@ function Defs() {
         <feDropShadow dx="0" dy="1.5" stdDeviation="1.2" floodOpacity="0.32" />
       </filter>
       <PieceDefs />
+      <HeroDefs />
     </defs>
   );
 }
@@ -511,6 +516,12 @@ interface BoardProps {
   /** Squares the viewer may drop a bomb, hide a magic box or start a bridge on right now. */
   targets: number[];
   targetKind: 'bomb' | Placeable;
+  /** A move to preview from outside the board: the archer's move back, hovered on its button. */
+  previewMove?: number | null;
+  /** The 1, 2, 3 before a blast. */
+  countdown?: Countdown | null;
+  /** A bomb going down before the state that has it comes in (the engineer's last). */
+  dropped?: Bomb | null;
   onMove: (piece: number) => void;
   onTarget: (square: number) => void;
 }
@@ -569,12 +580,12 @@ function ReactionLayer({ reactions, rot }: { reactions: ActiveReaction[]; rot: n
   );
 }
 
-export function Board({ game, seats, anim, movable, pieceStyle, popups, reactions, targets, targetKind, onMove, onTarget }: BoardProps) {
+export function Board({ game, seats, anim, movable, pieceStyle, popups, reactions, targets, targetKind, previewMove, countdown, dropped, onMove, onTarget }: BoardProps) {
   // Everyone sees the board the same way round (yellow top-left, red bottom-left), on every device.
   const rot = 0;
   const [hover, setHover] = useState<number | null>(null);
   const [bombHover, setBombHover] = useState<number | null>(null);
-  const hovered = hover !== null && movable.includes(hover) ? hover : null;
+  const hovered = previewMove != null && movable.includes(previewMove) ? previewMove : hover !== null && movable.includes(hover) ? hover : null;
   useEffect(() => {
     setHover(null);
     setBombHover(null);
@@ -684,12 +695,12 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
         {preview && (
           <g className="preview" pointerEvents="none">
             {preview.path.map((step, i) => {
-              const p = toPx(piecePoint(preview.seat, preview.piece, step.pos), rot);
+              const p = toPx(movePoint(preview.seat, preview.piece, step.pos), rot);
               const big = step.kind !== 'step' && step.kind !== 'bounce';
               return <circle key={i} cx={p.x} cy={p.y} r={big ? 7 : 4.5} fill={COLOR_DARK[preview.seat]} stroke="#fff" strokeWidth={1.5} />;
             })}
             {preview.captures.map((c) => {
-              const p = toPx(piecePoint(c.seat, c.piece, c.from), rot);
+              const p = toPx(movePoint(c.seat, c.piece, c.from), rot);
               return (
                 <g key={`${c.seat}:${c.piece}`}>
                   <circle cx={p.x} cy={p.y} r={CELL * 0.5} fill="none" stroke="#d50000" strokeWidth={4} className="threat" />
@@ -738,7 +749,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             {(() => {
               // Pieces a super bomb's blast would take with it.
               const blast = (preview.bombed?.blast ?? []).map((v) => {
-                const q = toPx(piecePoint(v.seat, v.piece, v.from), rot);
+                const q = toPx(movePoint(v.seat, v.piece, v.from), rot);
                 return v.saved ? null : <circle key={`${v.seat}:${v.piece}`} cx={q.x} cy={q.y} r={CELL * 0.5} fill="none" stroke="#d50000" strokeWidth={4} className="threat" />;
               });
               if (preview.bombed && !preview.bombed.saved) {
@@ -753,7 +764,39 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                   </>
                 );
               }
-              const p = toPx(piecePoint(preview.seat, preview.piece, preview.to), rot);
+              const p = toPx(movePoint(preview.seat, preview.piece, preview.to), rot);
+              const hero = preview.hero;
+              if (hero) {
+                // Where the hero ends up, and what it does there.
+                return (
+                  <>
+                    {hero.froze.map((f) => {
+                      const q = toPx(movePoint(f.seat, f.piece, f.piece >= HERO ? game.heroes[f.seat]!.square : game.pieces[f.seat][f.piece]), rot);
+                      return (
+                        <text key={`${f.seat}:${f.piece}`} x={q.x} y={q.y - CELL * 0.6} className="preview-points" textAnchor="middle">
+                          ❄️
+                        </text>
+                      );
+                    })}
+                    {hero.defused.map((sq) => {
+                      const q = toPx(TRACK[sq].spot, rot);
+                      return (
+                        <text key={`d${sq}`} x={q.x} y={q.y - CELL * 0.7} className="preview-points" textAnchor="middle">
+                          🧨 +5
+                        </text>
+                      );
+                    })}
+                    {hero.stolen.length > 0 && (
+                      <text x={p.x} y={p.y - CELL * 0.85} className="preview-points" textAnchor="middle">
+                        💰 +{hero.stolen.reduce((n, x) => n + x.points, 0) + (hero.bounty ?? 0)}
+                      </text>
+                    )}
+                    <g opacity={0.55} transform={`translate(${p.x} ${p.y})`}>
+                      <HeroMedal kind={hero.kind} r={CELL * 0.36} />
+                    </g>
+                  </>
+                );
+              }
               return (
                 <>
                   {preview.to === GOAL && (
@@ -786,6 +829,11 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             const p = toPx(TRACK[b.square].spot, rot);
             return <BombIcon key={b.square} x={p.x} y={p.y} owner={b.owner} big={b.super} />;
           })}
+        {dropped &&
+          (() => {
+            const p = toPx(TRACK[dropped.square].spot, rot);
+            return <BombIcon x={p.x} y={p.y} owner={dropped.owner} big={dropped.super} />;
+          })()}
         {(game.power ?? []).map((sq) => (
           <PowerSquare key={`power${sq}`} square={sq} rounds={powerRounds} />
         ))}
@@ -794,6 +842,15 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           <SafeMark key={`safe${x.square}`} square={x.square} owner={x.owner} rounds={roundsUntil(x.until)} />
         ))}
         {game.ambush && <AmbushMark over={game.ambush.over} rounds={roundsUntil(game.ambush.until)} />}
+
+        {/* The squares a guardian watches over. */}
+        {game.active.map((seat) => {
+          const h = game.heroes?.[seat];
+          if (h?.kind !== 'guardian' || anim?.pieces.has(`${seat}:${HERO}`)) return null;
+          return Array.from({ length: GUARD_REACH * 2 + 1 }, (_, k) => (h.square + k - GUARD_REACH + TRACK.length) % TRACK.length).map((sq) => (
+            <ShapeEl key={`guard${seat}:${sq}`} s={rotateShape(TRACK[sq].shape, rot)} fill={`${COLOR_HEX[seat]}33`} stroke={COLOR_HEX[seat]} strokeWidth={2.5} inset={2.5} />
+          ));
+        })}
 
         <g filter="url(#piece-shadow)">
           {items.map((it) => {
@@ -827,6 +884,29 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             );
           })}
         </g>
+
+        {/* Heroes stand a little up and to the left when pieces share their square. */}
+        {game.active.map((seat) => {
+          const h = game.heroes?.[seat];
+          if (!h) return null;
+          const moving = anim?.pieces.get(`${seat}:${HERO}`);
+          const shared = !moving && game.active.some((o) => game.pieces[o].some((q) => isOnTrack(q) && trackIndex(o, q) === h.square));
+          const at = toPx(moving ?? TRACK[h.square].spot, rot);
+          const canMove = !moving && seat === game.turn && movable.includes(HERO);
+          return (
+            <HeroToken
+              key={`hero${seat}`}
+              hero={h}
+              seat={seat}
+              x={at.x - (shared ? CELL * 0.22 : 0)}
+              y={at.y - (shared ? CELL * 0.22 : 0)}
+              r={CELL * (moving ? 0.4 * (moving.scale ?? 1) : shared ? 0.32 : 0.4)}
+              movable={canMove}
+              onClick={canMove ? () => (TOUCH && hovered !== HERO ? setHover(HERO) : onMove(HERO)) : undefined}
+              onHover={canMove && !TOUCH ? (on) => setHover(on ? HERO : null) : undefined}
+            />
+          );
+        })}
 
         {game.dragon &&
           (() => {
@@ -891,6 +971,21 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             )}
           </g>
         )}
+
+        {countdown &&
+          (() => {
+            const p = toPx(countdown.at, rot);
+            return (
+              <g className="countdown" transform={`translate(${p.x} ${p.y - CELL * 1.1})`} pointerEvents="none">
+                <g key={countdown.n} className="countdown-beat">
+                  <circle r={CELL * 0.62} fill="#b71c1c" stroke="#fff" strokeWidth={4} />
+                  <text textAnchor="middle" dominantBaseline="central" fontSize={CELL * 0.8} fontWeight={800} fill="#fff">
+                    {countdown.n.toLocaleString('fa-IR')}
+                  </text>
+                </g>
+              </g>
+            );
+          })()}
 
         {popups.map((pop) => {
           const p = toPx(pop, rot);
