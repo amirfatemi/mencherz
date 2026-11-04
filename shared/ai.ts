@@ -67,11 +67,11 @@ function applyPlan(state: GameState, plan: MovePlan): GameState {
 }
 
 /**
- * A hero's move: what it scores or takes away from the others, less the hero itself if a bomb gets it. It has no
+ * A hero's move: what it scores or takes away from the others (bombs taken over too), less the hero itself if a bomb gets it. It has no
  * progress to make, so a little goes to moving it at all, or bots would sit on it.
  */
 function heroScore(plan: MovePlan): number {
-  let s = 2 + plan.points * 1.5 + plan.captures.length * 12 + plan.hero!.froze.length * 3;
+  let s = 2 + plan.points * 1.5 + plan.captures.length * 12 + plan.hero!.froze.length * 3 + plan.hero!.hijacked.length * 5;
   if (plan.to === HANGAR) s -= 12;
   return s;
 }

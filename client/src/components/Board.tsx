@@ -747,6 +747,15 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                   </text>
                 );
               })()}
+            {(preview.guarded ?? []).map((g) => {
+              // Pieces their guardian would keep from being knocked out.
+              const q = toPx(TRACK[g.square].spot, rot);
+              return (
+                <text key={`g${g.seat}:${g.piece}`} x={q.x} y={q.y + CELL * 1.05} className="preview-points" textAnchor="middle">
+                  🛡️ saved
+                </text>
+              );
+            })}
             {preview.bombed?.saved &&
               (() => {
                 const b = toPx(TRACK[preview.bombed.square].spot, rot);
@@ -788,11 +797,11 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                         </text>
                       );
                     })}
-                    {hero.defused.map((sq) => {
+                    {hero.hijacked.map((sq) => {
                       const q = toPx(TRACK[sq].spot, rot);
                       return (
                         <text key={`d${sq}`} x={q.x} y={q.y - CELL * 0.7} className="preview-points" textAnchor="middle">
-                          🧨 +5
+                          💣🔄
                         </text>
                       );
                     })}
@@ -856,7 +865,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
         {/* The squares a guardian watches over. */}
         {game.active.map((seat) => {
           const h = game.heroes?.[seat];
-          if (h?.kind !== 'guardian' || h.square < 0 || anim?.pieces.has(`${seat}:${HERO}`)) return null;
+          if (h?.kind !== 'guardian' || h.square < 0 || !h.guards || anim?.pieces.has(`${seat}:${HERO}`)) return null;
           return Array.from({ length: GUARD_REACH * 2 + 1 }, (_, k) => (h.square + k - GUARD_REACH + TRACK.length) % TRACK.length).map((sq) => (
             <ShapeEl key={`guard${seat}:${sq}`} s={rotateShape(TRACK[sq].shape, rot)} fill={`${COLOR_HEX[seat]}33`} stroke={COLOR_HEX[seat]} strokeWidth={2.5} inset={2.5} />
           ));

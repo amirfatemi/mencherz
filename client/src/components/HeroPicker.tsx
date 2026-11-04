@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react';
 import { COLOR_HEX, type Seat } from '../../../shared/board.ts';
-import { HERO_KILL, HERO_KINDS, HERO_LIFE, heroOptions, type GameState, type HeroKind } from '../../../shared/rules.ts';
+import { GUARDIAN_KILL, HERO_KILL, HERO_KINDS, HERO_LIFE, heroOptions, type GameState, type HeroKind } from '../../../shared/rules.ts';
 import { HERO_ART, HERO_LOOK } from '../heroes.ts';
 import { HeroIcon } from './HeroArt.tsx';
 
@@ -51,7 +51,7 @@ export function HeroPicker({ game, seat, name, onPick, onHide }: Props) {
           <h2>🦸 {name}، هیروی خودت را انتخاب کن</h2>
           <p>
             هیرو مثل مهرهٔ پنجم است: {fa(HERO_LIFE)} خانه (یک دور کامل) روی مسیر می‌چرخد، وارد خط خانه نمی‌شود و بعد می‌رود. حرکتش جای حرکت یکی از
-            مهره‌هاست. اگر کسی بزندش، {fa(HERO_KILL)} امتیاز می‌گیرد. هر هیرو را در هر بازی فقط یک بار می‌توانی بیاوری.
+            مهره‌هاست. اگر کسی بزندش، {fa(HERO_KILL)} امتیاز می‌گیرد (نگهبان {fa(GUARDIAN_KILL)}). هر هیرو را در هر بازی فقط یک بار می‌توانی بیاوری.
           </p>
         </div>
         <ul className="hero-cards">

@@ -25,9 +25,10 @@ function Marks({ s, vests, userId, hero, picks }: { s: SeatView; vests: number; 
   return (
     <>
       {hero && (
-        <span className="mark" title={`${HERO_LOOK[hero.kind].en} (${HERO_LOOK[hero.kind].fa}) on the board · ${hero.left} squares left`}>
+        <span className="mark" title={`${HERO_LOOK[hero.kind].en} (${HERO_LOOK[hero.kind].fa}) on the board · ${hero.left} squares left${hero.kind === 'guardian' ? ` · ${hero.guards} saves left` : ''}`}>
           <img className="mark-hero" src={HERO_FACE[hero.kind]} alt="" style={{ borderColor: HERO_LOOK[hero.kind].ring }} />
           {hero.left}
+          {hero.kind === 'guardian' && ` 🛡️${hero.guards}`}
         </span>
       )}
       {!hero && picks > 0 && (

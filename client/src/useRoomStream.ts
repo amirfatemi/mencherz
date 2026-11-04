@@ -100,10 +100,15 @@ function moveBanner(ev: MoveEvent): { at: number; text: string; tone: Banner['to
   const hero = ev.hero;
   if (hero?.stolen.length) {
     const took = hero.stolen.reduce((n, x) => n + x.points, 0) + (hero.bounty ?? 0);
-    return { at: arrivalAt(ev), text: `🥷 دزدی! +${took}`, tone: 'gold', slow: false };
+    const text = hero.stolen.some((x) => x.king) ? `🥷 پادشاه را دزدید! +${took}` : `🥷 دزدی! +${took}`;
+    return { at: arrivalAt(ev), text, tone: 'gold', slow: false };
   }
   if (hero?.froze.length) return { at: arrivalAt(ev), text: '❄️ یخ زدند!', tone: 'event', slow: false };
-  if (hero?.defused.length) return { at: arrivalAt(ev), text: `🧨 بمب خنثی شد! +${hero.defused.length * 5}`, tone: 'gold', slow: false };
+  if (hero?.hijacked.length) {
+    const n = hero.hijacked.length;
+    return { at: arrivalAt(ev), text: n === 1 ? '👷💣 بمب مال مهندس شد!' : `👷💣 ${n.toLocaleString('fa-IR')} بمب مال مهندس شد!`, tone: 'gold', slow: false };
+  }
+  if (ev.guarded?.length) return { at: arrivalAt(ev), text: '💂🛡️ نگهبان نجاتش داد!', tone: 'event', slow: false };
   const bounty = ev.captures.find((c) => c.bounty);
   if (bounty) return { at: captureAt(ev, bounty), text: `🎯 جایزه گرفت! +${bounty.bounty}`, tone: 'gold', slow: false };
   return null;
@@ -226,13 +231,14 @@ function scoreMoments(ev: MoveEvent, cinematic: boolean): ScoreMoment[] {
   }
   const hero = ev.hero;
   if (hero) {
-    for (const sq of hero.defused) {
+    for (const sq of hero.hijacked) {
       const i = ev.path.findIndex((step) => step.pos === sq);
-      out.push({ at: TRACK_CELLS[sq], delay: stepEnd(ev, i), text: '🧨 +5', seat: ev.seat });
+      out.push({ at: TRACK_CELLS[sq], delay: stepEnd(ev, i), text: '💣🔄', seat: ev.seat });
     }
     const took = hero.stolen.reduce((n, x) => n + x.points, 0) + (hero.bounty ?? 0);
     if (hero.stolen.length) out.push({ at: TRACK_CELLS[ev.to], delay: arrivalAt(ev), text: `💰 +${took}`, seat: ev.seat });
   }
+  for (const g of ev.guarded ?? []) out.push({ at: TRACK_CELLS[g.square], delay: arrivalAt(ev), text: '🛡️', seat: g.seat });
   const b = ev.bombed;
   if (b) {
     const text = b.saved ? '🦺 Saved!' : b.points ? `💣 +${b.points}` : '💣';
@@ -545,6 +551,7 @@ export function useRoomStream(code: string) {
               const stops = (DRAGON_PAUSE_MS + d.steps * STEP_MS.step) / speed;
               setTimeout(() => alive.current && sfx.roar(), DRAGON_PAUSE_MS / speed);
               if (d.eaten.length) setTimeout(() => alive.current && sfx.hit(), stops);
+              if (d.guarded?.length && !skip) setTimeout(() => alive.current && showBanner('💂🛡️ نگهبان جلوی اژدها را گرفت!', 'event'), stops);
               if (d.bomb !== undefined && !skip) {
                 setTimeout(() => {
                   if (!alive.current) return;

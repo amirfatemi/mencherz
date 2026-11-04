@@ -1,4 +1,4 @@
-import { HERO_DEFUSE, HERO_STEAL, DRAGON_PRIZE, type HeroKind } from '../../shared/rules.ts';
+import { DRAGON_PRIZE, GUARD_SAVES, GUARDIAN_KILL, HERO_STEAL, THIEF_KING_STEAL, type HeroKind } from '../../shared/rules.ts';
 import archerArt from './assets/heroes/archer.webp';
 import engineerArt from './assets/heroes/engineer.webp';
 import frostArt from './assets/heroes/frost.webp';
@@ -73,7 +73,7 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     light: '#ffcc80',
     ring: '#fb8c00',
     dark: '#b23c00',
-    power: `هر بمبی که از رویش رد شود یا رویش بایستد خنثی می‌کند (هر کدام ${fa(HERO_DEFUSE)}+) و هیچ بمبی منفجرش نمی‌کند. آخر عمرش یک ابر بمب می‌گذارد و بعد با شمارش ۱، ۲، ۳ خودش منفجر می‌شود.`,
+    power: 'هر بمبی که از رویش رد شود یا رویش بایستد مال خودت می‌شود (بمب حریف یا اژدها)، و هیچ بمبی منفجرش نمی‌کند. آخر عمرش یک ابر بمب هر جا بخواهی می‌گذارد و بعد با شمارش ۱، ۲، ۳ خودش منفجر می‌شود.',
   },
   guardian: {
     fa: 'نگهبان',
@@ -84,7 +84,7 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     light: '#90caf9',
     ring: '#1e78e6',
     dark: '#0d2f7a',
-    power: 'مهره‌های تو روی خانهٔ نگهبان و یک خانه جلو و عقبش زده نمی‌شوند؛ نه بمب به آن‌ها کاری دارد، نه اژدها.',
+    power: `مهره‌های تو را روی خانهٔ خودش و یک خانه جلو و عقبش از زده شدن و اژدها نجات می‌دهد، ولی فقط ${fa(GUARD_SAVES)} بار؛ جلوی بمب را نمی‌گیرد. هر کس بزندش ${fa(GUARDIAN_KILL)} امتیاز می‌گیرد.`,
   },
   frost: {
     fa: 'یخ‌زن',
@@ -106,7 +106,7 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     light: '#ce93d8',
     ring: '#8e24aa',
     dark: '#3d0a5c',
-    power: `کسی را نمی‌زند؛ هر جا بایستد از هر حریفی که آنجاست ${fa(HERO_STEAL)} امتیاز و جلیقه‌اش را می‌دزدد، و جایزهٔ نفر اول را هم. جعبهٔ جادو برایش همیشه خوب است.`,
+    power: `کسی را نمی‌زند؛ هر جا بایستد از هر حریفی که آنجاست ${fa(HERO_STEAL)} امتیاز (اگر پادشاهش آنجا باشد ${fa(THIEF_KING_STEAL)}) و جلیقه‌اش را می‌دزدد، و جایزهٔ نفر اول را هم. جعبهٔ جادو برایش همیشه خوب است.`,
   },
   rider: {
     fa: 'اژدهاسوار',

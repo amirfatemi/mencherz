@@ -18,16 +18,19 @@ function dragonText(ev: RollEvent, seats: SeatView[]): string {
   if (d.exploded) return ' · the dragon 🐉 came full circle and exploded 💥';
   const whose = (e: { seat: Seat; piece: number }) => `${seatName(seats, e.seat)}'s ${e.piece >= HERO ? 'hero' : 'piece'}`;
   const bits = d.eaten.length ? [`the dragon 🐉 ate ${d.eaten.map(whose).join(' and ')}`] : [];
+  for (const g of d.guarded ?? []) bits.push(`${seatName(seats, g.seat)}'s guardian 💂 kept the dragon off a piece 🛡️`);
   if (d.bomb !== undefined) bits.push(d.superBomb ? 'three sixes: the dragon 🐉 left a super bomb 💥' : 'two sixes: the dragon 🐉 left a bomb 💣');
   return bits.map((b) => ` · ${b}`).join('');
 }
 
 function knockOuts(ev: MoveEvent, seats: SeatView[]): string[] {
-  return ev.captures.map((c) => {
+  const out = ev.captures.map((c) => {
     const extras = [c.king && '👑 a king', c.revenge && '⚔️ revenge', killStreakName(c.streak ?? 1), c.bounty && `🎯 bounty +${c.bounty}`].filter(Boolean);
     const whom = c.piece >= HERO ? `${seatName(seats, c.seat)}'s hero off the board` : `${seatName(seats, c.seat)} back`;
     return `sent ${whom} 💥 +${c.points}${extras.length ? ` (${extras.join(', ')})` : ''}`;
   });
+  for (const g of ev.guarded ?? []) out.push(`${seatName(seats, g.seat)}'s guardian 💂 saved a piece 🛡️`);
+  return out;
 }
 
 /** A hero's move, and what it did. */
@@ -36,8 +39,8 @@ function heroMove(ev: MoveEvent, who: string, seats: SeatView[]): string {
   const look = HERO_LOOK[h.kind];
   const bits = [`${who}'s ${look.en.toLowerCase()} ${look.face} went ${ev.path.length}${h.back ? ' back' : ''}`];
   bits.push(...knockOuts(ev, seats));
-  if (h.defused.length) bits.push(`defused ${h.defused.length === 1 ? 'a bomb' : `${h.defused.length} bombs`} 🧨 +${h.defused.length * 5}`);
-  for (const x of h.stolen) bits.push(`robbed ${seatName(seats, x.seat)} 💰 +${x.points}${x.vests ? ' and a vest 🦺' : ''}`);
+  if (h.hijacked.length) bits.push(`took over ${h.hijacked.length === 1 ? 'a bomb' : `${h.hijacked.length} bombs`} 💣 — they're ${who}'s now`);
+  for (const x of h.stolen) bits.push(`robbed ${seatName(seats, x.seat)}${x.king ? "'s king 👑" : ''} 💰 +${x.points}${x.vests ? ' and a vest 🦺' : ''}`);
   if (h.bounty) bits.push(`took the bounty 🎯 +${h.bounty}`);
   if (h.froze.length) bits.push(`froze ${h.froze.length === 1 ? 'a piece' : `${h.froze.length} pieces`} ❄️`);
   if (ev.box?.outcome) bits.push(ev.box.outcome === 'plus' ? `found +${POINTS.boxBonus} in a magic box 🎁` : 'found a vest in a magic box 🦺');

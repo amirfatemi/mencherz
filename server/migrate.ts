@@ -1,5 +1,5 @@
 import { GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, type Seat } from '../shared/board.ts';
-import { DEFAULT_RULES, DRAGON_FIRST_ROUNDS, DRAGON_PATH, HERO_FINISHED_ROUNDS, HERO_THRESHOLDS, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
+import { DEFAULT_RULES, DRAGON_FIRST_ROUNDS, DRAGON_PATH, GUARD_SAVES, HERO_FINISHED_ROUNDS, HERO_THRESHOLDS, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
 import { POINTS } from '../shared/scoring.ts';
 
 /** Brings a saved game up to date: board numbering first, then fields added since it was saved. */
@@ -69,6 +69,8 @@ export function upgradeGame(game: GameState): GameState {
   g.heroAt ??= SEATS.map(() => g.turnNo + HERO_FINISHED_ROUNDS * g.active.length);
   g.heroEnding ??= null;
   g.heroBlast ??= null;
+  // A guardian already out when its saves came in starts with them all.
+  for (const h of g.heroes) if (h) h.guards ??= h.kind === 'guardian' ? GUARD_SAVES : 0;
   g.sixPenalties ??= SEATS.map(() => 0);
   // Roll-again cards were dropped: the phase that placed bridges also places boxes now, and a roll that
   // waited for a card or a pass is simply rolled again.
