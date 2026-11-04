@@ -58,6 +58,7 @@ import {
   HERO,
   HERO_BACK,
   HERO_DEFUSE,
+  HERO_START,
   HERO_FINISHED_ROUNDS,
   HERO_KILL,
   HERO_KINDS,
@@ -1516,7 +1517,7 @@ describe('heroes', () => {
     assert.deepEqual([g.turn, g.phase], [0, 'hero'], 'picked before the roll');
     assert.throws(() => applyRoll(g, 3), /Not time to roll/);
     const r = applyHero(g, 'archer');
-    assert.deepEqual(r.state.heroes[0], { kind: 'archer', square: trackIndex(0, 1), left: HERO_LIFE, kills: 0, vests: 0, frozen: 0 });
+    assert.deepEqual(r.state.heroes[0], { kind: 'archer', square: HERO_START, left: HERO_LIFE, kills: 0, vests: 0, frozen: 0 }, 'at the takeoff spot');
     assert.deepEqual([r.state.phase, r.state.heroPicks[0]], ['roll', 0]);
     assert.deepEqual(heroOptions(r.state, 0), HERO_KINDS.filter((k) => k !== 'archer'));
     assert.throws(() => applyHero(r.state, 'thief'), /Not time/);
@@ -1528,6 +1529,36 @@ describe('heroes', () => {
     const k = applyMove(t, 0);
     assert.equal(k.event.captures[0].streak, 3);
     assert.equal(k.state.heroPicks[0], 1);
+  });
+
+  test('it comes on at the takeoff spot, where nothing reaches it, and its first move goes onto the track, forward only', () => {
+    const g = withHero('archer', HERO_START);
+    at(g, 1, [blueAt(trackIndex(0, 2))]);
+    rollFor(g, 2);
+    assert.deepEqual(g.movable, [HERO], "the archer can't go back from there");
+    const r = applyMove(g, HERO);
+    assert.deepEqual(r.event.from, HERO_START);
+    assert.deepEqual(r.event.path.map((p) => p.pos), [trackIndex(0, 1), trackIndex(0, 2)]);
+    assert.deepEqual(r.event.captures.map((c) => c.seat), [1]);
+    assert.equal(r.state.heroes[0]?.left, HERO_LIFE - 2);
+    // Nobody can knock it out at the takeoff spot, nor a guardian there watch over anything.
+    const w = withHero('frost', HERO_START);
+    at(w, 1, [blueAt((trackIndex(0, 1) + 50) % 52)]);
+    Object.assign(w, { turn: 1, phase: 'move', dice: 2, movable: [0] });
+    assert.deepEqual(applyMove(w, 0).event.captures, []);
+  });
+
+  test('every second three-sixes penalty earns a hero', () => {
+    let g = at(game([0, 1], { heroes: true }), 0, []);
+    g.frozen[0] = [99, 99, 99, 99];
+    const threeSixes = (s: GameState) => applyRoll(applyRoll(applyRoll(s, 6).state, 6).state, 6).state;
+    g = threeSixes(g);
+    assert.deepEqual([g.sixPenalties[0], g.heroPicks[0]], [1, 0]);
+    g = applyBomb(g, freeSquares(g)[0]).state;
+    g = applyRoll(g, 3).state;
+    g.frozen[0] = [99, 99, 99, 99];
+    g = threeSixes(g);
+    assert.deepEqual([g.sixPenalties[0], g.heroPicks[0]], [2, 1]);
   });
 
   test('it goes round the track, never up a home column, uses the roll, and is gone after one lap', () => {
@@ -1674,7 +1705,7 @@ describe('heroes', () => {
     assert.ok(passes >= HERO_FINISHED_ROUNDS * 2 && passes <= HERO_FINISHED_ROUNDS * 2 + 2, `five rounds of the other two: ${passes} turns`);
     g = applyHero(g, 'archer').state;
     g = applyRoll(g, 4).state;
-    assert.deepEqual(g.movable, [HERO, HERO_BACK]);
+    assert.deepEqual(g.movable, [HERO], 'forward only, off the takeoff spot');
     g = applyMove(g, HERO).state;
     assert.equal(g.turn, 1);
     assert.equal(g.ranking.length, 1, 'still home, still first');

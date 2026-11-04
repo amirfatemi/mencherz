@@ -79,8 +79,9 @@ export interface Rules {
   dragon: boolean;
   /**
    * Heroes: a fifth piece a player picks (see HERO_KINDS) on reaching each of HERO_THRESHOLDS points, after a
-   * triple kill, and, once all four pieces are home, every HERO_FINISHED_ROUNDS rounds. It goes round the track
-   * only, never up a home column, for HERO_LIFE squares, each kind with its own power. Moving it uses the roll.
+   * triple kill, on every second three-sixes penalty, and, once all four pieces are home, every
+   * HERO_FINISHED_ROUNDS rounds. It comes on at the takeoff spot and goes round the track only, never up a home
+   * column, for HERO_LIFE squares, each kind with its own power. Moving it uses the roll.
    */
   heroes: boolean;
   /** Stop when the first player finishes, or play on until only one is left (the full ranking). */
@@ -336,12 +337,17 @@ export const HERO_FINISHED_ROUNDS = 5;
 /** The piece number a hero's move goes by, and the archer's move back. */
 export const HERO = 4;
 export const HERO_BACK = 5;
+/**
+ * Where a hero waits when it comes on: its player's takeoff spot, like a piece just launched. Nothing reaches it
+ * there; its first move takes it onto the track, forward only.
+ */
+export const HERO_START = -2;
 /** What a magic box can hold for the thief. */
 const THIEF_BOX: readonly BoxOutcome[] = ['plus', 'vest'];
 
 export interface Hero {
   kind: HeroKind;
-  /** Absolute track square. */
+  /** Absolute track square, or HERO_START. */
   square: number;
   /** Squares it has left to go. */
   left: number;
@@ -470,6 +476,8 @@ export interface GameState {
   heroEnding: Seat | null;
   /** The engineer's last blast, numbered so it's shown once. */
   heroBlast: { n: number; seat: Seat; square: number; hit: BlastVictim[] } | null;
+  /** Three-sixes penalties each seat has had: every second one earns a hero. */
+  sixPenalties: number[];
   /** How many surprise events there have been. */
   eventN?: number;
   /** Turns in a row each seat had nothing to move and no piece out of the hangar. */
@@ -678,7 +686,7 @@ export interface BombEvent {
   ends?: boolean;
 }
 
-/** A hero picked: it comes on at its player's first track square. */
+/** A hero picked: it comes on at its player's takeoff spot (HERO_START). */
 export interface HeroEvent {
   type: 'hero';
   seat: Seat;
@@ -772,6 +780,7 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     heroAt: SEATS.map(() => 0),
     heroEnding: null,
     heroBlast: null,
+    sixPenalties: SEATS.map(() => 0),
     stuck: SEATS.map(() => 0),
     turnNo: 1,
     seq: 0,
@@ -884,7 +893,7 @@ const apart = (a: number, b: number) => Math.min((a - b + TRACK_LEN) % TRACK_LEN
 /** Whether a piece of `seat` on track square `square` is under its guardian's watch: it can't be knocked out, bombed or eaten. */
 function guarded(state: GameState, seat: Seat, square: number): boolean {
   const h = state.heroes?.[seat];
-  return h?.kind === 'guardian' && apart(h.square, square) <= GUARD_REACH;
+  return h?.kind === 'guardian' && h.square >= 0 && apart(h.square, square) <= GUARD_REACH;
 }
 
 /** Vests a piece wears; a hero's are its own. */
@@ -965,7 +974,7 @@ function blastAround(state: GameState, owner: Seat | null, center: number, skip:
       add(other, j, p);
     });
     const h = state.heroes?.[other];
-    if (!h || h.kind === 'engineer' || skip.has(`${other}:${HERO}`)) continue;
+    if (!h || h.square < 0 || h.kind === 'engineer' || skip.has(`${other}:${HERO}`)) continue;
     if (apart(h.square, center) <= SUPER_BOMB_REACH && !isSafe(state, other, h.square)) add(other, HERO, h.square);
   }
   return out;
@@ -1152,9 +1161,12 @@ export type OpenBox = (options: readonly BoxOutcome[]) => BoxOutcome;
  */
 function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean, openBox?: OpenBox): MovePlan | null {
   const h = state.heroes?.[seat];
-  if (!state.rules.heroes || !h || h.frozen > 0 || (back && h.kind !== 'archer')) return null;
+  const waiting = h?.square === HERO_START;
+  if (!state.rules.heroes || !h || h.frozen > 0 || (back && (h.kind !== 'archer' || waiting))) return null;
   const steps = Math.min(dice, h.left);
-  const at = (k: number) => (((h.square + (back ? -k : k)) % TRACK_LEN) + TRACK_LEN) % TRACK_LEN;
+  // From the takeoff spot its first step is the player's first track square.
+  const from = waiting ? (trackIndex(seat, TRACK_FIRST) - 1 + TRACK_LEN) % TRACK_LEN : h.square;
+  const at = (k: number) => (((from + (back ? -k : k)) % TRACK_LEN) + TRACK_LEN) % TRACK_LEN;
   const path: PathStep[] = Array.from({ length: steps }, (_, i) => ({ pos: at(i + 1), kind: 'step' }));
   const walls = wallsAgainst(state, seat);
   if (path.slice(0, -1).some((step) => walls.has(step.pos))) return null;
@@ -1205,7 +1217,7 @@ function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean,
         if (isOnTrack(p) && apart(trackIndex(o, p), to) <= FROST_REACH && !taken.has(`${o}:${j}`)) move.froze.push({ seat: o, piece: j });
       });
       const oh = state.heroes?.[o];
-      if (oh && apart(oh.square, to) <= FROST_REACH && !taken.has(`${o}:${HERO}`)) move.froze.push({ seat: o, piece: HERO });
+      if (oh && oh.square >= 0 && apart(oh.square, to) <= FROST_REACH && !taken.has(`${o}:${HERO}`)) move.froze.push({ seat: o, piece: HERO });
     }
   }
   return finishHeroPlan(plan, to, state);
@@ -1503,6 +1515,10 @@ export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRa
         event.penalized.push({ piece: j, from });
       }
       event.outcome = 'penalty';
+      // Every second three-sixes penalty earns a hero, for a little comfort.
+      s.sixPenalties ??= SEATS.map(() => 0);
+      s.sixPenalties[seat]++;
+      if (s.rules.heroes && s.sixPenalties[seat] % 2 === 0) s.heroPicks[seat]++;
     } else {
       event.outcome = 'forfeit';
     }
@@ -1775,7 +1791,7 @@ function engineerExplodes(s: GameState): void {
       if (apart(sq, h.square) <= DRAGON_BLAST_REACH && !isSafe(s, other, sq) && !guarded(s, other, sq)) hit.push({ seat: other, piece: j, from: p, saved: false });
     });
     const theirs = s.heroes[other];
-    if (theirs && theirs.kind !== 'engineer' && apart(theirs.square, h.square) <= DRAGON_BLAST_REACH && !isSafe(s, other, theirs.square)) {
+    if (theirs && theirs.square >= 0 && theirs.kind !== 'engineer' && apart(theirs.square, h.square) <= DRAGON_BLAST_REACH && !isSafe(s, other, theirs.square)) {
       hit.push({ seat: other, piece: HERO, from: theirs.square, saved: false });
     }
   }
@@ -1798,7 +1814,7 @@ function engineerExplodes(s: GameState): void {
   heroGone(s, seat);
 }
 
-/** Picks a hero, at the start of a turn: it comes on at the player's first track square, and the turn goes on to the roll. */
+/** Picks a hero, at the start of a turn: it comes on at the player's takeoff spot, and the turn goes on to the roll. */
 export function applyHero(state: GameState, kind: HeroKind): { state: GameState; event: HeroEvent } {
   if (state.phase !== 'hero') throw new RuleError('Not time to pick a hero');
   if (!heroOptions(state, state.turn).includes(kind)) throw new RuleError("That hero can't be picked");
@@ -1807,7 +1823,7 @@ export function applyHero(state: GameState, kind: HeroKind): { state: GameState;
   const seat = s.turn;
   s.heroPicks[seat]--;
   s.heroesUsed[seat].push(kind);
-  const square = trackIndex(seat, TRACK_FIRST);
+  const square = HERO_START;
   s.heroes[seat] = { kind, square, left: HERO_LIFE, kills: 0, vests: 0, frozen: 0 };
   s.phase = 'roll';
   return { state: s, event: { type: 'hero', seat, kind, square } };

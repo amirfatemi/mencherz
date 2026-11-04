@@ -5,6 +5,12 @@ import frostArt from './assets/heroes/frost.webp';
 import guardianArt from './assets/heroes/guardian.webp';
 import riderArt from './assets/heroes/rider.webp';
 import thiefArt from './assets/heroes/thief.webp';
+import archerFace from './assets/heroes/token-archer.webp';
+import engineerFace from './assets/heroes/token-engineer.webp';
+import frostFace from './assets/heroes/token-frost.webp';
+import guardianFace from './assets/heroes/token-guardian.webp';
+import riderFace from './assets/heroes/token-rider.webp';
+import thiefFace from './assets/heroes/token-thief.webp';
 
 const fa = (n: number) => n.toLocaleString('fa-IR');
 
@@ -18,6 +24,9 @@ export interface HeroLook {
   /** Its card's colours: deep, then light. */
   deep: string;
   light: string;
+  /** Its piece's ring, and the badge with the squares it has left. */
+  ring: string;
+  dark: string;
   /** What it does, in Persian. */
   power: string;
 }
@@ -32,6 +41,16 @@ export const HERO_ART: Record<HeroKind, string> = {
   rider: riderArt,
 };
 
+/** Each hero's round portrait, for its piece on the board. */
+export const HERO_FACE: Record<HeroKind, string> = {
+  archer: archerFace,
+  engineer: engineerFace,
+  guardian: guardianFace,
+  frost: frostFace,
+  thief: thiefFace,
+  rider: riderFace,
+};
+
 /** How each hero looks and what its card says. */
 export const HERO_LOOK: Record<HeroKind, HeroLook> = {
   archer: {
@@ -41,6 +60,8 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     badge: '🏹',
     deep: '#1b5e20',
     light: '#a5d6a7',
+    ring: '#43a047',
+    dark: '#1b5e20',
     power: 'با هر تاس خودت انتخاب می‌کنی جلو برود یا عقب، و هر مهره‌ای را که رویش بایستد می‌زند.',
   },
   engineer: {
@@ -50,6 +71,8 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     badge: '🧨',
     deep: '#bf360c',
     light: '#ffcc80',
+    ring: '#fb8c00',
+    dark: '#b23c00',
     power: `هر بمبی که از رویش رد شود یا رویش بایستد خنثی می‌کند (هر کدام ${fa(HERO_DEFUSE)}+) و هیچ بمبی منفجرش نمی‌کند. آخر عمرش یک ابر بمب می‌گذارد و بعد با شمارش ۱، ۲، ۳ خودش منفجر می‌شود.`,
   },
   guardian: {
@@ -59,6 +82,8 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     badge: '🛡️',
     deep: '#0d47a1',
     light: '#90caf9',
+    ring: '#1e78e6',
+    dark: '#0d2f7a',
     power: 'مهره‌های تو روی خانهٔ نگهبان و یک خانه جلو و عقبش زده نمی‌شوند؛ نه بمب به آن‌ها کاری دارد، نه اژدها.',
   },
   frost: {
@@ -68,6 +93,8 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     badge: '❄️',
     deep: '#006064',
     light: '#b2ebf2',
+    ring: '#1e88e5',
+    dark: '#0d3a80',
     power: 'هر جا بایستد، مهره‌ها و هیروهای حریف تا دو خانه جلو و عقبش یک نوبت یخ می‌زنند.',
   },
   thief: {
@@ -77,6 +104,8 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     badge: '💰',
     deep: '#4a148c',
     light: '#ce93d8',
+    ring: '#8e24aa',
+    dark: '#3d0a5c',
     power: `کسی را نمی‌زند؛ هر جا بایستد از هر حریفی که آنجاست ${fa(HERO_STEAL)} امتیاز و جلیقه‌اش را می‌دزدد، و جایزهٔ نفر اول را هم. جعبهٔ جادو برایش همیشه خوب است.`,
   },
   rider: {
@@ -86,6 +115,8 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     badge: '🔥',
     deep: '#b71c1c',
     light: '#ffab91',
+    ring: '#e53935',
+    dark: '#8e0e0e',
     power: `تا وقتی هست، اژدها مهره‌های تو را نمی‌خورد و انفجارش به آن‌ها نمی‌رسد. اگر روی اژدها فرود بیاید مثل پادشاه شکارش می‌کند: ${fa(DRAGON_PRIZE.king)} امتیاز، و اژدها دیگر نمی‌آید.`,
   },
 };

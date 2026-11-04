@@ -3133,3 +3133,20 @@ svg.board {
     transition: none;
   }
 }
+
+.archer-choice {
+  cursor: pointer;
+}
+.archer-choice-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: power-pulse 0.8s ease-in-out infinite alternate;
+}
+.mark-hero {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid;
+  vertical-align: -4px;
+  margin-inline-end: 2px;
+}

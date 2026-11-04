@@ -15,7 +15,6 @@ import {
   type HeroKind,
   type PowerChoice,
 } from '../../../shared/rules.ts';
-import { HERO_LOOK } from '../heroes.ts';
 import { formatDuration } from '../duration.ts';
 import { isMuted, setMuted, sfx } from '../sound.ts';
 import { seatName } from '../events.ts';
@@ -343,9 +342,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                 </span>
               ) : archer && myHero ? (
                 <div className="power-choices">
-                  <span>
-                    {HERO_LOOK[myHero.kind].face} Move the archer either way, or a piece on the board:
-                  </span>
+                  <span>🏹 The archer goes either way: tap it on the board and pick «جلو» or «عقب» there, or pick here.</span>
                   <button className="btn primary" onClick={() => act('game:move', HERO)}>
                     🏹 Forward {Math.min(game.dice ?? 0, myHero.left)} ▶
                   </button>

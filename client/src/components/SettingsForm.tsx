@@ -157,7 +157,7 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Heroes 🦸"
-          hint="At 60, 140 and 240 points, after a triple kill, and every 5 rounds once all four pieces are home, a player calls in a hero: archer, bomb engineer, guardian, frost mage, thief or dragon rider. It goes once round the track, each with its own power; moving it uses the roll. Knocking one out pays 15."
+          hint="At 60, 140 and 240 points, after a triple kill, on every second three-sixes penalty, and every 5 rounds once all four pieces are home, a player calls in a hero: archer, bomb engineer, guardian, frost mage, thief or dragon rider. It goes once round the track, each with its own power; moving it uses the roll. Knocking one out pays 15."
           checked={rules.heroes}
           onChange={(v) => setRules({ heroes: v })}
         />

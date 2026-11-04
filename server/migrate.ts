@@ -69,6 +69,7 @@ export function upgradeGame(game: GameState): GameState {
   g.heroAt ??= SEATS.map(() => g.turnNo + HERO_FINISHED_ROUNDS * g.active.length);
   g.heroEnding ??= null;
   g.heroBlast ??= null;
+  g.sixPenalties ??= SEATS.map(() => 0);
   // Roll-again cards were dropped: the phase that placed bridges also places boxes now, and a roll that
   // waited for a card or a pass is simply rolled again.
   const old = g as Omit<GameState, 'phase'> & { rerolls?: unknown; preRoll?: unknown; phase: string };

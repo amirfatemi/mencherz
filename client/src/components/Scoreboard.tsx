@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { COLOR_HEX, PIECES_PER_SEAT, type Seat } from '../../../shared/board.ts';
 import type { SeatView } from '../../../shared/protocol.ts';
 import { DRAGON_PATH, type GameEvent, type GameState, type Hero } from '../../../shared/rules.ts';
-import { HERO_LOOK } from '../heroes.ts';
+import { HERO_FACE, HERO_LOOK } from '../heroes.ts';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { describe, seatName } from '../events.ts';
 
@@ -26,7 +26,7 @@ function Marks({ s, vests, userId, hero, picks }: { s: SeatView; vests: number; 
     <>
       {hero && (
         <span className="mark" title={`${HERO_LOOK[hero.kind].en} (${HERO_LOOK[hero.kind].fa}) on the board · ${hero.left} squares left`}>
-          {HERO_LOOK[hero.kind].face}
+          <img className="mark-hero" src={HERO_FACE[hero.kind]} alt="" style={{ borderColor: HERO_LOOK[hero.kind].ring }} />
           {hero.left}
         </span>
       )}

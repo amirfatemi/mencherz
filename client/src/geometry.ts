@@ -1,5 +1,5 @@
-import { BOARD_SIZE, GOAL, HANGAR, HOME_CELLS, HOME_FIRST, TAKEOFF, TRACK_CELLS, piecePoint, rotatePoint, type Point, type Seat } from '../../shared/board.ts';
-import { DRAGON_PATH, HERO } from '../../shared/rules.ts';
+import { BOARD_SIZE, GOAL, HANGAR, HOME_CELLS, HOME_FIRST, TAKEOFF, TAKEOFF_CELLS, TRACK_CELLS, piecePoint, rotatePoint, type Point, type Seat } from '../../shared/board.ts';
+import { DRAGON_PATH, HERO, HERO_START } from '../../shared/rules.ts';
 
 export const CELL = 40;
 export const BOARD_PX = CELL * BOARD_SIZE;
@@ -10,9 +10,10 @@ export function dragonPoint(at: number): Point {
   return 'square' in cell ? TRACK_CELLS[cell.square] : HOME_CELLS[cell.seat][cell.pos - HOME_FIRST];
 }
 
-/** Where a piece stands at `pos`; a hero's positions are absolute track squares. */
+/** Where a piece stands at `pos`; a hero's positions are absolute track squares, or HERO_START (its takeoff spot). */
 export function movePoint(seat: Seat, piece: number, pos: number): Point {
-  return piece >= HERO ? TRACK_CELLS[pos] : piecePoint(seat, piece, pos);
+  if (piece < HERO) return piecePoint(seat, piece, pos);
+  return pos === HERO_START ? TAKEOFF_CELLS[seat] : TRACK_CELLS[pos];
 }
 
 /** Board grid point → SVG pixels, rotated `rot` quarter turns clockwise. */

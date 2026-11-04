@@ -18,6 +18,7 @@ import {
   HOME,
   HOME_FIRST,
   SEATS,
+  TAKEOFF,
   TAKEOFF_SQUARES,
   TRACK,
   TRACK_LAST,
@@ -41,6 +42,7 @@ import {
   DRAGON_PRIZE,
   GUARD_REACH,
   HERO,
+  HERO_BACK,
   KING_PIECE,
   SUPER_BOMB_REACH,
   asSeen,
@@ -584,20 +586,28 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
   // Everyone sees the board the same way round (yellow top-left, red bottom-left), on every device.
   const rot = 0;
   const [hover, setHover] = useState<number | null>(null);
+  // The archer's two ways, shown on the board after a tap on it.
+  const [archerOpen, setArcherOpen] = useState(false);
   const [bombHover, setBombHover] = useState<number | null>(null);
   const hovered = previewMove != null && movable.includes(previewMove) ? previewMove : hover !== null && movable.includes(hover) ? hover : null;
   useEffect(() => {
     setHover(null);
     setBombHover(null);
+    setArcherOpen(false);
   }, [game.seq]);
 
   // Fog hides bombs, boxes and bridges, from the move preview too.
   const fog = game.event?.kind === 'fog';
   const preview = useMemo(() => {
-    if (hovered === null || !game.dice) return null;
+    if (hovered === null || !game.dice || archerOpen) return null;
     const seen = asSeen(game);
     return planMove(seen, seen.turn, hovered, game.dice);
-  }, [game, hovered]);
+  }, [game, hovered, archerOpen]);
+  const archerWays = useMemo(() => {
+    if (!archerOpen || !game.dice || !movable.includes(HERO) || !movable.includes(HERO_BACK)) return [];
+    const seen = asSeen(game);
+    return [HERO, HERO_BACK].flatMap((j) => planMove(seen, seen.turn, j, game.dice!) ?? []);
+  }, [game, archerOpen, movable]);
 
   // Planes of one colour on one square are drawn as a single piece with a count, so one leaving never shifts the other.
   // A king, or a piece wearing a vest, stands beside the rest instead, so each can be picked on its own.
@@ -792,7 +802,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                       </text>
                     )}
                     <g opacity={0.55} transform={`translate(${p.x} ${p.y})`}>
-                      <HeroMedal kind={hero.kind} r={CELL * 0.36} />
+                      <HeroMedal kind={hero.kind} r={CELL * 0.34} />
                     </g>
                   </>
                 );
@@ -846,7 +856,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
         {/* The squares a guardian watches over. */}
         {game.active.map((seat) => {
           const h = game.heroes?.[seat];
-          if (h?.kind !== 'guardian' || anim?.pieces.has(`${seat}:${HERO}`)) return null;
+          if (h?.kind !== 'guardian' || h.square < 0 || anim?.pieces.has(`${seat}:${HERO}`)) return null;
           return Array.from({ length: GUARD_REACH * 2 + 1 }, (_, k) => (h.square + k - GUARD_REACH + TRACK.length) % TRACK.length).map((sq) => (
             <ShapeEl key={`guard${seat}:${sq}`} s={rotateShape(TRACK[sq].shape, rot)} fill={`${COLOR_HEX[seat]}33`} stroke={COLOR_HEX[seat]} strokeWidth={2.5} inset={2.5} />
           ));
@@ -890,9 +900,23 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           const h = game.heroes?.[seat];
           if (!h) return null;
           const moving = anim?.pieces.get(`${seat}:${HERO}`);
-          const shared = !moving && game.active.some((o) => game.pieces[o].some((q) => isOnTrack(q) && trackIndex(o, q) === h.square));
-          const at = toPx(moving ?? TRACK[h.square].spot, rot);
+          // Waiting at the takeoff spot, it shares it with any piece of its colour just launched.
+          const shared =
+            !moving &&
+            (h.square < 0
+              ? game.pieces[seat].includes(TAKEOFF)
+              : game.active.some((o) => game.pieces[o].some((q) => isOnTrack(q) && trackIndex(o, q) === h.square)));
+          const at = toPx(moving ?? movePoint(seat, HERO, h.square), rot);
           const canMove = !moving && seat === game.turn && movable.includes(HERO);
+          // The archer, able to go either way: a tap shows both on the board, to pick one.
+          const pickWay = canMove && movable.includes(HERO_BACK);
+          const click = () => {
+            if (pickWay) {
+              setArcherOpen((o) => !o);
+              setHover(null);
+            } else if (TOUCH && hovered !== HERO) setHover(HERO);
+            else onMove(HERO);
+          };
           return (
             <HeroToken
               key={`hero${seat}`}
@@ -900,11 +924,49 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
               seat={seat}
               x={at.x - (shared ? CELL * 0.22 : 0)}
               y={at.y - (shared ? CELL * 0.22 : 0)}
-              r={CELL * (moving ? 0.4 * (moving.scale ?? 1) : shared ? 0.32 : 0.4)}
+              r={CELL * (moving ? 0.34 * (moving.scale ?? 1) : shared ? 0.27 : 0.34)}
               movable={canMove}
-              onClick={canMove ? () => (TOUCH && hovered !== HERO ? setHover(HERO) : onMove(HERO)) : undefined}
-              onHover={canMove && !TOUCH ? (on) => setHover(on ? HERO : null) : undefined}
+              onClick={canMove ? click : undefined}
+              onHover={canMove && !TOUCH && !archerOpen ? (on) => setHover(on ? HERO : null) : undefined}
             />
+          );
+        })}
+
+        {/* The archer's two ways: its path to each end, and a button there to go that way. */}
+        {archerWays.map((plan) => {
+          const back = plan.piece === HERO_BACK;
+          const last = plan.to === HANGAR ? plan.path[plan.path.length - 1].pos : plan.to;
+          const end = toPx(movePoint(plan.seat, plan.piece, last), rot);
+          return (
+            <g key={plan.piece} className="archer-way">
+              {plan.path.slice(0, -1).map((step, i) => {
+                const p = toPx(movePoint(plan.seat, plan.piece, step.pos), rot);
+                return <circle key={i} cx={p.x} cy={p.y} r={4.5} fill={COLOR_DARK[plan.seat]} stroke="#fff" strokeWidth={1.5} pointerEvents="none" />;
+              })}
+              {plan.captures.map((c) => {
+                const p = toPx(movePoint(c.seat, c.piece, c.from), rot);
+                return <circle key={`${c.seat}:${c.piece}`} cx={p.x} cy={p.y} r={CELL * 0.5} fill="none" stroke="#d50000" strokeWidth={4} className="threat" pointerEvents="none" />;
+              })}
+              <g
+                className="archer-choice"
+                transform={`translate(${end.x} ${end.y})`}
+                onClick={() => onMove(plan.piece)}
+                role="button"
+                aria-label={back ? 'Move the archer back' : 'Move the archer forward'}
+              >
+                <circle className="archer-choice-ring" r={CELL * 0.5} fill="rgba(255,255,255,0.9)" stroke={COLOR_HEX[plan.seat]} strokeWidth={3} />
+                <g opacity={0.85}>
+                  <HeroMedal kind="archer" r={CELL * 0.28} />
+                </g>
+                <g transform={`translate(0 ${CELL * 0.78})`}>
+                  <rect x={-CELL * 0.62} y={-CELL * 0.25} width={CELL * 1.24} height={CELL * 0.5} rx={CELL * 0.25} fill={COLOR_DARK[plan.seat]} stroke="#fff" strokeWidth={2} />
+                  <text textAnchor="middle" dominantBaseline="central" fontSize={CELL * 0.3} fontWeight={800} fill="#fff" direction="rtl">
+                    {back ? 'عقب ◀' : 'جلو ▶'}
+                    {plan.captures.length ? ' 💥' : ''}
+                  </text>
+                </g>
+              </g>
+            </g>
           );
         })}
 
