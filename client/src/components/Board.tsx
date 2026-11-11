@@ -478,12 +478,11 @@ function AmbushMark({ over, rounds }: { over: Seat; rounds: number }) {
   );
 }
 
-/** The dragon: it eats what it stops on. The badge says how many rounds it stays. */
 /** The dragon, with how many squares of its lap it has left before it explodes. */
 function DragonIcon({ x, y, left }: { x: number; y: number; left: number }) {
   return (
     <g className="dragon" transform={`translate(${x} ${y})`} pointerEvents="none">
-      <title>{`The dragon — it moves with every roll, up home columns too, eats what it stops on, and two sixes in a row leave a bomb. Land on it with your king for +${DRAGON_PRIZE.king} and it's gone for good; any other piece gets +${DRAGON_PRIZE.piece}. ${left} squares until it has been round the board and explodes.`}</title>
+      <title>{`The dragon — it moves with every roll, up home columns too, eats what it stops on, and two sixes in a row leave a bomb. Land on it with your king for +${DRAGON_PRIZE.king}; any other piece gets +${DRAGON_PRIZE.piece}. Slain or not, another comes soon after. ${left} squares until it has been round the board and explodes.`}</title>
       {/* Bigger than a square, so it stands out wherever it is. */}
       <g className="dragon-body">
         <circle className="dragon-fire" r={CELL * 0.72} />

@@ -74,10 +74,9 @@ export interface Rules {
   /**
    * After DRAGON_FIRST_ROUNDS rounds a dragon appears and goes once round DRAGON_PATH, moved by every roll:
    * the track and, on the way, up every home column and back. It eats any piece where it stops, and two
-   * sixes in a row leave a bomb where it stops. Landing on it pays DRAGON_PRIZE; a king that slays it rids
-   * the game of dragons. If nobody does, it explodes when its lap is done, taking the pieces next to it
-   * (DRAGON_BLAST_REACH) along. The next one comes DRAGON_EVERY_ROUNDS rounds later. It sets off nothing and
-   * takes no bridge.
+   * sixes in a row leave a bomb where it stops. Landing on it pays DRAGON_PRIZE. If nobody slays it, it explodes
+   * when its lap is done, taking the pieces next to it (DRAGON_BLAST_REACH) along. Slain or exploded, the next
+   * one comes DRAGON_BACK_TURNS turns later. It sets off nothing and takes no bridge.
    */
   dragon: boolean;
   /**
@@ -135,19 +134,20 @@ export interface Bomb {
 /** How far along the track, ahead or behind, a super bomb's blast reaches. Home columns are out of reach. */
 export const SUPER_BOMB_REACH = 3;
 
-/** Surprise events, and how many rounds each lasts (an earthquake just happens). */
+/** Surprise events, and how many rounds each lasts. */
 export type WorldEventKind = 'storm' | 'goldRain' | 'earthquake' | 'darkNight' | 'fog';
+export const EVENT_ROUNDS = 5;
 export const WORLD_EVENTS: Record<WorldEventKind, { rounds: number }> = {
   /** No flights and no colour jumps. */
-  storm: { rounds: 1 },
+  storm: { rounds: EVENT_ROUNDS },
   /** Pieces reaching the centre score EVENT_BOOST times. */
-  goldRain: { rounds: 2 },
-  /** Every bomb jumps to another free square; it stays announced for a round. */
-  earthquake: { rounds: 1 },
+  goldRain: { rounds: EVENT_ROUNDS },
+  /** Every bomb and magic box jumps to another free square, when it starts and then every round while it lasts. */
+  earthquake: { rounds: EVENT_ROUNDS },
   /** Knock-outs score EVENT_BOOST times. */
-  darkNight: { rounds: 2 },
+  darkNight: { rounds: EVENT_ROUNDS },
   /** Bombs, magic boxes and bridges can't be seen. */
-  fog: { rounds: 3 },
+  fog: { rounds: EVENT_ROUNDS },
 };
 export const EVENT_EVERY_ROUNDS = 15;
 /** How much more gold rain makes a piece home, and a dark night a knock-out. */
@@ -156,9 +156,13 @@ export const EVENT_BOOST = 1.2;
 /** The bounty on the points leader: what it starts at, what each round in the lead adds, and its most. */
 export const BOUNTY = { start: 3, perRound: 1, max: 8 } as const;
 
-/** Rounds before the first dragon comes, and after one explodes or a piece other than a king slays it. */
+/** Rounds before the first dragon comes. */
 export const DRAGON_FIRST_ROUNDS = 10;
-export const DRAGON_EVERY_ROUNDS = 20;
+/**
+ * Turns after a dragon is slain or explodes until the next one comes: once the next player's turn is over, so
+ * it arrives on its own, after the last one has gone.
+ */
+export const DRAGON_BACK_TURNS = 2;
 /** What slaying the dragon pays a king (and any piece when kings are off), and any other piece. */
 export const DRAGON_PRIZE = { king: 40, piece: 5 } as const;
 /** How far, ahead and behind, the dragon's explosion reaches. */
@@ -329,8 +333,8 @@ export const STUCK_TURNS = 3;
  *   knocking it out would have paid, takes their vests, and the bounty if the leader is one of them. A magic box
  *   is always good for it (points or a vest).
  * - rider: the first time the dragon would eat or blow up one of its player's pieces, it goes in their place (not
- *   from the takeoff spot). It slays the dragon for a king's prize, but more dragons come. (The archer slays it too,
- *   as a plain piece; no other hero does.)
+ *   from the takeoff spot). It slays the dragon for a king's prize. (The archer slays it too, as a plain piece;
+ *   no other hero does.)
  * - wizard: where it stops, other colours' pieces there but kings are charmed: for CHARM_ROUNDS rounds its player
  *   moves them (CHARM) round the track, past their own home column, as its own piece: they knock out anyone, and
  *   anyone can knock them out. Then they're their owners' again, where they stand.
@@ -486,8 +490,11 @@ export interface GameState {
   ambush: Ambush | null;
   /** ONCE_POWERS already picked this game. */
   usedPowers: PowerChoice[];
-  /** The surprise event in play: its kind, its number this game (so it's announced once), and until when. */
-  event: { kind: WorldEventKind; n: number; until: number } | null;
+  /**
+   * The surprise event in play: its kind, its number this game (so it's announced once), and until when. An
+   * earthquake also counts its shakes (each one announced) and has the turn number of the next.
+   */
+  event: { kind: WorldEventKind; n: number; until: number; shakes?: number; shakeAt?: number } | null;
   /** The turn number of the next surprise event. */
   eventAt: number;
   /** Who has the bounty on them, and what knocking out one of their pieces pays on top. */
@@ -499,8 +506,6 @@ export interface GameState {
   dragon: { at: number; moved: number; sixes: number } | null;
   /** The turn number the next dragon comes. */
   dragonAt: number;
-  /** A king slew the dragon: no more dragons this game. */
-  dragonGone: boolean;
   /** The dragon's last explosion, numbered so it's shown once: where, what it took (or a vest saved), and who a rider saved. */
   dragonBlast: { n: number; at: number; hit: BlastVictim[]; saved?: HeroSave[] } | null;
   /** Each seat's hero on the board. */
@@ -627,7 +632,7 @@ export interface MovePlan {
   bridge?: BridgeHit;
   /** The move ends on a power square, so the mover picks a power. */
   power?: boolean;
-  /** The piece landed on the dragon and slew it, for DRAGON_PRIZE (in points); a king does for good. */
+  /** The piece landed on the dragon and slew it, for DRAGON_PRIZE (in points), the king's if `king`. */
   dragon?: { at: number; atStep: number; points: number; king: boolean };
   /**
    * A hero's move. Its `from`, `to` and `path` positions are absolute track squares; `to` is HANGAR when a bomb got
@@ -821,7 +826,6 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     bounty: null,
     dragon: null,
     dragonAt: 1 + DRAGON_FIRST_ROUNDS * order.length,
-    dragonGone: false,
     dragonBlast: null,
     heroes: SEATS.map(() => null),
     heroTeams: SEATS.map(() => []),
@@ -1320,7 +1324,7 @@ function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean,
   }
 
   if (dragonOn(state, to) && (h.kind === 'rider' || h.kind === 'archer')) {
-    // The dragon rider slays it for a king's prize, but it isn't gone for good; the archer as a plain piece.
+    // The dragon rider slays it for a king's prize; the archer as a plain piece.
     const rider = h.kind === 'rider';
     plan.dragon = { at: state.dragon!.at, atStep, points: rider ? DRAGON_PRIZE.king : DRAGON_PRIZE.piece, king: false };
   }
@@ -1481,11 +1485,12 @@ function nextTurn(s: GameState, rand: Rand): void {
 /** What comes and goes with the turns: surprise events, the dragon, and the bounty on the leader. */
 function newRound(s: GameState, rand: Rand): void {
   if (s.event && s.turnNo >= s.event.until) s.event = null;
+  if (s.event?.kind === 'earthquake' && s.turnNo >= (s.event.shakeAt ?? Infinity)) shake(s, rand);
   if (s.rules.events && s.turnNo >= (s.eventAt ?? 0)) {
     startEvent(s, rand);
     s.eventAt = s.turnNo + roundsOf(s, EVENT_EVERY_ROUNDS);
   }
-  if (s.rules.dragon && !s.dragon && !s.dragonGone && s.turnNo >= (s.dragonAt ?? 0)) {
+  if (s.rules.dragon && !s.dragon && s.turnNo >= (s.dragonAt ?? 0)) {
     const free = freeSquares(s);
     if (free.length) {
       const square = free[rand(free.length)];
@@ -1576,7 +1581,7 @@ function dragonExplodes(s: GameState): void {
   }
   s.dragonBlast = { n: (s.dragonBlast?.n ?? 0) + 1, at, hit, ...(saved.length ? { saved } : {}) };
   s.dragon = null;
-  s.dragonAt = s.turnNo + roundsOf(s, DRAGON_EVERY_ROUNDS);
+  s.dragonAt = s.turnNo + DRAGON_BACK_TURNS;
 }
 
 /** Starts a surprise event at random, among those that would change something. */
@@ -1587,19 +1592,28 @@ function startEvent(s: GameState, rand: Rand): void {
   const kind = kinds[rand(kinds.length)];
   s.eventN = (s.eventN ?? 0) + 1;
   s.event = { kind, n: s.eventN, until: s.turnNo + roundsOf(s, WORLD_EVENTS[kind].rounds) };
-  if (kind === 'earthquake') {
-    // Every bomb, super bomb and magic box jumps to a free square, never one another has just taken.
-    const bombs = s.bombs;
-    const boxes = s.boxes ?? [];
-    s.bombs = [];
-    s.boxes = [];
-    const elsewhere = (from: number) => {
-      const free = freeSquares(s).filter((sq) => sq !== from);
-      return free.length ? free[rand(free.length)] : from;
-    };
-    for (const b of bombs) s.bombs.push({ ...b, square: elsewhere(b.square) });
-    for (const b of boxes) s.boxes.push({ ...b, square: elsewhere(b.square) });
-  }
+  if (kind === 'earthquake') shake(s, rand);
+}
+
+/**
+ * The earthquake shakes the board, as it starts and then once a round: every bomb, super bomb and magic box
+ * jumps to a free square, never one another has just taken. A shake with nothing to move isn't counted.
+ */
+function shake(s: GameState, rand: Rand): void {
+  const quake = s.event!;
+  quake.shakeAt = s.turnNo + roundsOf(s, 1);
+  const bombs = s.bombs;
+  const boxes = s.boxes ?? [];
+  if (!bombs.length && !boxes.length) return;
+  quake.shakes = (quake.shakes ?? 0) + 1;
+  s.bombs = [];
+  s.boxes = [];
+  const elsewhere = (from: number) => {
+    const free = freeSquares(s).filter((sq) => sq !== from);
+    return free.length ? free[rand(free.length)] : from;
+  };
+  for (const b of bombs) s.bombs.push({ ...b, square: elsewhere(b.square) });
+  for (const b of boxes) s.boxes.push({ ...b, square: elsewhere(b.square) });
 }
 
 /**
@@ -1773,10 +1787,9 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   for (const c of plan.captures) knockOut(s, c.seat, c.piece);
   if (plan.bridge) s.bridges = s.bridges.filter((b) => b.square !== plan.bridge!.square);
   if (plan.dragon) {
-    // Slain by a king, it's gone for good; by any other piece, another comes later.
+    // Whoever slays it, another comes soon.
     s.dragon = null;
-    s.dragonAt = s.turnNo + roundsOf(s, DRAGON_EVERY_ROUNDS);
-    if (plan.dragon.king) s.dragonGone = true;
+    s.dragonAt = s.turnNo + DRAGON_BACK_TURNS;
     s.stats[seat].dragons = (s.stats[seat].dragons ?? 0) + 1;
   }
   // A claimed bounty goes back to its starting value; it stays on the leader.

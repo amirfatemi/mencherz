@@ -52,7 +52,7 @@ function heroMove(ev: MoveEvent, who: string, seats: SeatView[]): string {
   if (ev.box?.outcome) bits.push(ev.box.outcome === 'plus' ? `found +${POINTS.boxBonus} in a magic box 🎁` : 'found a vest in a magic box 🦺');
   if (ev.bombed && !ev.bombed.saved) bits.push('stepped on a bomb 💣 and is gone');
   else if (ev.bombed) bits.push('stepped on a bomb — its vest saved it 🦺');
-  if (ev.dragon) bits.push(ev.dragon.king ? `slew the dragon 🐉 for good +${ev.dragon.points}` : `slew the dragon 🐉 +${ev.dragon.points}`);
+  if (ev.dragon) bits.push(`slew the dragon 🐉 +${ev.dragon.points}`);
   if (h.ends && ev.to !== HANGAR && h.kind !== 'engineer') bits.push('its lap is done, and it leaves 👋');
   if (h.ends && h.kind === 'engineer') bits.push('its lap is done: its last super bomb comes next');
   return bits.join(' · ');
@@ -133,7 +133,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     bits.push(ev.bridge.kind === 'heaven' ? `crossed ${whose} heaven bridge 🌈 +10` : `fell through ${whose} hell bridge 🔥`);
   }
   if (ev.power) bits.push('landed on a power square ⚡');
-  if (ev.dragon) bits.push(ev.dragon.king ? `👑 the king slew the dragon 🐉 for good +${ev.dragon.points}` : `slew the dragon 🐉 +${ev.dragon.points}`);
+  if (ev.dragon) bits.push(ev.dragon.king ? `👑 the king slew the dragon 🐉 +${ev.dragon.points}` : `slew the dragon 🐉 +${ev.dragon.points}`);
   if (ev.to === GOAL) bits.push(`piece home 🏁 +${POINTS.home}`);
   let text = bits.join(' · ');
   if (ev.seatFinished) text += ev.bonus ? ` — ${who} brought all pieces home first! 🏆 +${ev.bonus}` : ` — ${who} brought all pieces home!`;

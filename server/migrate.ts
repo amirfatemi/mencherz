@@ -50,7 +50,14 @@ export function upgradeGame(game: GameState): GameState {
   g.bounty ??= null;
   g.dragon ??= null;
   g.dragonAt ??= g.turnNo + DRAGON_FIRST_ROUNDS * g.active.length;
-  g.dragonGone ??= false;
+  // A king no longer slays the dragon for good, and a slain or exploded one is back two turns later, not
+  // twenty rounds: one that has come before comes again now.
+  const gone = g as GameState & { dragonGone?: boolean };
+  if ('dragonGone' in gone) {
+    const seen = !!g.dragonBlast || g.stats.some((st) => (st.dragons ?? 0) > 0);
+    if (!g.dragon && seen) g.dragonAt = Math.min(g.dragonAt, g.turnNo);
+    delete gone.dragonGone;
+  }
   g.dragonBlast ??= null;
   // A dragon that stayed a set time (and before that, saved by square) starts its lap where it is.
   const oldDragon = g.dragon as unknown as { square?: number; at?: number; moved?: number; six?: boolean; sixes?: number } | null;
