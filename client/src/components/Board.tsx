@@ -983,7 +983,6 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             return (
               <HeroBench
                 key={`bench${seat}`}
-                seat={seat}
                 x={c.x}
                 y={c.y}
                 r={CELL * 0.3}

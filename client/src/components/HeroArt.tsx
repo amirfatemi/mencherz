@@ -1,6 +1,7 @@
-import { COLOR_DARK, COLOR_HEX, type Seat } from '../../../shared/board.ts';
+import { COLOR_HEX, type Seat } from '../../../shared/board.ts';
 import { HERO_KINDS, type Hero, type HeroKind } from '../../../shared/rules.ts';
 import { shade } from '../color.ts';
+import benchFace from '../assets/heroes/bench.webp';
 import { HERO_FACE, HERO_LOOK } from '../heroes.ts';
 
 /** The heroes' rings and badges, one gradient each per kind (fixed ids, so nothing needs repainting when a hero changes). */
@@ -20,11 +21,6 @@ export function HeroDefs() {
           <stop offset="1" stopColor={shade(HERO_LOOK[k].ring, -0.4)} />
         </radialGradient>
       ))}
-      <linearGradient id="hero-bench-ring" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#ffe8a3" />
-        <stop offset="0.5" stopColor="#f3c35a" />
-        <stop offset="1" stopColor="#a8741a" />
-      </linearGradient>
       {HERO_KINDS.map((k) => (
         <radialGradient key={`face${k}`} id={`hero-face-${k}`} cx="0.45" cy="0.35" r="0.7">
           <stop offset="0" stopColor={HERO_LOOK[k].light} />
@@ -190,7 +186,6 @@ export function HeroToken({ hero, seat, x, y, r, movable, onClick, onHover }: To
 }
 
 interface BenchProps {
-  seat: Seat;
   x: number;
   y: number;
   r: number;
@@ -199,10 +194,10 @@ interface BenchProps {
 }
 
 /**
- * The fifth piece, waiting in its player's hangar while none of their heroes is out: a gold-ringed medal in their
- * colour. When the roll can launch it, it glows, and a tap shows their heroes to pick from.
+ * The fifth piece, waiting in its player's hangar while none of their heroes is out: a gold-ringed hero medal.
+ * When the roll can launch it, it glows, and a tap shows their heroes to pick from.
  */
-export function HeroBench({ seat, x, y, r, movable, onClick }: BenchProps) {
+export function HeroBench({ x, y, r, movable, onClick }: BenchProps) {
   return (
     <g
       className={`hero-bench${movable ? ' movable' : ''}`}
@@ -214,12 +209,8 @@ export function HeroBench({ seat, x, y, r, movable, onClick }: BenchProps) {
     >
       <title>{movable ? 'Bring on one of your heroes instead of a piece' : 'Your heroes: a roll that launches a piece can bring one on instead'}</title>
       {movable && <circle className="hero-ring" r={r * 1.24 + 5} fill="none" stroke="#ffeb3b" strokeWidth={3} />}
-      <circle r={r * 1.24} fill="rgba(0,0,0,0.25)" />
-      <circle r={r * 1.12} fill="none" stroke="url(#hero-bench-ring)" strokeWidth={r * 0.24} />
-      <circle r={r} fill={COLOR_DARK[seat]} />
-      <text textAnchor="middle" dominantBaseline="central" fontSize={r * 1.15}>
-        🦸
-      </text>
+      <circle r={r * 1.22} fill="rgba(0,0,0,0.25)" />
+      <image href={benchFace} x={-r * 1.24} y={-r * 1.24} width={r * 2.48} height={r * 2.48} />
     </g>
   );
 }
