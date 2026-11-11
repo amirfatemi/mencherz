@@ -39,6 +39,7 @@ import { POINTS } from '../../../shared/scoring.ts';
 import {
   BRIDGE_SPAN,
   DRAGON_PATH,
+  DRAGON_EVERY_ROUNDS,
   DRAGON_PRIZE,
   GUARD_REACH,
   CHARM,
@@ -482,7 +483,7 @@ function AmbushMark({ over, rounds }: { over: Seat; rounds: number }) {
 function DragonIcon({ x, y, left }: { x: number; y: number; left: number }) {
   return (
     <g className="dragon" transform={`translate(${x} ${y})`} pointerEvents="none">
-      <title>{`The dragon — it moves with every roll, up home columns too, eats what it stops on, and two sixes in a row leave a bomb. Land on it with your king for +${DRAGON_PRIZE.king}; any other piece gets +${DRAGON_PRIZE.piece}. Slain or not, another comes soon after. ${left} squares until it has been round the board and explodes.`}</title>
+      <title>{`The dragon — it moves with every roll, up home columns too, eats what it stops on, and two sixes in a row leave a bomb. Land on it with your king for +${DRAGON_PRIZE.king}; any other piece gets +${DRAGON_PRIZE.piece}. Slain or exploded, another comes ${DRAGON_EVERY_ROUNDS} rounds later. ${left} squares until it has been round the board and explodes.`}</title>
       {/* Bigger than a square, so it stands out wherever it is. */}
       <g className="dragon-body">
         <circle className="dragon-fire" r={CELL * 0.72} />

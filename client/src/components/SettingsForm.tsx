@@ -139,7 +139,7 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Surprise events 🌪"
-          hint="Every 15 rounds, for 5 rounds: a storm (no flights or colour jumps), gold rain (pieces home score ×1.2), an earthquake (bombs and boxes move, every round), a dark night (knock-outs score ×1.2) or fog (bombs, boxes and bridges hidden)."
+          hint="Every 15 rounds: for 5 rounds a storm (no flights or colour jumps), gold rain (pieces home score ×1.2), a dark night (knock-outs score ×1.2) or fog (bombs, boxes and bridges hidden); or an earthquake (bombs and boxes move, once)."
           checked={rules.events}
           onChange={(v) => setRules({ events: v })}
         />
@@ -151,7 +151,7 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Dragon 🐉"
-          hint="After 10 rounds a dragon goes once round the board, moving with every roll, up home columns too. It eats what it stops on; two sixes in a row leave a bomb, three a super bomb. A king that lands on it gets 40; other pieces get 5. If nobody does, it counts to three and explodes, taking the pieces next to it. Slain or exploded, another comes soon after."
+          hint="After 10 rounds a dragon goes once round the board, moving with every roll, up home columns too. It eats what it stops on; two sixes in a row leave a bomb, three a super bomb. A king that lands on it gets 40; other pieces get 5. If nobody does, it counts to three and explodes, taking the pieces next to it. Slain (by a king too) or exploded, another comes 10 rounds later."
           checked={rules.dragon}
           onChange={(v) => setRules({ dragon: v })}
         />

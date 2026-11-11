@@ -75,8 +75,8 @@ export interface Rules {
    * After DRAGON_FIRST_ROUNDS rounds a dragon appears and goes once round DRAGON_PATH, moved by every roll:
    * the track and, on the way, up every home column and back. It eats any piece where it stops, and two
    * sixes in a row leave a bomb where it stops. Landing on it pays DRAGON_PRIZE. If nobody slays it, it explodes
-   * when its lap is done, taking the pieces next to it (DRAGON_BLAST_REACH) along. Slain or exploded, the next
-   * one comes DRAGON_BACK_TURNS turns later. It sets off nothing and takes no bridge.
+   * when its lap is done, taking the pieces next to it (DRAGON_BLAST_REACH) along. Slain (by a king too) or
+   * exploded, the next one comes DRAGON_EVERY_ROUNDS rounds later. It sets off nothing and takes no bridge.
    */
   dragon: boolean;
   /**
@@ -134,7 +134,7 @@ export interface Bomb {
 /** How far along the track, ahead or behind, a super bomb's blast reaches. Home columns are out of reach. */
 export const SUPER_BOMB_REACH = 3;
 
-/** Surprise events, and how many rounds each lasts. */
+/** Surprise events, and how many rounds each lasts (an earthquake just happens, and stays announced a round). */
 export type WorldEventKind = 'storm' | 'goldRain' | 'earthquake' | 'darkNight' | 'fog';
 export const EVENT_ROUNDS = 5;
 export const WORLD_EVENTS: Record<WorldEventKind, { rounds: number }> = {
@@ -142,8 +142,8 @@ export const WORLD_EVENTS: Record<WorldEventKind, { rounds: number }> = {
   storm: { rounds: EVENT_ROUNDS },
   /** Pieces reaching the centre score EVENT_BOOST times. */
   goldRain: { rounds: EVENT_ROUNDS },
-  /** Every bomb and magic box jumps to another free square, when it starts and then every round while it lasts. */
-  earthquake: { rounds: EVENT_ROUNDS },
+  /** Every bomb and magic box jumps to another free square, once. */
+  earthquake: { rounds: 1 },
   /** Knock-outs score EVENT_BOOST times. */
   darkNight: { rounds: EVENT_ROUNDS },
   /** Bombs, magic boxes and bridges can't be seen. */
@@ -156,13 +156,9 @@ export const EVENT_BOOST = 1.2;
 /** The bounty on the points leader: what it starts at, what each round in the lead adds, and its most. */
 export const BOUNTY = { start: 3, perRound: 1, max: 8 } as const;
 
-/** Rounds before the first dragon comes. */
+/** Rounds before the first dragon comes, and after one is slain (whoever slays it) or explodes. */
 export const DRAGON_FIRST_ROUNDS = 10;
-/**
- * Turns after a dragon is slain or explodes until the next one comes: once the next player's turn is over, so
- * it arrives on its own, after the last one has gone.
- */
-export const DRAGON_BACK_TURNS = 2;
+export const DRAGON_EVERY_ROUNDS = 10;
 /** What slaying the dragon pays a king (and any piece when kings are off), and any other piece. */
 export const DRAGON_PRIZE = { king: 40, piece: 5 } as const;
 /** How far, ahead and behind, the dragon's explosion reaches. */
@@ -490,11 +486,8 @@ export interface GameState {
   ambush: Ambush | null;
   /** ONCE_POWERS already picked this game. */
   usedPowers: PowerChoice[];
-  /**
-   * The surprise event in play: its kind, its number this game (so it's announced once), and until when. An
-   * earthquake also counts its shakes (each one announced) and has the turn number of the next.
-   */
-  event: { kind: WorldEventKind; n: number; until: number; shakes?: number; shakeAt?: number } | null;
+  /** The surprise event in play: its kind, its number this game (so it's announced once), and until when. */
+  event: { kind: WorldEventKind; n: number; until: number } | null;
   /** The turn number of the next surprise event. */
   eventAt: number;
   /** Who has the bounty on them, and what knocking out one of their pieces pays on top. */
@@ -1485,7 +1478,6 @@ function nextTurn(s: GameState, rand: Rand): void {
 /** What comes and goes with the turns: surprise events, the dragon, and the bounty on the leader. */
 function newRound(s: GameState, rand: Rand): void {
   if (s.event && s.turnNo >= s.event.until) s.event = null;
-  if (s.event?.kind === 'earthquake' && s.turnNo >= (s.event.shakeAt ?? Infinity)) shake(s, rand);
   if (s.rules.events && s.turnNo >= (s.eventAt ?? 0)) {
     startEvent(s, rand);
     s.eventAt = s.turnNo + roundsOf(s, EVENT_EVERY_ROUNDS);
@@ -1581,7 +1573,7 @@ function dragonExplodes(s: GameState): void {
   }
   s.dragonBlast = { n: (s.dragonBlast?.n ?? 0) + 1, at, hit, ...(saved.length ? { saved } : {}) };
   s.dragon = null;
-  s.dragonAt = s.turnNo + DRAGON_BACK_TURNS;
+  s.dragonAt = s.turnNo + roundsOf(s, DRAGON_EVERY_ROUNDS);
 }
 
 /** Starts a surprise event at random, among those that would change something. */
@@ -1595,17 +1587,10 @@ function startEvent(s: GameState, rand: Rand): void {
   if (kind === 'earthquake') shake(s, rand);
 }
 
-/**
- * The earthquake shakes the board, as it starts and then once a round: every bomb, super bomb and magic box
- * jumps to a free square, never one another has just taken. A shake with nothing to move isn't counted.
- */
+/** The earthquake: every bomb, super bomb and magic box jumps to a free square, never one another has just taken. */
 function shake(s: GameState, rand: Rand): void {
-  const quake = s.event!;
-  quake.shakeAt = s.turnNo + roundsOf(s, 1);
   const bombs = s.bombs;
   const boxes = s.boxes ?? [];
-  if (!bombs.length && !boxes.length) return;
-  quake.shakes = (quake.shakes ?? 0) + 1;
   s.bombs = [];
   s.boxes = [];
   const elsewhere = (from: number) => {
@@ -1787,9 +1772,9 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   for (const c of plan.captures) knockOut(s, c.seat, c.piece);
   if (plan.bridge) s.bridges = s.bridges.filter((b) => b.square !== plan.bridge!.square);
   if (plan.dragon) {
-    // Whoever slays it, another comes soon.
+    // Whoever slays it, a king too, another comes later.
     s.dragon = null;
-    s.dragonAt = s.turnNo + DRAGON_BACK_TURNS;
+    s.dragonAt = s.turnNo + roundsOf(s, DRAGON_EVERY_ROUNDS);
     s.stats[seat].dragons = (s.stats[seat].dragons ?? 0) + 1;
   }
   // A claimed bounty goes back to its starting value; it stays on the leader.

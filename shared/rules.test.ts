@@ -50,7 +50,7 @@ import {
   availablePowers,
   AMBUSH_ROUNDS,
   BOUNTY,
-  DRAGON_BACK_TURNS,
+  DRAGON_EVERY_ROUNDS,
   DRAGON_FIRST_ROUNDS,
   DRAGON_PATH,
   DRAGON_PRIZE,
@@ -1266,8 +1266,8 @@ describe('surprise events', () => {
     return g;
   };
 
-  test('one comes every fifteen rounds and lasts five rounds, whichever it is', () => {
-    assert.deepEqual(Object.values(WORLD_EVENTS).map((e) => e.rounds), [5, 5, 5, 5, 5]);
+  test('one comes every fifteen rounds and lasts five rounds, but the earthquake, which just happens', () => {
+    assert.deepEqual(Object.values(WORLD_EVENTS).map((e) => e.rounds), [5, 5, 1, 5, 5]);
     let g = game([0, 1], { events: true });
     g = passes(g, EVENT_EVERY_ROUNDS * 2 - 1);
     assert.equal(g.event, null);
@@ -1298,7 +1298,7 @@ describe('surprise events', () => {
     assert.equal(planMove(g, 0, 1, 2)!.points, Math.round(EVENT_BOOST * captureValue(g.pieces[1][0])));
   });
 
-  test('an earthquake moves every bomb, super bomb and magic box, as it starts and every round it lasts', () => {
+  test('an earthquake moves every bomb, super bomb and magic box, once', () => {
     let g = game([0, 1], { events: true });
     g.bombs = [{ square: 10, owner: 1 }, { square: 30, owner: 0, super: true }];
     g.boxes = [{ square: 20, owner: 0 }];
@@ -1307,25 +1307,16 @@ describe('surprise events', () => {
     // With a bomb down, all five can happen; the third is the earthquake.
     g = applyRoll(g, 3, (k) => (k === 5 ? 2 : last(k))).state;
     assert.equal(g.event?.kind, 'earthquake');
-    assert.deepEqual([g.event?.shakes, g.event?.shakeAt], [1, g.turnNo + 2]);
     assert.deepEqual([g.bombs.length, g.boxes.length, g.bombs[1].super], [2, 1, true]);
     assert.notEqual(g.bombs[0].square, 10);
     assert.notEqual(g.bombs[1].square, 30);
     assert.notEqual(g.boxes[0].square, 20);
     assert.equal(new Set([...g.bombs, ...g.boxes].map((b) => b.square)).size, 3, 'each on a square of its own');
-    // Not again until a round has gone by; then once a round, five shakes in all.
+    // Announced for a round, and nothing moves again.
     const where = (s: GameState) => [...s.bombs, ...s.boxes].map((b) => b.square).join();
-    const first = where(g);
-    g = passes(g, 1, last);
-    assert.deepEqual([g.event?.shakes, where(g)], [1, first], 'half a round: still');
-    g = passes(g, 1, last);
-    assert.equal(g.event?.shakes, 2);
-    assert.notEqual(where(g), first);
-    g = passes(g, 2 * 3, last);
-    assert.equal(g.event?.shakes, 5);
-    const settled = where(g);
+    const moved = where(g);
     g = passes(g, 2, last);
-    assert.deepEqual([g.event, where(g)], [null, settled], 'over after five rounds, and the bombs stay put');
+    assert.deepEqual([g.event, where(g)], [null, moved]);
   });
 
   test('fog needs something to hide, and hides bombs, boxes and bridges for five rounds, from bots too', () => {
@@ -1466,7 +1457,7 @@ describe('the dragon', () => {
     assert.deepEqual(up.state.bombs, []);
   });
 
-  test('a king that lands on it slays it for the big prize, any other piece for a little; either way another comes soon', () => {
+  test('a king that lands on it slays it for the big prize, any other piece for a little; either way another comes ten rounds later', () => {
     const g = at(game([0, 1], { dragon: true, kings: true }), 0, [10, 10]);
     g.dragon = { at: onTrack(trackIndex(0, 13)), moved: 5, sixes: 0 };
     const king = planMove(g, 0, 0, 3)!;
@@ -1475,23 +1466,24 @@ describe('the dragon', () => {
     assert.equal(planMove(g, 0, 1, 3)!.points, DRAGON_PRIZE.piece);
     Object.assign(g, { phase: 'move', dice: 3, movable: [0, 1] });
     const byKing = applyMove(g, 0).state;
-    // The move passed the turn: gone for the next player's turn, back once it's over.
-    assert.deepEqual([byKing.dragon, byKing.stats[0].dragons, byKing.turn], [null, 1, 1]);
-    assert.equal(byKing.dragonAt, g.turnNo + DRAGON_BACK_TURNS);
+    assert.deepEqual([byKing.dragon, byKing.stats[0].dragons], [null, 1]);
+    assert.equal(byKing.dragonAt, g.turnNo + DRAGON_EVERY_ROUNDS * 2, 'ten rounds of two players');
     let later = byKing;
-    later.frozen[1] = [99, 99, 99, 99];
+    later.frozen[0] = [99, 99, 99, 99];
+    while (later.turnNo < later.dragonAt - 1) later = applyRoll(later, 3).state;
+    assert.equal(later.dragon, null, 'not yet');
     later = applyRoll(later, 3).state;
     assert.notEqual(later.dragon, null, 'a king slays it, and another comes all the same');
     assert.deepEqual([later.dragon!.moved, later.dragon!.sixes], [0, 0]);
     const byPawn = applyMove(g, 1).state;
-    assert.deepEqual([byPawn.dragon, byPawn.dragonAt], [null, g.turnNo + DRAGON_BACK_TURNS]);
+    assert.deepEqual([byPawn.dragon, byPawn.dragonAt], [null, g.turnNo + DRAGON_EVERY_ROUNDS * 2]);
     // In a home column too; with kings off, any piece slays it like a king.
     const home = at(game([0, 1], { dragon: true }), 0, [HOME_FIRST]);
     home.dragon = { at: inHome(0, HOME_FIRST + 2), moved: 0, sixes: 0 };
     assert.equal(planMove(home, 0, 0, 2)!.dragon?.king, true);
   });
 
-  test('once round the board it explodes where it started, taking the pieces next to it; the next comes soon', () => {
+  test('once round the board it explodes where it started, taking the pieces next to it; the next comes ten rounds later', () => {
     const g = at(game([0, 1], { dragon: true }), 0, []);
     // Four cells left of its lap, from square 2 (no arrow squares near): a 6 takes it just the 4, to square 6.
     g.dragon = { at: onTrack(2), moved: DRAGON_PATH.length - 4, sixes: 0 };
@@ -1511,7 +1503,7 @@ describe('the dragon', () => {
       ],
     });
     assert.deepEqual(r.state.pieces[1].slice(0, 3), [HANGAR, blueAt(5), blueAt(8)], 'one away goes; two away stays; a vest saves');
-    assert.equal(r.state.dragonAt, g.turnNo + DRAGON_BACK_TURNS);
+    assert.equal(r.state.dragonAt, g.turnNo + DRAGON_EVERY_ROUNDS * 2);
     assert.equal(eventDuration(r.event, false), ROLL_MS + DRAGON_PAUSE_MS + 4 * STEP_MS.step + CAPTURE_MS + COUNTDOWN_MS, 'with its 1, 2, 3');
   });
 });

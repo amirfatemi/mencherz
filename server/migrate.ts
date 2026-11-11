@@ -1,5 +1,5 @@
 import { ABSOLUTE, GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, TRACK_FIRST, TRACK_LAST, trackIndex, type Seat } from '../shared/board.ts';
-import { DEFAULT_RULES, DRAGON_FIRST_ROUNDS, DRAGON_PATH, HERO_KINDS, HERO_TEAM, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
+import { DEFAULT_RULES, DRAGON_EVERY_ROUNDS, DRAGON_FIRST_ROUNDS, DRAGON_PATH, HERO_KINDS, HERO_TEAM, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
 import { POINTS } from '../shared/scoring.ts';
 
 /** Brings a saved game up to date: board numbering first, then fields added since it was saved. */
@@ -50,12 +50,12 @@ export function upgradeGame(game: GameState): GameState {
   g.bounty ??= null;
   g.dragon ??= null;
   g.dragonAt ??= g.turnNo + DRAGON_FIRST_ROUNDS * g.active.length;
-  // A king no longer slays the dragon for good, and a slain or exploded one is back two turns later, not
-  // twenty rounds: one that has come before comes again now.
+  // A king no longer slays the dragon for good, and the next one comes DRAGON_EVERY_ROUNDS rounds after one is
+  // slain or explodes, not twenty: a dragon waited for since one went comes ten rounds sooner.
   const gone = g as GameState & { dragonGone?: boolean };
   if ('dragonGone' in gone) {
     const seen = !!g.dragonBlast || g.stats.some((st) => (st.dragons ?? 0) > 0);
-    if (!g.dragon && seen) g.dragonAt = Math.min(g.dragonAt, g.turnNo);
+    if (!g.dragon && seen) g.dragonAt -= (20 - DRAGON_EVERY_ROUNDS) * g.active.length;
     delete gone.dragonGone;
   }
   g.dragonBlast ??= null;

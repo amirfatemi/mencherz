@@ -6,7 +6,7 @@ const fa = (n: number) => n.toLocaleString('fa-IR');
 const EVENT_INFO: Record<WorldEventKind, { icon: string; name: string; text: string }> = {
   storm: { icon: '🌪', name: 'طوفان', text: 'پرواز ✈ و پرش روی خانهٔ رنگ خودتان بسته است.' },
   goldRain: { icon: '💰', name: 'باران طلا', text: `هر مهره‌ای که به خانهٔ وسط برسد ${fa(EVENT_BOOST)} برابر امتیاز می‌گیرد.` },
-  earthquake: { icon: '🌋', name: 'زلزله', text: 'هر دور همهٔ بمب‌ها و جعبه‌های جادو به خانه‌های تازه می‌پرند؛ حواستان باشد کجا می‌روید.' },
+  earthquake: { icon: '🌋', name: 'زلزله', text: 'همهٔ بمب‌ها و جعبه‌های جادو به خانه‌های تازه پریدند؛ حواستان باشد کجا می‌روید.' },
   darkNight: { icon: '🌙', name: 'شب تاریک', text: `زدن مهره‌ها ${fa(EVENT_BOOST)} برابر امتیاز دارد.` },
   fog: { icon: '🌫', name: 'مه', text: 'بمب، ابر بمب، جعبهٔ جادو و پل‌های بهشت و جهنم دیده نمی‌شوند، ولی سر جایشان هستند.' },
 };

@@ -80,12 +80,10 @@ const EVENT_FOR = `${EVENT_ROUNDS.toLocaleString('fa-IR')} دور`;
 export const EVENT_BANNERS: Record<WorldEventKind, string> = {
   storm: `🌪 طوفان! پرش و پرواز ${EVENT_FOR} بسته‌اند`,
   goldRain: `💰 باران طلا! رسیدن به خانه ۱٫۲ برابر، ${EVENT_FOR}`,
-  earthquake: `🌋 زلزله! بمب‌ها جابه‌جا شدند، و تا ${EVENT_FOR} هر دور باز می‌لرزد`,
+  earthquake: '🌋 زلزله! بمب‌ها و جعبه‌ها جابه‌جا شدند',
   darkNight: `🌙 شب تاریک! زدن ۱٫۲ برابر، ${EVENT_FOR}`,
   fog: `🌫 مه! بمب‌ها، جعبه‌ها و پل‌ها ${EVENT_FOR} پنهان‌اند`,
 };
-/** An earthquake shaking the board again, a round after the last time. */
-const AFTERSHOCK_BANNER = '🌋 پس‌لرزه! بمب‌ها و جعبه‌ها دوباره جابه‌جا شدند';
 
 /**
  * The banner a move earns, with when it shows. Kill streaks, kings and revenge are cinematic (`slow`: the move
@@ -496,7 +494,7 @@ export function useRoomStream(code: string) {
         }
         const wait = u.room.seats.some((s) => s.kind === 'bot');
         const cinematic = u.room.settings.cinematic !== false;
-        // Announced once the update has played: a new surprise event, an earthquake shaking again, or the dragon arriving.
+        // Announced once the update has played: a new surprise event, or the dragon arriving.
         const before = current.current?.game;
         const announce = () => {
           const after = u.room.game;
@@ -504,9 +502,6 @@ export function useRoomStream(code: string) {
           if (after.event && after.event.n !== before.event?.n) {
             showBanner(EVENT_BANNERS[after.event.kind], 'event');
             sfx.event(after.event.kind);
-          } else if (after.event?.kind === 'earthquake' && (after.event.shakes ?? 0) > (before.event?.shakes ?? 0)) {
-            showBanner(AFTERSHOCK_BANNER, 'event');
-            sfx.event('earthquake');
           } else if (after.dragon && !before.dragon) {
             showBanner('🐉 اژدها آمد! مراقب باشید', 'event');
             sfx.roar();
