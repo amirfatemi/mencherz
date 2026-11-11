@@ -142,8 +142,9 @@ interface TokenProps {
 }
 
 /**
- * A hero on the board: its medal, with the squares it has left on a badge at the top right, and a thin outer ring
- * in its player's colour, so it's clear whose it is.
+ * A hero on the board: its medal, and a thin outer ring in its player's colour, so it's clear whose it is. The
+ * archer, which goes either way, has the squares it has left on a badge at the top right; the others just go
+ * once round.
  */
 export function HeroToken({ hero, seat, x, y, r, movable, onClick, onHover }: TokenProps) {
   const look = HERO_LOOK[hero.kind];
@@ -158,7 +159,7 @@ export function HeroToken({ hero, seat, x, y, r, movable, onClick, onHover }: To
       aria-label={onClick ? `Move the ${look.en}` : undefined}
       pointerEvents={onClick ? undefined : 'none'}
     >
-      <title>{`${look.fa} · ${look.en} — ${hero.left} squares left`}</title>
+      <title>{hero.kind === 'archer' ? `${look.fa} · ${look.en} — ${hero.left} squares left` : `${look.fa} · ${look.en}`}</title>
       {movable && <circle className="hero-ring" r={r * 1.24 + 6} fill="none" stroke="#ffeb3b" strokeWidth={3} />}
       <circle r={r * 1.24 + 2} fill="none" stroke={COLOR_HEX[seat]} strokeWidth={3} />
       <HeroMedal kind={hero.kind} r={r} />
@@ -170,12 +171,14 @@ export function HeroToken({ hero, seat, x, y, r, movable, onClick, onHover }: To
           </text>
         </g>
       )}
-      <g transform={`translate(${r * 0.86} ${-r * 0.9})`}>
-        <circle r={r * 0.5} fill={look.dark} stroke="#fff" strokeWidth={r * 0.09} />
-        <text textAnchor="middle" dy="0.36em" fontSize={r * (hero.left > 9 ? 0.52 : 0.62)} fontWeight={800} fill="#fff">
-          {hero.left}
-        </text>
-      </g>
+      {hero.kind === 'archer' && (
+        <g transform={`translate(${r * 0.86} ${-r * 0.9})`}>
+          <circle r={r * 0.5} fill={look.dark} stroke="#fff" strokeWidth={r * 0.09} />
+          <text textAnchor="middle" dy="0.36em" fontSize={r * (hero.left > 9 ? 0.52 : 0.62)} fontWeight={800} fill="#fff">
+            {hero.left}
+          </text>
+        </g>
+      )}
       {hero.vests > 0 && (
         <text x={-r * 0.95} y={-r * 0.8} textAnchor="middle" dominantBaseline="central" fontSize={r * 0.7}>
           🦺

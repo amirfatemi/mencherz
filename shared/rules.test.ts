@@ -65,6 +65,7 @@ import {
   HERO_START,
   HERO_KILL,
   HERO_LIFE,
+  ICE_TURNS,
   LAUNCH,
   THIEF_TIMES,
   type BombEvent,
@@ -709,7 +710,7 @@ describe('magic boxes', () => {
     assert.equal(minus.state.stats[0].points, -POINTS.boxPenalty);
   });
 
-  test('ice freezes the piece on the box, with no jump, until its next turn is over', () => {
+  test('ice freezes the piece on the box, with no jump, for its next three turns', () => {
     const g = at(game([0, 1]), 0, [30, 5]);
     assert.ok(isOwnColor(34));
     g.boxes = [{ square: trackIndex(0, 34), owner: 1 }];
@@ -718,14 +719,18 @@ describe('magic boxes', () => {
     assert.equal(r.event.box?.outcome, 'freeze');
     assert.equal(r.event.jumped, false, 'stuck on the box, no colour jump');
     assert.equal(r.state.pieces[0][0], 34);
-    let s = applyRoll(r.state, 3).state;
-    assert.equal(s.turn, 0, 'seat 1 had nothing to move');
-    const frozenTurn = applyRoll(s, 2);
-    assert.deepEqual(frozenTurn.event.movable, [1], 'the frozen piece sits out its next turn');
-    assert.equal(planMove(frozenTurn.state, 0, 0, 2), null);
-    s = applyMove(frozenTurn.state, 1).state;
+    assert.equal(ICE_TURNS, 3);
+    let s = r.state;
+    for (let turn = 1; turn <= ICE_TURNS; turn++) {
+      s = applyRoll(s, 3).state;
+      assert.equal(s.turn, 0, 'seat 1 had nothing to move');
+      const frozenTurn = applyRoll(s, 2);
+      assert.deepEqual(frozenTurn.event.movable, [1], `the frozen piece sits out its turn ${turn}`);
+      assert.equal(planMove(frozenTurn.state, 0, 0, 2), null);
+      s = applyMove(frozenTurn.state, 1).state;
+    }
     s = applyRoll(s, 3).state;
-    assert.deepEqual(applyRoll(s, 2).event.movable, [0, 1], 'free again after that turn');
+    assert.deepEqual(applyRoll(s, 2).event.movable, [0, 1], 'free again after those three');
   });
 
   test('ice lasts through a bonus roll on a 6 as well', () => {
@@ -739,7 +744,7 @@ describe('magic boxes', () => {
 
   test('a frozen piece can still be knocked out, which frees it', () => {
     const { state } = onBox('freeze');
-    assert.equal(state.frozen[0][0], 1);
+    assert.equal(state.frozen[0][0], ICE_TURNS);
     at(state, 1, [sameSquare(0, 29, 1)]);
     Object.assign(state, { phase: 'move', dice: 3, movable: [0] });
     const r = applyMove(state, 0);
@@ -1616,24 +1621,36 @@ describe('heroes', () => {
     assert.deepEqual([big.event.captures.map((c) => c.points), big.state.stats[1].points], [[GUARDIAN_KILL], GUARDIAN_KILL]);
   });
 
-  test("the engineer takes over other colours' bombs on its way, not the dragon's, and no bomb hurts it; at its end a super bomb goes down, then it goes off", () => {
-    const g = rollFor(withHero('engineer', 10), 4);
-    g.bombs = [{ square: 12, owner: 1 }, { square: 14, owner: 1, super: true }, { square: 13, owner: null }, { square: 11, owner: 0 }, { square: 20, owner: 1 }];
+  test("the engineer takes over another colour's bomb it stops on, not those it passes nor the dragon's, and no bomb hurts it; at its end a super bomb goes down, then it goes off, sparing its own side", () => {
+    const g = rollFor(withHero('engineer', 8), 4);
+    g.bombs = [{ square: 10, owner: 1, super: true }, { square: 12, owner: 1 }, { square: 11, owner: null }, { square: 9, owner: 0 }, { square: 20, owner: 1 }];
     const r = applyMove(g, HERO);
-    assert.deepEqual([r.event.hero?.hijacked, r.event.points, r.state.heroes[0]?.square], [[12, 14], 0, 14], 'no points for it');
+    assert.deepEqual([r.event.hero?.hijacked, r.event.points, r.state.heroes[0]?.square], [[12], 0, 12], 'no points for it');
     assert.deepEqual(
       r.state.bombs,
-      [{ square: 12, owner: 0 }, { square: 14, owner: 0, super: true }, { square: 13, owner: null }, { square: 11, owner: 0 }, { square: 20, owner: 1 }],
-      "they stay where they are, but they're yellow's now",
+      [{ square: 10, owner: 1, super: true }, { square: 12, owner: 0 }, { square: 11, owner: null }, { square: 9, owner: 0 }, { square: 20, owner: 1 }],
+      "the one it stopped on stays where it is, but it's yellow's now; passing one isn't enough",
     );
     // Now it's yellow's bomb: blue stepping on it scores for yellow.
     at(r.state, 1, [blueAt(10)]);
     Object.assign(r.state, { turn: 1, phase: 'move', dice: 2, movable: [0] });
     const blown = applyMove(r.state, 0);
     assert.deepEqual([blown.event.bombed?.owner, blown.state.pieces[1][0], blown.state.stats[0].points], [0, HANGAR, blown.event.bombed?.points]);
+    // The dragon's bomb stays the dragon's, and doesn't hurt it either.
+    const dragons = rollFor(withHero('engineer', 10), 3);
+    dragons.bombs = [{ square: 13, owner: null }];
+    const d = applyMove(dragons, HERO);
+    assert.deepEqual([d.event.hero?.hijacked, d.state.bombs, d.state.heroes[0]?.square], [[], [{ square: 13, owner: null }], 13]);
     const end = withHero('engineer', 30);
     end.heroes[0]!.left = 3;
-    at(end, 1, [blueAt(34), blueAt(32), blueAt(35)]);
+    // Next to where it ends (33): yellow's own pieces, one of them charmed by blue (blue's for now), and a blue
+    // piece yellow has charmed (yellow's for now).
+    at(end, 0, [32, 34, ABSOLUTE + 32]);
+    at(end, 1, [blueAt(34), blueAt(32), blueAt(35), ABSOLUTE + 34]);
+    end.charmed = [
+      { seat: 0, piece: 2, by: 1, until: 999 },
+      { seat: 1, piece: 3, by: 0, until: 999 },
+    ];
     const last = applyMove(rollFor(end, 3), HERO);
     assert.deepEqual([last.state.phase, last.state.placing, last.state.heroEnding, last.state.turn], ['place', 'superBomb', 0, 0]);
     assert.ok(last.state.heroes[0], 'it waits on its square for the super bomb');
@@ -1643,11 +1660,13 @@ describe('heroes', () => {
     assert.deepEqual(
       placed.state.heroBlast?.hit.map((v) => [v.seat, v.from, v.saved]),
       [
+        [0, ABSOLUTE + 32, false],
         [1, blueAt(34), false],
         [1, blueAt(32), false],
       ],
     );
-    assert.deepEqual(placed.state.pieces[1].slice(0, 3), [HANGAR, HANGAR, blueAt(35)], 'two away stays');
+    assert.deepEqual(placed.state.pieces[1], [HANGAR, HANGAR, blueAt(35), ABSOLUTE + 34], 'two away stays, and so does the one yellow charmed');
+    assert.deepEqual(placed.state.pieces[0].slice(0, 3), [32, 34, HANGAR], "yellow's own pieces stay; the one blue charmed doesn't");
     assert.equal(placed.state.heroes[0], null);
     assert.equal(placed.state.stats[0].points, placed.state.heroBlast!.hit.reduce((n, v) => n + v.points!, 0));
     assert.equal(placed.state.turn, 1, 'and the turn goes on');

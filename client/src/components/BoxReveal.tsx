@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { COLOR_HEX } from '../../../shared/board.ts';
 import type { SeatView } from '../../../shared/protocol.ts';
+import { ICE_TURNS } from '../../../shared/rules.ts';
 import { POINTS } from '../../../shared/scoring.ts';
 import { seatName } from '../events.ts';
 import type { BoxReveal } from '../useRoomStream.ts';
@@ -23,7 +24,7 @@ export function BoxRevealCard({ reveal, seats }: { reveal: BoxReveal; seats: Sea
         : box.outcome === 'plus'
           ? ['💰', `+${POINTS.boxBonus} points!`, `${who} wins ${POINTS.boxBonus} points.`]
           : box.outcome === 'freeze'
-            ? ['🧊', 'Frozen!', `${who}'s piece is stuck here until ${who}'s next turn is over.`]
+            ? ['🧊', 'Frozen!', `${who}'s piece is stuck here for ${who}'s next ${ICE_TURNS} turns.`]
             : ['💸', `−${POINTS.boxPenalty} points!`, `${who} loses ${POINTS.boxPenalty} points.`];
   return (
     <div className="box-reveal" aria-live="polite">

@@ -1,6 +1,6 @@
 import { COLOR_NAMES, GOAL, HANGAR, TAKEOFF, type Seat } from '../../shared/board.ts';
 import type { SeatView } from '../../shared/protocol.ts';
-import { HERO, type GameEvent, type MoveEvent, type RollEvent } from '../../shared/rules.ts';
+import { HERO, ICE_TURNS, type GameEvent, type MoveEvent, type RollEvent } from '../../shared/rules.ts';
 import { HERO_LOOK } from './heroes.ts';
 import { POINTS, killStreakName } from '../../shared/scoring.ts';
 
@@ -124,7 +124,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
       vest: 'a protective vest 🦺 for one piece',
       plus: `+${POINTS.boxBonus} points 💰`,
       minus: `−${POINTS.boxPenalty} points`,
-      freeze: 'ice 🧊 — that piece sits out a turn',
+      freeze: `ice 🧊 — that piece sits out ${ICE_TURNS} turns`,
     }[ev.box.outcome] ?? 'nothing';
     bits.push(`opened ${own ? 'their own' : `${owner}'s`} magic box 🎁: ${inside}`);
   }

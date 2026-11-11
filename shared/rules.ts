@@ -255,8 +255,10 @@ export function isKing(state: GameState, piece: number): boolean {
   return !!state.rules.kings && piece === KING_PIECE;
 }
 
-/** What a box's ice sets a piece's `frozen` count to: the rest of this turn, then the owner's whole next turn. */
-const FROZEN_TURNS = 2;
+/** How many of its owner's turns a piece a magic box froze sits out. */
+export const ICE_TURNS = 3;
+/** What a box's ice sets a piece's `frozen` count to: the rest of this turn, then the owner's next ICE_TURNS turns. */
+const FROZEN_TURNS = ICE_TURNS + 1;
 
 /**
  * A bridge, placed from a power square: whoever lands on its square first, its owner too, is carried
@@ -318,9 +320,9 @@ export const STUCK_TURNS = 3;
  * never goes home, so a player with every piece home plays on with it. Only the archer knocks anyone out (and death
  * kings); the others just have their power, and can stop where anyone stands.
  * - archer: goes forward or back, as its player likes, with every roll, and knocks out pieces and heroes.
- * - engineer: takes over every bomb of another colour it passes or stops on, so it's its player's now (no points
- *   for it; the dragon's stay the dragon's), and no bomb hurts it. At the end of its life its player puts down a
- *   super bomb, then it goes off where it stands (DRAGON_BLAST_REACH either side).
+ * - engineer: takes over a bomb of another colour it stops on (not one it passes), so it's its player's now (no
+ *   points for it; the dragon's stay the dragon's), and no bomb hurts it. At the end of its life its player puts
+ *   down a super bomb, then it goes off where it stands (DRAGON_BLAST_REACH either side), taking opponents only.
  * - guardian: the first time one of its player's pieces on its square or GUARD_REACH either side would be knocked
  *   out or eaten by the dragon, it's knocked out in their place (which pays GUARDIAN_KILL). Bombs and blasts still
  *   get them.
@@ -1235,8 +1237,7 @@ function planLaunch(state: GameState, seat: Seat, i: number, dice: number): Move
  * Where a hero would go with this roll, or null if it can't move. It goes round the track only, as far as the
  * dice says (the archer forward or back) but no further than its life has left, and can't pass another
  * colour's wall. Where it stops it does what its power does: the archer knocks out other colours, death their kings,
- * the thief robs them, the wizard charms them. A bomb there sets it off (the engineer takes over every bomb on its
- * way instead). It takes no colour jump, flight, bridge or power square, and opens no magic box, but the thief, for
+ * the thief robs them, the wizard charms them. A bomb there sets it off (the engineer takes it over instead). It takes no colour jump, flight, bridge or power square, and opens no magic box, but the thief, for
  * whom it's always good.
  */
 function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean, openBox?: OpenBox): MovePlan | null {
@@ -1257,7 +1258,7 @@ function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean,
   const taken = new Set([`${seat}:${HERO}`]);
 
   if (h.kind === 'engineer') {
-    move.hijacked = state.bombs.filter((b) => b.owner !== seat && b.owner !== null && path.some((step) => step.pos === b.square)).map((b) => b.square);
+    move.hijacked = state.bombs.filter((b) => b.owner !== seat && b.owner !== null && b.square === to).map((b) => b.square);
   } else {
     const bomb = state.bombs.find((b) => b.square === to);
     if (bomb) {
@@ -1962,9 +1963,10 @@ function heroDoes(s: GameState, plan: MovePlan, hero: Hero | null): void {
 }
 
 /**
- * The engineer's life is over: it goes off where it stands, taking other colours' pieces and heroes on its
- * square and DRAGON_BLAST_REACH squares either side (vests and safe squares save them; other engineers don't
- * mind), each scored as a knock-out for its player.
+ * The engineer's life is over: it goes off where it stands, taking opponents' pieces and heroes on its square and
+ * DRAGON_BLAST_REACH squares either side (vests and safe squares save them; other engineers don't mind), each
+ * scored as a knock-out for its player. Its own side is safe: its player's pieces, and those it has charmed; a
+ * piece of its colour another has charmed is theirs for now.
  */
 function engineerExplodes(s: GameState): void {
   const seat = s.heroEnding!;
@@ -1973,12 +1975,12 @@ function engineerExplodes(s: GameState): void {
   if (!h) return;
   const hit: BlastVictim[] = [];
   for (const other of s.active) {
-    if (other === seat) continue;
     s.pieces[other].forEach((p, j) => {
-      if (!isOnTrack(p)) return;
+      if ((charmedBy(s, other, j) ?? other) === seat || !isOnTrack(p)) return;
       const sq = trackIndex(other, p);
       if (apart(sq, h.square) <= DRAGON_BLAST_REACH && !isSafe(s, other, sq)) hit.push({ seat: other, piece: j, from: p, saved: false });
     });
+    if (other === seat) continue;
     const theirs = s.heroes[other];
     if (theirs && theirs.square >= 0 && theirs.kind !== 'engineer' && apart(theirs.square, h.square) <= DRAGON_BLAST_REACH && !isSafe(s, other, theirs.square)) {
       hit.push({ seat: other, piece: HERO, from: theirs.square, saved: false });
