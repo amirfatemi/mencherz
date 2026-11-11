@@ -60,8 +60,8 @@ describe('reactions', () => {
   });
 
   test('three sixes in a row are sad', () => {
-    // No magic boxes here, so the game starts at the first roll.
-    const fresh = () => createGame([0, 1], { ...DEFAULT_RULES, magicBoxes: false, powerSquares: false, events: false, bounty: false, dragon: false }, 0);
+    // No magic boxes or heroes here, so the game starts at the first roll.
+    const fresh = () => createGame([0, 1], { ...DEFAULT_RULES, magicBoxes: false, powerSquares: false, events: false, bounty: false, dragon: false, heroes: false }, 0);
     let g = at(fresh(), 0, [10]);
     for (let i = 0; i < 2; i++) g = applyMove(applyRoll(g, 6).state, 0).state;
     const third = applyRoll(g, 6).event;
@@ -71,7 +71,7 @@ describe('reactions', () => {
   });
 
   test('three lost turns in a row with everything in the hangar are sad', () => {
-    let g = createGame([0, 1], { ...DEFAULT_RULES, magicBoxes: false, powerSquares: false, events: false, bounty: false, dragon: false }, 0);
+    let g = createGame([0, 1], { ...DEFAULT_RULES, magicBoxes: false, powerSquares: false, events: false, bounty: false, dragon: false, heroes: false }, 0);
     const moods: string[][] = [];
     for (let turn = 1; turn <= 2 * STUCK_TURNS; turn++) {
       const r = applyRoll(g, 3);

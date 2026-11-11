@@ -46,6 +46,8 @@ import {
   KING_PIECE,
   SUPER_BOMB_REACH,
   asSeen,
+  charmMove,
+  charmedBy,
   isKing,
   planMove,
   ambushStart,
@@ -541,9 +543,14 @@ interface Item {
   animated: boolean;
   /** Absolute track square, for pieces resting on the track. */
   square?: number;
+  /** Under a wizard's spell: whose it is to move (and whose colour it's drawn in). */
+  charmBy?: Seat;
 }
 
 const pct = (v: number) => `${(v / BOARD_SIZE) * 100}%`;
+
+/** The move number for a piece of an item: its own, or a charmed piece's. */
+const moveOf = (it: Item, piece: number) => (it.charmBy !== undefined ? charmMove(it.seat, piece) : piece);
 
 const TARGET_LABEL = {
   bomb: 'Drop the bomb',
@@ -630,7 +637,8 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           out.push({ ...base, key: `${seat}:hangar:${piece}`, pieces: [piece] });
           return;
         }
-        const gk = `${seat}:at:${pos}:${kind(seat, piece)}`;
+        const charmBy = charmedBy(game, seat, piece) ?? undefined;
+        const gk = `${seat}:at:${pos}:${kind(seat, piece)}${charmBy !== undefined ? `:charm${charmBy}` : ''}`;
         const g = groups.get(gk);
         if (g) g.pieces.push(piece);
         else {
@@ -638,7 +646,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           const kinds = [...new Set(game.pieces[seat].flatMap((q, j) => (q === pos ? [kind(seat, j)] : [])))].sort();
           const shift = CELL * 0.4 * (kinds.indexOf(kind(seat, piece)) - (kinds.length - 1) / 2);
           const square = isOnTrack(pos) ? trackIndex(seat, pos) : undefined;
-          const item = { ...base, x: base.x + shift, y: base.y + shift * 0.4, key: gk, pieces: [piece], square };
+          const item = { ...base, x: base.x + shift, y: base.y + shift * 0.4, key: gk, pieces: [piece], square, charmBy };
           groups.set(gk, item);
           out.push(item);
         }
@@ -659,7 +667,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
       it.x += k * CELL * 0.38;
       it.y += k * CELL * 0.12;
     }
-    const canMove = (it: Item) => !it.animated && it.seat === game.turn && it.pieces.some((p) => movable.includes(p));
+    const canMove = (it: Item) => !it.animated && (it.charmBy ?? it.seat) === game.turn && it.pieces.some((p) => movable.includes(moveOf(it, p)));
     return out.sort((a, b) => Number(a.animated) - Number(b.animated) || Number(canMove(a)) - Number(canMove(b)) || a.y - b.y);
   }, [game, anim, rot, movable]);
 
@@ -747,7 +755,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                   </text>
                 );
               })()}
-            {(preview.guarded ?? []).map((g) => {
+            {(preview.heroSaves ?? []).map((g) => {
               // Pieces their guardian would keep from being knocked out.
               const q = toPx(TRACK[g.square].spot, rot);
               return (
@@ -805,6 +813,19 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                         </text>
                       );
                     })}
+                    {hero.charmed.map((v) => {
+                      const q = toPx(movePoint(v.seat, v.piece, v.from), rot);
+                      return (
+                        <text key={`c${v.seat}:${v.piece}`} x={q.x} y={q.y + CELL * 1.05} className="preview-points" textAnchor="middle">
+                          🪄
+                        </text>
+                      );
+                    })}
+                    {hero.raised.length > 0 && (
+                      <text x={p.x} y={p.y + CELL * 1.05} className="preview-points" textAnchor="middle">
+                        💀 +{hero.raised.reduce((n, r) => n + r.points, 0)}
+                      </text>
+                    )}
                     {hero.stolen.length > 0 && (
                       <text x={p.x} y={p.y - CELL * 0.85} className="preview-points" textAnchor="middle">
                         💰 +{hero.stolen.reduce((n, x) => n + x.points, 0) + (hero.bounty ?? 0)}
@@ -828,7 +849,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                     style={pieceStyle}
                     x={p.x}
                     y={p.y}
-                    angle={restHeading(preview.seat, preview.piece, preview.to) + rot * 90}
+                    angle={restHeading(preview.charm?.seat ?? preview.seat, preview.charm?.piece ?? preview.piece, preview.to) + rot * 90}
                     size={PIECE_SIZE}
                     ghost
                   />
@@ -865,7 +886,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
         {/* The squares a guardian watches over. */}
         {game.active.map((seat) => {
           const h = game.heroes?.[seat];
-          if (h?.kind !== 'guardian' || h.square < 0 || !h.guards || anim?.pieces.has(`${seat}:${HERO}`)) return null;
+          if (h?.kind !== 'guardian' || h.square < 0 || anim?.pieces.has(`${seat}:${HERO}`)) return null;
           return Array.from({ length: GUARD_REACH * 2 + 1 }, (_, k) => (h.square + k - GUARD_REACH + TRACK.length) % TRACK.length).map((sq) => (
             <ShapeEl key={`guard${seat}:${sq}`} s={rotateShape(TRACK[sq].shape, rot)} fill={`${COLOR_HEX[seat]}33`} stroke={COLOR_HEX[seat]} strokeWidth={2.5} inset={2.5} />
           ));
@@ -873,7 +894,10 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
 
         <g filter="url(#piece-shadow)">
           {items.map((it) => {
-            const mover = !it.animated && it.seat === game.turn ? it.pieces.find((p) => movable.includes(p)) : undefined;
+            // A charmed piece is moved (and coloured) by whoever charmed it.
+            const owner = it.charmBy ?? it.seat;
+            const piece = !it.animated && owner === game.turn ? it.pieces.find((p) => movable.includes(moveOf(it, p))) : undefined;
+            const mover = piece === undefined ? undefined : moveOf(it, piece);
             const canMove = mover !== undefined;
             const at = game.pieces[it.seat][it.pieces[0]];
             const wall = !it.animated && !!game.rules.walls && isOnTrack(at) && game.pieces[it.seat].filter((q) => q === at).length > 1;
@@ -881,7 +905,8 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
               <Piece
                 key={it.key}
                 id={it.pieces.map((p) => `${it.seat}:${p}`).join(' ')}
-                seat={it.seat}
+                seat={owner}
+                charmedFrom={it.charmBy !== undefined ? it.seat : undefined}
                 style={pieceStyle}
                 x={it.x}
                 y={it.y}
@@ -898,7 +923,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 wall={wall}
                 onClick={canMove ? () => (TOUCH && hovered !== mover ? setHover(mover) : onMove(mover)) : undefined}
                 onHover={canMove && !TOUCH ? (on) => setHover(on ? mover : null) : undefined}
-                label={canMove ? `Move piece ${mover + 1}${it.pieces.length > 1 ? ` (${it.pieces.length} here)` : ''}` : undefined}
+                label={canMove ? (it.charmBy !== undefined ? 'Move the charmed piece' : `Move piece ${piece! + 1}${it.pieces.length > 1 ? ` (${it.pieces.length} here)` : ''}`) : undefined}
               />
             );
           })}

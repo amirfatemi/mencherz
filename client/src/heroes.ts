@@ -1,4 +1,5 @@
-import { DRAGON_PRIZE, GUARD_SAVES, GUARDIAN_KILL, HERO_STEAL, THIEF_KING_STEAL, type HeroKind } from '../../shared/rules.ts';
+import { CHARM_ROUNDS, DRAGON_PRIZE, FROST_REACH, FROST_TURNS, GUARD_REACH, GUARDIAN_KILL, THIEF_TIMES, type HeroKind } from '../../shared/rules.ts';
+import { POINTS } from '../../shared/scoring.ts';
 import archerArt from './assets/heroes/archer.webp';
 import engineerArt from './assets/heroes/engineer.webp';
 import frostArt from './assets/heroes/frost.webp';
@@ -31,8 +32,8 @@ export interface HeroLook {
   power: string;
 }
 
-/** Each hero's picture, for its card. */
-export const HERO_ART: Record<HeroKind, string> = {
+/** Each hero's picture, for its card (a hero without one shows its emoji on its colours). */
+export const HERO_ART: Partial<Record<HeroKind, string>> = {
   archer: archerArt,
   engineer: engineerArt,
   guardian: guardianArt,
@@ -41,8 +42,8 @@ export const HERO_ART: Record<HeroKind, string> = {
   rider: riderArt,
 };
 
-/** Each hero's round portrait, for its piece on the board. */
-export const HERO_FACE: Record<HeroKind, string> = {
+/** Each hero's round portrait, for its piece on the board (likewise). */
+export const HERO_FACE: Partial<Record<HeroKind, string>> = {
   archer: archerFace,
   engineer: engineerFace,
   guardian: guardianFace,
@@ -73,7 +74,7 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     light: '#ffcc80',
     ring: '#fb8c00',
     dark: '#b23c00',
-    power: 'هر بمبی که از رویش رد شود یا رویش بایستد مال خودت می‌شود (بمب حریف یا اژدها)، و هیچ بمبی منفجرش نمی‌کند. آخر عمرش یک ابر بمب هر جا بخواهی می‌گذارد و بعد با شمارش ۱، ۲، ۳ خودش منفجر می‌شود.',
+    power: 'هر بمب حریفی که از رویش رد شود یا رویش بایستد مال خودت می‌شود (بمب اژدها نه)، و هیچ بمبی منفجرش نمی‌کند. آخر عمرش یک ابر بمب هر جا بخواهی می‌گذارد و بعد با شمارش ۱، ۲، ۳ خودش منفجر می‌شود.',
   },
   guardian: {
     fa: 'نگهبان',
@@ -84,18 +85,18 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     light: '#90caf9',
     ring: '#1e78e6',
     dark: '#0d2f7a',
-    power: `مهره‌های تو را روی خانهٔ خودش و یک خانه جلو و عقبش از زده شدن و اژدها نجات می‌دهد، ولی فقط ${fa(GUARD_SAVES)} بار؛ جلوی بمب را نمی‌گیرد. هر کس بزندش ${fa(GUARDIAN_KILL)} امتیاز می‌گیرد.`,
+    power: `مراقب مهره‌های تو روی خانهٔ خودش و ${fa(GUARD_REACH)} خانه جلو و عقبش است: اولین باری که حریف یا اژدها بخواهد یکی‌شان را بزند، نگهبان جای آن‌ها فدا می‌شود و از بازی می‌رود. جلوی بمب را نمی‌گیرد. هر کس بزندش ${fa(GUARDIAN_KILL)} امتیاز می‌گیرد.`,
   },
   frost: {
     fa: 'یخ‌زن',
     en: 'Frost mage',
-    face: '🧙',
+    face: '🥶',
     badge: '❄️',
     deep: '#006064',
     light: '#b2ebf2',
     ring: '#1e88e5',
     dark: '#0d3a80',
-    power: 'هر جا بایستد، مهره‌ها و هیروهای حریف تا دو خانه جلو و عقبش یک نوبت یخ می‌زنند.',
+    power: `هر جا بایستد، مهره‌ها و هیروهای حریف تا ${fa(FROST_REACH)} خانه جلو و عقبش ${fa(FROST_TURNS)} نوبت یخ می‌زنند.`,
   },
   thief: {
     fa: 'دزد',
@@ -106,7 +107,7 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     light: '#ce93d8',
     ring: '#8e24aa',
     dark: '#3d0a5c',
-    power: `کسی را نمی‌زند؛ هر جا بایستد از هر حریفی که آنجاست ${fa(HERO_STEAL)} امتیاز (اگر پادشاهش آنجا باشد ${fa(THIEF_KING_STEAL)}) و جلیقه‌اش را می‌دزدد، و جایزهٔ نفر اول را هم. جعبهٔ جادو برایش همیشه خوب است.`,
+    power: `کسی را نمی‌زند؛ هر جا بایستد از هر مهرهٔ حریف آنجا ${fa(THIEF_TIMES)} برابرِ امتیازی را می‌دزدد که زدنش داشت (پادشاه، انتقام و جلو بودن مهره هم حساب است)، با جلیقه‌اش و جایزهٔ نفر اول. جعبهٔ جادو برایش همیشه خوب است.`,
   },
   rider: {
     fa: 'اژدهاسوار',
@@ -117,6 +118,28 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     light: '#ffab91',
     ring: '#e53935',
     dark: '#8e0e0e',
-    power: `تا وقتی هست، اژدها مهره‌های تو را نمی‌خورد و انفجارش به آن‌ها نمی‌رسد. اگر روی اژدها فرود بیاید مثل پادشاه شکارش می‌کند: ${fa(DRAGON_PRIZE.king)} امتیاز، و اژدها دیگر نمی‌آید.`,
+    power: `اولین باری که اژدها بخواهد یکی از مهره‌های تو را بخورد یا با انفجارش ببرد، اژدهاسوار جای آن فدا می‌شود (روی خانهٔ صف کاری نمی‌کند). اگر روی اژدها فرود بیاید ${fa(DRAGON_PRIZE.king)} امتیاز می‌گیرد، ولی اژدهای بعدی باز می‌آید.`,
+  },
+  wizard: {
+    fa: 'جادوگر',
+    en: 'Wizard',
+    face: '🧙‍♀️',
+    badge: '🪄',
+    deep: '#004d40',
+    light: '#a7ffeb',
+    ring: '#00a88f',
+    dark: '#00564a',
+    power: `هر جا بایستد، مهره‌های حریف آنجا (به‌جز پادشاه) طلسم می‌شوند: ${fa(CHARM_ROUNDS)} دور به رنگ تو درمی‌آیند و تو حرکتشان می‌دهی، فقط روی مسیر. پادشاه و هیروهای آنجا را می‌زند.`,
+  },
+  death: {
+    fa: 'مرگ',
+    en: 'Death',
+    face: '💀',
+    badge: '⚰️',
+    deep: '#212121',
+    light: '#cfd8dc',
+    ring: '#5d6d7e',
+    dark: '#1c2833',
+    power: `مرده زنده می‌کند: اگر پادشاه حریفی را بزند، یکی از مهره‌هایی که آن حریف به خانه رسانده به آشیانه برمی‌گردد و ${fa(POINTS.home)} امتیازش مال تو می‌شود. بقیه را مثل هر هیرویی می‌زند.`,
   },
 };

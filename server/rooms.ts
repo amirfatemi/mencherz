@@ -87,6 +87,8 @@ interface Room {
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_EVENTS = 60;
+/** The least time a person gets to pick their heroes, whatever the turn limit. */
+const HERO_PICK_MS = 60_000;
 const BOT_THINK_MS = { roll: 650, move: 550, bomb: 1100, box: 700, power: 900, place: 1100, vest: 700, hero: 1200 };
 const rand = (n: number) => randomInt(n);
 const OFFLINE_GRACE_MS = 6000;
@@ -405,7 +407,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       else if (a.type === 'place') commit(room, applyPlace(g, a.square, rand));
       else if (a.type === 'power') commit(room, applyPower(g, a.choice, rand, a.over));
       else if (a.type === 'vest') commit(room, applyVest(g, a.piece, rand));
-      else if (a.type === 'hero') commit(room, applyHero(g, a.kind));
+      else if (a.type === 'hero') commit(room, applyHero(g, a.kinds));
     } catch (err) {
       console.error(`Auto move failed in ${room.code}:`, err);
     }
@@ -436,6 +438,8 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     // People make every move themselves, even when only one is possible.
 
     let limit = room.settings.turnSeconds * 1000;
+    // Picking heroes for the game takes a moment longer than a move.
+    if (limit && g.phase === 'hero') limit = Math.max(limit, HERO_PICK_MS);
     if (!seatOnline(room, seat)) limit = limit ? Math.min(limit, OFFLINE_GRACE_MS) : OFFLINE_GRACE_MS;
     if (!limit) return;
     room.turnDeadline = now + scaled(wait + limit);
@@ -774,9 +778,9 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       handler((req) => {
         const room = getRoom(req?.code);
         requireTurn(room, user);
-        const kind = req?.kind as HeroKind;
-        if (!HERO_KINDS.includes(kind)) throw new InputError('Unknown hero');
-        commit(room, applyHero(room.game!, kind));
+        const kinds = req?.kinds as HeroKind[];
+        if (!Array.isArray(kinds) || !kinds.every((k) => HERO_KINDS.includes(k))) throw new InputError('Unknown hero');
+        commit(room, applyHero(room.game!, kinds));
         return null;
       }),
     );

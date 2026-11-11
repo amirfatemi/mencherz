@@ -23,7 +23,7 @@ export const BOX_REVEAL_MS = 3000;
 export const PASS_HOLD_MS = 5000;
 /** Picking a power on a power square. */
 export const POWER_MS = 300;
-/** A hero coming on to the board. */
+/** A hero coming on to the board (launched). */
 export const HERO_MS = 1100;
 /** The 1, 2, 3 counted on the board before the dragon or the engineer goes off. */
 export const COUNTDOWN_MS = 1800;
@@ -37,8 +37,8 @@ export function eventDuration(event: GameEvent | null | undefined, holdPasses = 
   // The engineer's last super bomb drops, then it counts down and goes off.
   if (event.type === 'bomb' && event.ends) return BOMB_MS + COUNTDOWN_MS + CAPTURE_MS;
   if (event.type === 'bomb' || event.type === 'box' || event.type === 'bridge' || event.type === 'safe') return BOMB_MS;
-  if (event.type === 'power' || event.type === 'vest') return POWER_MS;
-  if (event.type === 'hero') return HERO_MS;
+  if (event.type === 'power' || event.type === 'vest' || event.type === 'hero') return POWER_MS;
+  if (event.hero?.launch) return HERO_MS;
   let ms = settledAt(event);
   // Knocked-out pieces, the mover itself after a bomb, or a super bomb's blast fly back to the hangar.
   if (event.captures.length || event.to === HANGAR || event.bombed?.blast?.some((v) => !v.saved)) ms += CAPTURE_MS;

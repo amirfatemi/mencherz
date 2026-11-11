@@ -20,7 +20,26 @@ export function HeroDefs() {
           <stop offset="1" stopColor={shade(HERO_LOOK[k].ring, -0.4)} />
         </radialGradient>
       ))}
+      {HERO_KINDS.map((k) => (
+        <radialGradient key={`face${k}`} id={`hero-face-${k}`} cx="0.45" cy="0.35" r="0.7">
+          <stop offset="0" stopColor={HERO_LOOK[k].light} />
+          <stop offset="1" stopColor={HERO_LOOK[k].deep} />
+        </radialGradient>
+      ))}
     </>
+  );
+}
+
+/** A hero's round portrait in HTML (its emoji on its colours until it has one), ringed in its colour. */
+export function HeroFace({ kind }: { kind: HeroKind }) {
+  const look = HERO_LOOK[kind];
+  const face = HERO_FACE[kind];
+  return face ? (
+    <img className="mark-hero" src={face} alt="" style={{ borderColor: look.ring }} />
+  ) : (
+    <span className="mark-hero emoji" style={{ borderColor: look.ring, background: `radial-gradient(circle at 45% 35%, ${look.light}, ${look.deep})` }} aria-hidden>
+      {look.face}
+    </span>
   );
 }
 
@@ -66,6 +85,19 @@ export function HeroIcon({ kind, size }: { kind: HeroKind; size?: number }) {
           </text>
         </>
       )}
+      {kind === 'wizard' && (
+        <>
+          <path d="M4 20.5 14.5 10" {...line} strokeWidth={2.6} />
+          <path d="M17 2.5l1.2 2.8 3 .3-2.3 2 .7 2.9-2.6-1.5-2.6 1.5.7-2.9-2.3-2 3-.3Z" fill="#fff" />
+          <path d="M6 6.5v2M5 7.5h2M19.5 15.5v2M18.5 16.5h2" {...line} strokeWidth={1.4} />
+        </>
+      )}
+      {kind === 'death' && (
+        <>
+          <path d="M8 21.5 15.5 3" {...line} strokeWidth={2.2} />
+          <path d="M14.8 4.6C10.5 3 5.6 4.3 3 8.2c3.2-1.6 7.4-1.6 10.7.3Z" fill="#fff" stroke="#fff" strokeWidth={1} strokeLinejoin="round" />
+        </>
+      )}
       {kind === 'rider' && (
         <path
           d="M12 2.5c.8 3.4 5.5 5.5 5.5 11a5.5 5.5 0 0 1-11 0c0-2.6 1.4-4.4 2.6-5.6.1 1.8.9 3 2 3.4-.4-3.3-.3-5.9.9-8.8Z"
@@ -83,11 +115,23 @@ export function HeroIcon({ kind, size }: { kind: HeroKind; size?: number }) {
  * gold-rimmed badge at the bottom right.
  */
 export function HeroMedal({ kind, r }: { kind: HeroKind; r: number }) {
+  const face = HERO_FACE[kind];
+  const look = HERO_LOOK[kind];
   return (
     <g className={`hero-medal ${kind}`}>
       <circle r={r * 1.24} fill="rgba(0,0,0,0.28)" />
       <circle r={r * 1.12} fill="none" stroke={`url(#hero-ring-${kind})`} strokeWidth={r * 0.24} />
-      <image href={HERO_FACE[kind]} x={-r} y={-r} width={r * 2} height={r * 2} />
+      {face ? (
+        <image href={face} x={-r} y={-r} width={r * 2} height={r * 2} />
+      ) : (
+        // No portrait yet: its emoji on its colours.
+        <>
+          <circle r={r} fill={`url(#hero-face-${kind})`} />
+          <text textAnchor="middle" dominantBaseline="central" fontSize={r * 1.15}>
+            {look.face}
+          </text>
+        </>
+      )}
       <circle r={r} fill="none" stroke="rgba(0,0,0,0.3)" strokeWidth={r * 0.05} />
       <path d={`M${-r * 0.95} ${-r * 0.55}A${r * 1.12} ${r * 1.12} 0 0 1 ${r * 0.55} ${-r * 0.97}`} fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth={r * 0.07} strokeLinecap="round" />
       <g transform={`translate(${r * 0.8} ${r * 0.76})`}>
@@ -110,8 +154,8 @@ interface TokenProps {
 }
 
 /**
- * A hero on the board: its medal, with the squares it has left on a badge at the top right (and the guardian's
- * saves on a shield at the top left), and a thin outer ring in its player's colour, so it's clear whose it is.
+ * A hero on the board: its medal, with the squares it has left on a badge at the top right, and a thin outer ring
+ * in its player's colour, so it's clear whose it is.
  */
 export function HeroToken({ hero, seat, x, y, r, movable, onClick, onHover }: TokenProps) {
   const look = HERO_LOOK[hero.kind];
@@ -126,7 +170,7 @@ export function HeroToken({ hero, seat, x, y, r, movable, onClick, onHover }: To
       aria-label={onClick ? `Move the ${look.en}` : undefined}
       pointerEvents={onClick ? undefined : 'none'}
     >
-      <title>{`${look.fa} · ${look.en} — ${hero.left} squares left${hero.kind === 'guardian' ? `, ${hero.guards} saves left` : ''}`}</title>
+      <title>{`${look.fa} · ${look.en} — ${hero.left} squares left`}</title>
       {movable && <circle className="hero-ring" r={r * 1.24 + 6} fill="none" stroke="#ffeb3b" strokeWidth={3} />}
       <circle r={r * 1.24 + 2} fill="none" stroke={COLOR_HEX[seat]} strokeWidth={3} />
       <HeroMedal kind={hero.kind} r={r} />
@@ -144,21 +188,6 @@ export function HeroToken({ hero, seat, x, y, r, movable, onClick, onHover }: To
           {hero.left}
         </text>
       </g>
-      {hero.kind === 'guardian' && (
-        // The saves it has left, on a shield at the top left; greyed out once they're used up.
-        <g transform={`translate(${-r * 0.86} ${-r * 0.9})`} opacity={hero.guards ? 1 : 0.6}>
-          <path
-            d={`M0 ${-r * 0.56}L${r * 0.48} ${-r * 0.38}V${r * 0.02}C${r * 0.48} ${r * 0.34} ${r * 0.24} ${r * 0.52} 0 ${r * 0.62}C${-r * 0.24} ${r * 0.52} ${-r * 0.48} ${r * 0.34} ${-r * 0.48} ${r * 0.02}V${-r * 0.38}Z`}
-            fill={hero.guards ? look.ring : '#78909c'}
-            stroke="#fff"
-            strokeWidth={r * 0.09}
-            strokeLinejoin="round"
-          />
-          <text textAnchor="middle" dy="0.36em" fontSize={r * 0.58} fontWeight={800} fill="#fff">
-            {hero.guards}
-          </text>
-        </g>
-      )}
       {hero.vests > 0 && (
         <text x={-r * 0.95} y={-r * 0.8} textAnchor="middle" dominantBaseline="central" fontSize={r * 0.7}>
           🦺

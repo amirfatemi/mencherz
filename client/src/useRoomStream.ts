@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { GOAL, HANGAR, HANGAR_CENTERS, HANGAR_SLOTS, TRACK_CELLS, type Point, type Seat } from '../../shared/board.ts';
 import type { RoomUpdate, RoomView } from '../../shared/protocol.ts';
 import { REACTION_MS } from '../../shared/reactions.ts';
-import { HERO, blastOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind } from '../../shared/rules.ts';
+import { CHARM, HERO, blastOf, charmOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind } from '../../shared/rules.ts';
 import type { Bomb, GameState, WorldEventKind } from '../../shared/rules.ts';
 import { POINTS, killStreakName } from '../../shared/scoring.ts';
 import {
@@ -22,7 +22,6 @@ import {
   settledAt,
   stepEnd,
 } from '../../shared/timing.ts';
-import { seatName } from './events.ts';
 import { dragonPoint, heading, lerpAngle, movePoint, restHeading } from './geometry.ts';
 import { HERO_LOOK } from './heroes.ts';
 import { sfx } from './sound.ts';
@@ -58,8 +57,12 @@ export interface Countdown {
   at: Point;
 }
 
-/** A hero's moves are keyed like its first move, forward or back. */
-const pieceKey = (seat: Seat, piece: number) => `${seat}:${Math.min(piece, HERO)}`;
+/** A hero's moves (and its launch) are keyed alike; a charmed piece by its own colour. */
+const pieceKey = (seat: Seat, piece: number) => {
+  if (piece < CHARM) return `${seat}:${Math.min(piece, HERO)}`;
+  const c = charmOf(piece);
+  return `${c.seat}:${c.piece}`;
+};
 
 /** A short banner across the board for a big moment. */
 export interface Banner {
@@ -86,6 +89,10 @@ export const EVENT_BANNERS: Record<WorldEventKind, string> = {
  * plays in slow motion); the dragon and a bounty always show.
  */
 function moveBanner(ev: MoveEvent): { at: number; text: string; tone: Banner['tone']; slow: boolean } | null {
+  const sacrifice = ev.captures.find((c) => c.sacrifice);
+  if (sacrifice) return { at: captureAt(ev, sacrifice), text: `💂🛡️ نگهبان جای مهره‌ها فدا شد! +${sacrifice.points}`, tone: 'event', slow: false };
+  const raised = ev.hero?.raised ?? [];
+  if (raised.length) return { at: arrivalAt(ev), text: `💀 مرده زنده شد! یک مهره از خانه برگشت +${raised.reduce((n, r) => n + r.points, 0)}`, tone: 'kill', slow: true };
   const spree = ev.captures.find((c) => (c.streak ?? 1) >= 2);
   if (spree) return { at: captureAt(ev, spree), text: `💀 ${killStreakName(spree.streak)!.toUpperCase()}!`, tone: 'kill', slow: true };
   const king = ev.captures.find((c) => c.king);
@@ -94,7 +101,7 @@ function moveBanner(ev: MoveEvent): { at: number; text: string; tone: Banner['to
   if (revenge) return { at: captureAt(ev, revenge), text: '⚔️ انتقام!', tone: 'kill', slow: true };
   if (ev.dragon) {
     const killer = ev.hero ? `${HERO_LOOK[ev.hero.kind].face} ${HERO_LOOK[ev.hero.kind].fa}` : '👑 پادشاه';
-    const text = ev.dragon.king ? `${killer} اژدها را کشت! +${ev.dragon.points}` : `🐉 اژدها شکار شد! +${ev.dragon.points}`;
+    const text = ev.dragon.king || ev.hero?.kind === 'rider' ? `${killer} اژدها را کشت! +${ev.dragon.points}` : `🐉 اژدها شکار شد! +${ev.dragon.points}`;
     return { at: arrivalAt(ev), text, tone: 'gold', slow: false };
   }
   const hero = ev.hero;
@@ -103,12 +110,12 @@ function moveBanner(ev: MoveEvent): { at: number; text: string; tone: Banner['to
     const text = hero.stolen.some((x) => x.king) ? `🥷 پادشاه را دزدید! +${took}` : `🥷 دزدی! +${took}`;
     return { at: arrivalAt(ev), text, tone: 'gold', slow: false };
   }
+  if (hero?.charmed.length) return { at: arrivalAt(ev), text: '🧙‍♀️🪄 طلسم شد! حالا مال توست', tone: 'event', slow: false };
   if (hero?.froze.length) return { at: arrivalAt(ev), text: '❄️ یخ زدند!', tone: 'event', slow: false };
   if (hero?.hijacked.length) {
     const n = hero.hijacked.length;
     return { at: arrivalAt(ev), text: n === 1 ? '👷💣 بمب مال مهندس شد!' : `👷💣 ${n.toLocaleString('fa-IR')} بمب مال مهندس شد!`, tone: 'gold', slow: false };
   }
-  if (ev.guarded?.length) return { at: arrivalAt(ev), text: '💂🛡️ نگهبان نجاتش داد!', tone: 'event', slow: false };
   const bounty = ev.captures.find((c) => c.bounty);
   if (bounty) return { at: captureAt(ev, bounty), text: `🎯 جایزه گرفت! +${bounty.bounty}`, tone: 'gold', slow: false };
   return null;
@@ -238,7 +245,8 @@ function scoreMoments(ev: MoveEvent, cinematic: boolean): ScoreMoment[] {
     const took = hero.stolen.reduce((n, x) => n + x.points, 0) + (hero.bounty ?? 0);
     if (hero.stolen.length) out.push({ at: TRACK_CELLS[ev.to], delay: arrivalAt(ev), text: `💰 +${took}`, seat: ev.seat });
   }
-  for (const g of ev.guarded ?? []) out.push({ at: TRACK_CELLS[g.square], delay: arrivalAt(ev), text: '🛡️', seat: g.seat });
+  for (const g of ev.heroSaves ?? []) out.push({ at: TRACK_CELLS[g.square], delay: arrivalAt(ev), text: '🛡️', seat: g.seat });
+  for (const v of ev.hero?.charmed ?? []) out.push({ at: movePoint(v.seat, v.piece, v.from), delay: arrivalAt(ev), text: '🪄', seat: ev.seat });
   const b = ev.bombed;
   if (b) {
     const text = b.saved ? '🦺 Saved!' : b.points ? `💣 +${b.points}` : '💣';
@@ -265,6 +273,8 @@ function returnHome(seat: Seat, piece: number, from: number, start: number): Mot
 }
 
 function moveTimeline(ev: MoveEvent): Timeline {
+  // Whose piece moves: the mover's, or one it charmed.
+  const [ms, mp] = ev.charm ? [ev.charm.seat, ev.charm.piece] : [ev.seat, ev.piece];
   const segments: Segment[] = [];
   let from = movePoint(ev.seat, ev.piece, ev.from);
   ev.path.forEach((step, i) => {
@@ -276,7 +286,7 @@ function moveTimeline(ev: MoveEvent): Timeline {
   });
   const t = settledAt(ev);
   const tl: Timeline = {
-    motions: [{ key: pieceKey(ev.seat, ev.piece), startAngle: ev.hero ? 0 : restHeading(ev.seat, ev.piece, ev.from), segments }],
+    motions: [{ key: pieceKey(ev.seat, ev.piece), startAngle: ev.hero ? 0 : restHeading(ms, mp, ev.from), segments }],
     booms: [],
     total: t,
   };
@@ -292,7 +302,7 @@ function moveTimeline(ev: MoveEvent): Timeline {
   if (blast) {
     // Later motions for the same piece take over, so it flies home from where it blew up.
     const at = blastAt(ev);
-    tl.motions.push(returnHome(ev.seat, ev.piece, blast.pos, at));
+    tl.motions.push(returnHome(ms, mp, blast.pos, at));
     tl.booms.push({ at: TRACK_CELLS[blast.square], start: at });
     tl.total = Math.max(tl.total, at + CAPTURE_MS);
   }
@@ -494,9 +504,6 @@ export function useRoomStream(code: string) {
           } else if (after.dragon && !before.dragon) {
             showBanner('🐉 اژدها آمد! مراقب باشید', 'event');
             sfx.roar();
-          } else {
-            const earned = after.active.find((seat) => (after.heroPicks?.[seat] ?? 0) > (before.heroPicks?.[seat] ?? 0));
-            if (earned !== undefined) showBanner(`🦸 ${seatName(u.room.seats, earned)} یک هیرو گرفت!`, 'gold');
           }
         };
         // The dragon or the engineer going off: it stays where it is for a 1, 2, 3, then blows, just before the new state shows.
@@ -551,7 +558,10 @@ export function useRoomStream(code: string) {
               const stops = (DRAGON_PAUSE_MS + d.steps * STEP_MS.step) / speed;
               setTimeout(() => alive.current && sfx.roar(), DRAGON_PAUSE_MS / speed);
               if (d.eaten.length) setTimeout(() => alive.current && sfx.hit(), stops);
-              if (d.guarded?.length && !skip) setTimeout(() => alive.current && showBanner('💂🛡️ نگهبان جلوی اژدها را گرفت!', 'event'), stops);
+              if (d.saved?.length && !skip) {
+                const who = d.saved[0].by === 'rider' ? '🐲 اژدهاسوار' : '💂 نگهبان';
+                setTimeout(() => alive.current && showBanner(`${who} جای مهره‌ها فدا شد!`, 'event'), stops);
+              }
               if (d.bomb !== undefined && !skip) {
                 setTimeout(() => {
                   if (!alive.current) return;
@@ -582,8 +592,13 @@ export function useRoomStream(code: string) {
             announce();
             continue;
           } else if (ev.type === 'hero') {
-            // A hero comes on with a fanfare and a banner, and grows in on its square (CSS).
-            const look = HERO_LOOK[ev.kind];
+            // Heroes picked for the game: nothing to play.
+            commit(u.room);
+            announce();
+            continue;
+          } else if (ev.type === 'move' && ev.hero?.launch) {
+            // A hero comes on with a fanfare and a banner, and grows in at the takeoff spot (CSS).
+            const look = HERO_LOOK[ev.hero.kind];
             sfx.hero();
             commit(u.room);
             announce();

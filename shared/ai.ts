@@ -18,7 +18,8 @@ import {
   availablePowers,
   ambushTargets,
   asSeen,
-  heroOptions,
+  HERO_KINDS,
+  HERO_TEAM,
   bridgeTarget,
   distinctMoves,
   freeSquares,
@@ -76,15 +77,36 @@ function heroScore(plan: MovePlan): number {
   return s;
 }
 
-/** Picks a hero: the dragon rider when the dragon is out, otherwise any it hasn't had. */
-export function chooseHero(state: GameState, rand: () => number = Math.random): HeroKind {
-  const options = heroOptions(state, state.turn);
-  if (state.dragon && options.includes('rider')) return 'rider';
-  return options[Math.floor(rand() * options.length)];
+/**
+ * Launching a hero instead of a piece: about as good as launching a piece with two already out, the dragon rider
+ * better with the dragon about.
+ */
+function launchScore(state: GameState, plan: MovePlan): number {
+  return 7 + (plan.hero!.kind === 'rider' && state.dragon ? 6 : 0);
+}
+
+/**
+ * Moving a piece it has charmed: what it knocks out, less a little for taking another colour's piece nearer its
+ * home, and for losing it to a bomb.
+ */
+function charmScore(plan: MovePlan): number {
+  return 1 + plan.points * 1.5 + plan.captures.length * 12 - plan.dice * 0.3 - (plan.to === HANGAR ? 4 : 0);
+}
+
+/** Picks a bot's heroes for the game, at random. */
+export function chooseTeam(rand: () => number = Math.random): HeroKind[] {
+  const kinds = [...HERO_KINDS];
+  for (let i = kinds.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [kinds[i], kinds[j]] = [kinds[j], kinds[i]];
+  }
+  return kinds.slice(0, HERO_TEAM);
 }
 
 function score(state: GameState, plan: MovePlan, careful: boolean): number {
+  if (plan.hero?.launch) return launchScore(state, plan);
   if (plan.hero) return heroScore(plan);
+  if (plan.charm) return charmScore(plan);
   const onBoard = state.pieces[plan.seat].filter((p) => p !== HANGAR && p !== GOAL).length;
   let s = value(plan.to) - value(plan.from);
   if (plan.from === HANGAR) s += 9 - onBoard * 2;
@@ -341,7 +363,7 @@ export type BotAction =
   | { type: 'move' | 'vest'; piece: number }
   | { type: 'bomb' | 'box' | 'place'; square: number }
   | { type: 'power'; choice: PowerChoice; over?: Seat }
-  | { type: 'hero'; kind: HeroKind };
+  | { type: 'hero'; kinds: HeroKind[] };
 
 /** What a bot does next, whatever the phase; also plays the turn of a player whose time ran out. */
 export function botAction(state: GameState, level: BotLevel, rand: () => number = Math.random): BotAction | null {
@@ -359,7 +381,7 @@ export function botAction(state: GameState, level: BotLevel, rand: () => number 
     case 'vest':
       return { type: 'vest', piece: chooseVest(state) };
     case 'hero':
-      return { type: 'hero', kind: chooseHero(state, rand) };
+      return { type: 'hero', kinds: chooseTeam(rand) };
     case 'place':
       // A box from a power square goes where a bomb would: in front of the others' pieces.
       if (state.placing === 'box') return { type: 'place', square: chooseBomb(state, level, rand) };

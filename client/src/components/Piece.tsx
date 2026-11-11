@@ -56,6 +56,8 @@ interface Props {
   wall?: boolean;
   /** Wears a protective vest, which stops its next bomb. */
   vest?: boolean;
+  /** Another colour's piece under a wizard's spell (drawn in its new player's colour): its own colour. */
+  charmedFrom?: Seat;
   ghost?: boolean;
   onClick?: () => void;
   onHover?: (on: boolean) => void;
@@ -126,6 +128,7 @@ export const Piece = memo(function Piece({
   king,
   wall,
   vest,
+  charmedFrom,
   ghost,
   onClick,
   onHover,
@@ -164,6 +167,9 @@ export const Piece = memo(function Piece({
       )}
       {wall && <ellipse className="piece-wall" cy={size * 0.45} rx={size * 1.12} ry={size * 0.55} />}
       {frozen && <ellipse className="piece-ice" cy={size * 0.45} rx={size * 1.05} ry={size * 0.5} />}
+      {charmedFrom !== undefined && (
+        <ellipse className="piece-charm" cy={size * 0.45} rx={size * 1.08} ry={size * 0.52} stroke={COLOR_HEX[charmedFrom]} />
+      )}
       <g transform={`translate(0 ${-rise}) rotate(${pawn ? 0 : spin}) scale(${size * grow})`}>
         {pawn ? <Pawn seat={seat} ghost={ghost} /> : <Plane seat={seat} angle={angle} ghost={ghost} />}
         {king && !ghost && <Crown y={pawn ? -1.1 : -0.85} />}
@@ -174,6 +180,15 @@ export const Piece = memo(function Piece({
           <circle r={size * 0.6} />
           <text textAnchor="middle" dy="0.35em" fontSize={size * 0.78}>
             ❄
+          </text>
+        </g>
+      )}
+      {charmedFrom !== undefined && (
+        <g transform={`translate(${-size * 0.85} ${size * 0.55})`} className="piece-charmed">
+          <title>Charmed by a wizard: this player moves it for a while</title>
+          <circle r={size * 0.55} />
+          <text textAnchor="middle" dy="0.35em" fontSize={size * 0.68}>
+            🪄
           </text>
         </g>
       )}

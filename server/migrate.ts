@@ -1,5 +1,5 @@
 import { GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, type Seat } from '../shared/board.ts';
-import { DEFAULT_RULES, DRAGON_FIRST_ROUNDS, DRAGON_PATH, GUARD_SAVES, HERO_FINISHED_ROUNDS, HERO_THRESHOLDS, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
+import { DEFAULT_RULES, DRAGON_FIRST_ROUNDS, DRAGON_PATH, HERO_KINDS, HERO_TEAM, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
 import { POINTS } from '../shared/scoring.ts';
 
 /** Brings a saved game up to date: board numbering first, then fields added since it was saved. */
@@ -60,18 +60,28 @@ export function upgradeGame(game: GameState): GameState {
   } else if (oldDragon && oldDragon.sixes === undefined) {
     g.dragon = { at: oldDragon.at!, moved: oldDragon.moved!, sixes: oldDragon.six ? 1 : 0 };
   }
-  // Heroes: games already under way count the point marks players have passed as reached, so nobody gets a
-  // pile of heroes at once; players already home get theirs a few rounds on.
   g.heroes ??= SEATS.map(() => null);
-  g.heroPicks ??= SEATS.map(() => 0);
-  g.heroesUsed ??= SEATS.map(() => []);
-  g.heroMilestones ??= SEATS.map((s) => HERO_THRESHOLDS.filter((t) => g.stats[s].points >= t).length);
-  g.heroAt ??= SEATS.map(() => g.turnNo + HERO_FINISHED_ROUNDS * g.active.length);
   g.heroEnding ??= null;
   g.heroBlast ??= null;
-  // A guardian already out when its saves came in starts with them all.
-  for (const h of g.heroes) if (h) h.guards ??= h.kind === 'guardian' ? GUARD_SAVES : 0;
-  g.sixPenalties ??= SEATS.map(() => 0);
+  g.charmed ??= [];
+  // Heroes used to be earned one at a time; now each player has a team picked at the start. Games already under
+  // way get the heroes each player had had, filled up from the top of the list, and play on without a pick.
+  const earned = g as GameState & { heroesUsed?: GameState['heroTeams'][number][]; heroPicks?: unknown; heroMilestones?: unknown; heroAt?: unknown; sixPenalties?: unknown };
+  if (!g.heroTeams) {
+    g.heroTeams = SEATS.map((s) => {
+      if (!g.rules.heroes) return [];
+      const team = [...new Set(earned.heroesUsed?.[s] ?? [])].slice(0, HERO_TEAM);
+      for (const k of HERO_KINDS) if (team.length < HERO_TEAM && !team.includes(k)) team.push(k);
+      return team;
+    });
+    if (g.phase === 'hero') Object.assign(g, { phase: 'roll', dice: null, movable: [] });
+  }
+  delete earned.heroesUsed;
+  delete earned.heroPicks;
+  delete earned.heroMilestones;
+  delete earned.heroAt;
+  delete earned.sixPenalties;
+  for (const h of g.heroes) if (h) delete (h as typeof h & { guards?: number }).guards;
   // Roll-again cards were dropped: the phase that placed bridges also places boxes now, and a roll that
   // waited for a card or a pass is simply rolled again.
   const old = g as Omit<GameState, 'phase'> & { rerolls?: unknown; preRoll?: unknown; phase: string };

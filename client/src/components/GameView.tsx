@@ -4,8 +4,11 @@ import { COLOR_HEX, type Seat } from '../../../shared/board.ts';
 import { peopleIn, type PublicUser, type SeatView } from '../../../shared/protocol.ts';
 import { RANKED_MIN_PEOPLE } from '../../../shared/scoring.ts';
 import {
+  CHARM,
   HERO,
   HERO_BACK,
+  HERO_TEAM,
+  LAUNCH,
   availablePowers,
   distinctMoves,
   freeSquares,
@@ -26,7 +29,9 @@ import { BoxRevealCard } from './BoxReveal.tsx';
 import type { PieceStyle } from './Piece.tsx';
 import { BombBadge, BoxBadge, Dice, EmojiBadge } from './Dice.tsx';
 import { EventCard } from './EventCard.tsx';
+import { HeroFace } from './HeroArt.tsx';
 import { HeroPicker } from './HeroPicker.tsx';
+import { HERO_LOOK } from '../heroes.ts';
 import { HowToPlay } from './HowToPlay.tsx';
 import { preloadReactions } from './Reaction.tsx';
 import { Modal } from './Modal.tsx';
@@ -128,6 +133,8 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   const myHero = game.heroes?.[game.turn] ?? null;
   // The archer can go back as well as forward: two buttons, as the board's tap moves it forward.
   const archer = myTurn && game.phase === 'move' && !busy && game.movable.includes(HERO_BACK);
+  // A roll that launches a piece can bring on one of the player's heroes instead.
+  const launches = myTurn && game.phase === 'move' && !busy ? game.movable.filter((j) => j >= LAUNCH && j < CHARM) : [];
   const engineerEnds = game.phase === 'place' && game.heroEnding !== null && game.heroEnding !== undefined;
   // A bridge or magic box picked on a power square, being put down.
   const placing = myTurn && game.phase === 'place' && !busy ? game.placing : null;
@@ -155,7 +162,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
           ? call(event, { code: view.code, piece: n! })
           : call(event, { code: view.code, square: n! }),
     );
-  const pickHero = (kind: HeroKind) => send(call('game:hero', { code: view.code, kind }));
+  const pickHeroes = (kinds: HeroKind[]) => send(call('game:hero', { code: view.code, kinds }));
   const pickPower = (choice: PowerChoice, over?: Seat) => {
     setPickingAmbush(false);
     send(call('game:power', { code: view.code, choice, over }));
@@ -204,7 +211,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   } else if (myTurn && game.phase === 'power') {
     status = `⚡ Power square! ${mySeat === game.turn ? 'Pick' : `${you}, pick`} a power`;
   } else if (myTurn && game.phase === 'hero') {
-    status = `🦸 A hero! ${mySeat === game.turn ? 'Pick' : `${you}, pick`} yours`;
+    status = `🦸 ${mySeat === game.turn ? 'Pick' : `${you}, pick`} your ${HERO_TEAM} heroes for this game`;
   } else if (myTurn && game.phase === 'place') {
     const pick = mySeat === game.turn ? 'Pick' : `${you}, pick`;
     status = engineerEnds
@@ -231,7 +238,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
             : game.phase === 'vest'
               ? 'is putting a vest on a piece 🦺'
             : game.phase === 'hero'
-              ? 'is picking a hero 🦸'
+              ? 'is picking their heroes 🦸'
             : game.phase === 'place'
               ? engineerEnds
                 ? "is placing the engineer's last super bomb 💥"
@@ -334,10 +341,10 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                 <span>
                   {heroHidden ? (
                     <button className="btn primary" onClick={() => setHeroHidden(false)}>
-                      🦸 Pick your hero
+                      🦸 Pick your heroes
                     </button>
                   ) : (
-                    'Pick a hero from the cards.'
+                    `Pick ${HERO_TEAM} heroes from the cards.`
                   )}
                 </span>
               ) : archer && myHero ? (
@@ -354,6 +361,19 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                   >
                     ◀ Back {Math.min(game.dice ?? 0, myHero.left)} 🏹
                   </button>
+                </div>
+              ) : launches.length ? (
+                <div className="power-choices hero-launch">
+                  <span>{launches.length < game.movable.length ? '🦸 Launch a piece, or bring on a hero instead:' : '🦸 Bring on a hero:'}</span>
+                  {launches.map((j) => {
+                    const kind = game.heroTeams[game.turn][j - LAUNCH];
+                    return (
+                      <button key={j} className="btn hero-launch-btn" style={{ '--hero': HERO_LOOK[kind].ring } as CSSProperties} onClick={() => act('game:move', j)}>
+                        <HeroFace kind={kind} />
+                        <span lang="fa">{HERO_LOOK[kind].fa}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : givingVest ? (
                 <span>
@@ -575,7 +595,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
       )}
 
       {pickingHero && !heroHidden && (
-        <HeroPicker game={game} seat={game.turn} name={you === 'You' ? seatName(view.seats, game.turn) : you} onPick={pickHero} onHide={() => setHeroHidden(true)} />
+        <HeroPicker seat={game.turn} name={you === 'You' ? seatName(view.seats, game.turn) : you} onPick={pickHeroes} onHide={() => setHeroHidden(true)} />
       )}
 
       {help && <HowToPlay onClose={() => setHelp(false)} />}

@@ -18,7 +18,7 @@ function dragonText(ev: RollEvent, seats: SeatView[]): string {
   if (d.exploded) return ' · the dragon 🐉 came full circle and exploded 💥';
   const whose = (e: { seat: Seat; piece: number }) => `${seatName(seats, e.seat)}'s ${e.piece >= HERO ? 'hero' : 'piece'}`;
   const bits = d.eaten.length ? [`the dragon 🐉 ate ${d.eaten.map(whose).join(' and ')}`] : [];
-  for (const g of d.guarded ?? []) bits.push(`${seatName(seats, g.seat)}'s guardian 💂 kept the dragon off a piece 🛡️`);
+  for (const g of d.saved ?? []) bits.push(`${seatName(seats, g.seat)}'s ${g.by === 'rider' ? 'dragon rider 🐲' : 'guardian 💂'} went in a piece's place 🛡️`);
   if (d.bomb !== undefined) bits.push(d.superBomb ? 'three sixes: the dragon 🐉 left a super bomb 💥' : 'two sixes: the dragon 🐉 left a bomb 💣');
   return bits.map((b) => ` · ${b}`).join('');
 }
@@ -26,10 +26,10 @@ function dragonText(ev: RollEvent, seats: SeatView[]): string {
 function knockOuts(ev: MoveEvent, seats: SeatView[]): string[] {
   const out = ev.captures.map((c) => {
     const extras = [c.king && '👑 a king', c.revenge && '⚔️ revenge', killStreakName(c.streak ?? 1), c.bounty && `🎯 bounty +${c.bounty}`].filter(Boolean);
+    if (c.sacrifice) return `${seatName(seats, c.seat)}'s guardian 💂 went in its pieces' place 🛡️ +${c.points}`;
     const whom = c.piece >= HERO ? `${seatName(seats, c.seat)}'s hero off the board` : `${seatName(seats, c.seat)} back`;
     return `sent ${whom} 💥 +${c.points}${extras.length ? ` (${extras.join(', ')})` : ''}`;
   });
-  for (const g of ev.guarded ?? []) out.push(`${seatName(seats, g.seat)}'s guardian 💂 saved a piece 🛡️`);
   return out;
 }
 
@@ -37,10 +37,16 @@ function knockOuts(ev: MoveEvent, seats: SeatView[]): string[] {
 function heroMove(ev: MoveEvent, who: string, seats: SeatView[]): string {
   const h = ev.hero!;
   const look = HERO_LOOK[h.kind];
+  if (h.launch) return `${who} brought on the ${look.en.toLowerCase()} ${look.face}`;
   const bits = [`${who}'s ${look.en.toLowerCase()} ${look.face} went ${ev.path.length}${h.back ? ' back' : ''}`];
   bits.push(...knockOuts(ev, seats));
   if (h.hijacked.length) bits.push(`took over ${h.hijacked.length === 1 ? 'a bomb' : `${h.hijacked.length} bombs`} 💣 — they're ${who}'s now`);
-  for (const x of h.stolen) bits.push(`robbed ${seatName(seats, x.seat)}${x.king ? "'s king 👑" : ''} 💰 +${x.points}${x.vests ? ' and a vest 🦺' : ''}`);
+  for (const x of h.stolen) {
+    const whose = `${seatName(seats, x.seat)}'s ${x.piece >= HERO ? 'hero' : x.king ? 'king 👑' : 'piece'}`;
+    bits.push(`robbed ${whose} 💰 +${x.points}${x.vests ? ' and a vest 🦺' : ''}`);
+  }
+  if (h.charmed.length) bits.push(`charmed ${h.charmed.map((v) => `${seatName(seats, v.seat)}'s piece`).join(' and ')} 🪄 — ${who}'s to move for a while`);
+  for (const r of h.raised) bits.push(`sent one of ${seatName(seats, r.seat)}'s pieces back from the centre 💀 +${r.points}`);
   if (h.bounty) bits.push(`took the bounty 🎯 +${h.bounty}`);
   if (h.froze.length) bits.push(`froze ${h.froze.length === 1 ? 'a piece' : `${h.froze.length} pieces`} ❄️`);
   if (ev.box?.outcome) bits.push(ev.box.outcome === 'plus' ? `found +${POINTS.boxBonus} in a magic box 🎁` : 'found a vest in a magic box 🦺');
@@ -72,7 +78,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     if (ev.ends) return `${who}'s engineer 👷 put down its last super bomb 💥, then went off`;
     return ev.super ? `${who} put down a super bomb 💥` : `${who} dropped a bomb 💣`;
   }
-  if (ev.type === 'hero') return `${who} called in the ${HERO_LOOK[ev.kind].en.toLowerCase()} ${HERO_LOOK[ev.kind].face}`;
+  if (ev.type === 'hero') return `${who} picked their heroes: ${ev.kinds.map((k) => `${HERO_LOOK[k].en.toLowerCase()} ${HERO_LOOK[k].face}`).join(', ')}`;
   if (ev.type === 'box') return `${who} hid a magic box 🎁`;
   if (ev.type === 'power') {
     if (ev.choice === 'ambush') {
@@ -87,6 +93,12 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
   if (ev.type === 'vest') return `${who} put the vest 🦺 on a piece`;
   if (ev.type === 'bridge') return `${who} built a ${ev.kind} bridge ${ev.kind === 'heaven' ? '🌈 +10' : '🔥 −20'}`;
   if (ev.hero) return heroMove(ev, who, seats);
+  if (ev.charm) {
+    const bits = [`${who} moved ${seatName(seats, ev.charm.seat)}'s charmed piece 🪄 ${ev.dice}`, ...knockOuts(ev, seats)];
+    if (ev.bombed) bits.push(ev.bombed.saved ? 'it stepped on a bomb — its vest saved it 🦺' : 'it stepped on a bomb 💣 and went home');
+    if (ev.dragon) bits.push(`slew the dragon 🐉 +${ev.dragon.points}`);
+    return bits.join(' · ');
+  }
   if (ev.to === TAKEOFF) return `${who} launched a plane ✈`;
   const bits = [`${who} moved ${ev.dice}`];
   for (const step of ev.path) {

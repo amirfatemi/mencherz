@@ -1,5 +1,5 @@
-import { BOARD_SIZE, GOAL, HANGAR, HOME_CELLS, HOME_FIRST, TAKEOFF, TAKEOFF_CELLS, TRACK_CELLS, piecePoint, rotatePoint, type Point, type Seat } from '../../shared/board.ts';
-import { DRAGON_PATH, HERO, HERO_START } from '../../shared/rules.ts';
+import { BOARD_SIZE, GOAL, HANGAR, HANGAR_CENTERS, HOME_CELLS, HOME_FIRST, TAKEOFF, TAKEOFF_CELLS, TRACK_CELLS, piecePoint, rotatePoint, type Point, type Seat } from '../../shared/board.ts';
+import { CHARM, DRAGON_PATH, HERO, HERO_START, charmOf } from '../../shared/rules.ts';
 
 export const CELL = 40;
 export const BOARD_PX = CELL * BOARD_SIZE;
@@ -12,7 +12,13 @@ export function dragonPoint(at: number): Point {
 
 /** Where a piece stands at `pos`; a hero's positions are absolute track squares, or HERO_START (its takeoff spot). */
 export function movePoint(seat: Seat, piece: number, pos: number): Point {
+  // A charmed piece moves on its own colour's track, whoever moves it.
+  if (piece >= CHARM) {
+    const c = charmOf(piece);
+    return piecePoint(c.seat, c.piece, pos);
+  }
   if (piece < HERO) return piecePoint(seat, piece, pos);
+  if (pos === HANGAR) return HANGAR_CENTERS[seat];
   return pos === HERO_START ? TAKEOFF_CELLS[seat] : TRACK_CELLS[pos];
 }
 

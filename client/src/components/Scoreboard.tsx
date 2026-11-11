@@ -1,8 +1,9 @@
 import type { CSSProperties } from 'react';
 import { COLOR_HEX, PIECES_PER_SEAT, type Seat } from '../../../shared/board.ts';
 import type { SeatView } from '../../../shared/protocol.ts';
-import { DRAGON_PATH, type GameEvent, type GameState, type Hero } from '../../../shared/rules.ts';
-import { HERO_FACE, HERO_LOOK } from '../heroes.ts';
+import { DRAGON_PATH, type GameEvent, type GameState, type Hero, type HeroKind } from '../../../shared/rules.ts';
+import { HERO_LOOK } from '../heroes.ts';
+import { HeroFace } from './HeroArt.tsx';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { describe, seatName } from '../events.ts';
 
@@ -20,20 +21,21 @@ interface Props {
   played: string;
 }
 
-/** Small marks after a name: computer, played at someone's device, away, wearing a vest, a hero out or to pick. */
-function Marks({ s, vests, userId, hero, picks }: { s: SeatView; vests: number; userId: number; hero: Hero | null; picks: number }) {
+/** Small marks after a name: their heroes (the one out lit, with its squares left), computer, played at someone's device, away, wearing a vest. */
+function Marks({ s, vests, userId, hero, team }: { s: SeatView; vests: number; userId: number; hero: Hero | null; team: HeroKind[] }) {
   return (
     <>
-      {hero && (
-        <span className="mark" title={`${HERO_LOOK[hero.kind].en} (${HERO_LOOK[hero.kind].fa}) on the board · ${hero.left} squares left${hero.kind === 'guardian' ? ` · ${hero.guards} saves left` : ''}`}>
-          <img className="mark-hero" src={HERO_FACE[hero.kind]} alt="" style={{ borderColor: HERO_LOOK[hero.kind].ring }} />
-          {hero.left}
-          {hero.kind === 'guardian' && ` 🛡️${hero.guards}`}
-        </span>
-      )}
-      {!hero && picks > 0 && (
-        <span className="mark" title="A hero to pick at the start of their turn">
-          🦸
+      {team.length > 0 && (
+        <span className="mark mark-team">
+          {team.map((k) => {
+            const out = hero?.kind === k;
+            return (
+              <span key={k} className={`mark-team-hero${out ? ' out' : ''}`} title={`${HERO_LOOK[k].fa} · ${HERO_LOOK[k].en}${out ? ` — on the board, ${hero.left} squares left` : ''}`}>
+                <HeroFace kind={k} />
+                {out && <b>{hero.left}</b>}
+              </span>
+            );
+          })}
         </span>
       )}
       {s.kind === 'bot' && (
@@ -129,7 +131,7 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
                     vests={(game.vested?.[seat] ?? []).reduce((n, v) => n + v, 0)}
                     userId={userId}
                     hero={game.heroes?.[seat] ?? null}
-                    picks={game.rules.heroes ? (game.heroPicks?.[seat] ?? 0) : 0}
+                    team={game.rules.heroes ? (game.heroTeams?.[seat] ?? []) : []}
                   />
                 </td>
                 <td>
