@@ -120,7 +120,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
     - **Hell bridge 🔥:** the same, but 20 squares back (or to the piece's takeoff spot, if it hasn't come that far).
     - **Magic box 🎁:** hide a new magic box on any free square. Whoever lands on it first opens it, you included.
     - **Safe square 🛡:** pick a track square (not a home column), even one your piece stands on. For 2 rounds your pieces there can't be knocked out; others can still land there and share it.
-    - **Ambush 🏹 (شبیخون, once called the Sirat bridge):** pick another player. For 5 rounds a second flight line crosses their home column. The corner square holding the ✈ that flies over it is two triangles of two colours, and the second colour now flies too, from its triangle to the square of its colour on the far side (if that doesn't take it past its own turn home). Every flight over the column knocks out every piece in it, not only the middle one.
+    - **Ambush 🏹 (شبیخون, once called the Sirat bridge):** pick another player. For 10 rounds a second flight line crosses their home column. The corner square holding the ✈ that flies over it is two triangles of two colours, and the second colour now flies too, from its triangle to the square of its colour on the far side (if that doesn't take it past its own turn home). Every flight over the column knocks out every piece in it, not only the middle one.
 
     - **Super bomb 💥:** put a big bomb on a free track square. The first piece to land on it blows up, and so does every piece within 3 squares ahead or behind, whatever its colour, the owner's included. Home columns are out of reach; a vest or the piece's own safe square saves it. The owner scores each opponent piece blown up as a knock-out.
 

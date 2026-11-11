@@ -46,7 +46,7 @@ const POWER_BUTTONS: { choice: PowerChoice; label: string; className: string; ti
     choice: 'ambush',
     label: '🏹 Ambush · شبیخون',
     className: 'btn ghost',
-    title: "For five rounds a second flight line crosses another player's home column, and any flight over it knocks out the whole column. Once a game.",
+    title: "For ten rounds a second flight line crosses another player's home column, and any flight over it knocks out the whole column. Once a game.",
   },
   {
     choice: 'superBomb',

@@ -1140,7 +1140,7 @@ describe('safe squares and the ambush', () => {
 
   test('the ambush adds a second flight over a home column, and every flight over it knocks out the whole column', () => {
     const g = applyPower(power([0, 1, 2, 3]), 'ambush', undefined, 2).state;
-    assert.deepEqual(g.ambush, { over: 2, owner: 0, until: 1 + AMBUSH_ROUNDS * 4 }, 'five rounds of four players from turn 1');
+    assert.deepEqual(g.ambush, { over: 2, owner: 0, until: 1 + AMBUSH_ROUNDS * 4 }, 'ten rounds of four players from turn 1');
     at(g, 2, [HOME_FIRST, HOME_FIRST + 2, HOME_LAST]);
     // Yellow's flight crosses green's home column. Yellow's ✈ corner square is half red: red flies from that
     // triangle to the red square on the far side, over the same column.
@@ -1171,11 +1171,11 @@ describe('safe squares and the ambush', () => {
     assert.equal(planMove(green, 2, 0, 2)!.flew, false, "green can't use the bridge over its own column");
   });
 
-  test('the ambush needs another player still playing, and ends after five rounds', () => {
+  test('the ambush needs another player still playing, and ends after ten rounds', () => {
     assert.throws(() => applyPower(power(), 'ambush', undefined, 0), /another player/);
     let g = at(applyPower(power(), 'ambush', undefined, 1).state, 0, []);
-    // Set on turn 1 of two players: it lasts until its owner comes round the fifth time, on turn 11.
-    while (g.turnNo < 10) g = applyRoll(g, 3).state;
+    // Set on turn 1 of two players: it lasts until its owner comes round the tenth time, on turn 21.
+    while (g.turnNo < AMBUSH_ROUNDS * 2) g = applyRoll(g, 3).state;
     assert.ok(g.ambush);
     g = applyRoll(g, 3).state;
     assert.equal(g.turnNo, 1 + AMBUSH_ROUNDS * 2);

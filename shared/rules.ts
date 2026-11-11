@@ -302,7 +302,7 @@ export type Placeable = Exclude<PowerChoice, 'ambush'>;
 /** How many rounds a safe square lasts. */
 export const SAFE_ROUNDS = 2;
 /** How many rounds an ambush lasts. */
-export const AMBUSH_ROUNDS = 5;
+export const AMBUSH_ROUNDS = 10;
 /** The power squares move after this many rounds. */
 export const POWER_EVERY_ROUNDS = 5;
 /** Turns in a row without a piece out of the hangar that earn a sad reaction. */
