@@ -44,6 +44,7 @@ import {
   CHARM,
   HERO,
   HERO_BACK,
+  HERO_START,
   KING_PIECE,
   LAUNCH,
   SUPER_BOMB_REACH,
@@ -552,6 +553,29 @@ interface Item {
 
 const pct = (v: number) => `${(v / BOARD_SIZE) * 100}%`;
 
+/** How far a hero steps in towards the middle of the board from pieces sharing its square, and they step out. */
+const HERO_SIDE = CELL * 0.42;
+const PIECE_SIDE = CELL * 0.12;
+
+/** The way from a point on the board (in pixels) towards its middle, as a unit vector. */
+function inward(p: Point): Point {
+  const dx = BOARD_PX / 2 - p.x;
+  const dy = BOARD_PX / 2 - p.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: dx / len, y: dy / len };
+}
+
+/**
+ * The hero standing where a piece of `seat` at `pos` stands, if any: its own colour's at the takeoff spot, or
+ * anyone's on that track square (heroes moving don't count).
+ */
+function heroBeside(game: GameState, anim: AnimFrame | null, seat: Seat, pos: number): Seat | null {
+  if (pos === TAKEOFF) return game.heroes?.[seat]?.square === HERO_START && !anim?.pieces.has(`${seat}:${HERO}`) ? seat : null;
+  if (!isOnTrack(pos)) return null;
+  const square = trackIndex(seat, pos);
+  return game.active.find((o) => game.heroes?.[o]?.square === square && !anim?.pieces.has(`${o}:${HERO}`)) ?? null;
+}
+
 /** The move number for a piece of an item: its own, or a charmed piece's. */
 const moveOf = (it: Item, piece: number) => (it.charmBy !== undefined ? charmMove(it.seat, piece) : piece);
 
@@ -674,6 +698,14 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
       const k = seats.indexOf(it.seat) - (seats.length - 1) / 2;
       it.x += k * CELL * 0.38;
       it.y += k * CELL * 0.12;
+    }
+    // A hero on the same square stands a little towards the middle of the board, and the pieces there step the other
+    // way, so each can be tapped on its own.
+    for (const it of out) {
+      if (it.animated || heroBeside(game, anim, it.seat, game.pieces[it.seat][it.pieces[0]]) === null) continue;
+      const d = inward(it);
+      it.x -= d.x * PIECE_SIDE;
+      it.y -= d.y * PIECE_SIDE;
     }
     const canMove = (it: Item) => !it.animated && (it.charmBy ?? it.seat) === game.turn && it.pieces.some((p) => movable.includes(moveOf(it, p)));
     return out.sort((a, b) => Number(a.animated) - Number(b.animated) || Number(canMove(a)) - Number(canMove(b)) || a.y - b.y);
@@ -946,8 +978,8 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           const shared =
             !moving &&
             (h.square < 0
-              ? game.pieces[seat].includes(TAKEOFF)
-              : game.active.some((o) => game.pieces[o].some((q) => isOnTrack(q) && trackIndex(o, q) === h.square)));
+              ? game.pieces[seat].some((q, j) => q === TAKEOFF && !anim?.pieces.has(`${seat}:${j}`))
+              : game.active.some((o) => game.pieces[o].some((q, j) => isOnTrack(q) && trackIndex(o, q) === h.square && !anim?.pieces.has(`${o}:${j}`))));
           const at = toPx(moving ?? movePoint(seat, HERO, h.square), rot);
           const canMove = !moving && seat === game.turn && movable.includes(HERO);
           // The archer, able to go either way: a tap shows both on the board, to pick one.
@@ -964,9 +996,9 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
               key={`hero${seat}`}
               hero={h}
               seat={seat}
-              x={at.x - (shared ? CELL * 0.22 : 0)}
-              y={at.y - (shared ? CELL * 0.22 : 0)}
-              r={CELL * (moving ? 0.34 * (moving.scale ?? 1) : shared ? 0.27 : 0.34)}
+              x={at.x + (shared ? inward(at).x * HERO_SIDE : 0)}
+              y={at.y + (shared ? inward(at).y * HERO_SIDE : 0)}
+              r={CELL * (moving ? 0.34 * (moving.scale ?? 1) : shared ? 0.28 : 0.34)}
               movable={canMove}
               onClick={canMove ? click : undefined}
               onHover={canMove && !TOUCH && !archerOpen ? (on) => setHover(on ? HERO : null) : undefined}

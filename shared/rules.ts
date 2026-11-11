@@ -1,4 +1,5 @@
 import {
+  ABSOLUTE,
   FLIGHT_CROSSES,
   FLIGHT_DISTANCE,
   FLIGHT_FROM,
@@ -14,11 +15,13 @@ import {
   TRACK_FIRST,
   TRACK_LAST,
   TRACK_LEN,
+  along,
   flightCrossedSeat,
   isOnTrack,
   isOwnColor,
   trackColor,
   trackIndex,
+  seatPos,
   type Seat,
 } from './board.ts';
 import { KING, POINTS, REVENGE, captureValue, killStreakBonus } from './scoring.ts';
@@ -312,8 +315,9 @@ export const STUCK_TURNS = 3;
  * The heroes. Each player picks HERO_TEAM kinds before the game starts, and from then on any roll that would launch
  * a piece can launch one of them instead (LAUNCH), as often as they like but one on the board at a time. A hero
  * waits at its player's takeoff spot (HERO_START), then goes round the track for HERO_LIFE squares and is gone. It
- * never goes home, so a player with every piece home plays on with it.
- * - archer: goes forward or back, as its player likes, with every roll.
+ * never goes home, so a player with every piece home plays on with it. Only the archer knocks anyone out (and death
+ * kings); the others just have their power, and can stop where anyone stands.
+ * - archer: goes forward or back, as its player likes, with every roll, and knocks out pieces and heroes.
  * - engineer: takes over every bomb of another colour it passes or stops on, so it's its player's now (no points
  *   for it; the dragon's stay the dragon's), and no bomb hurts it. At the end of its life its player puts down a
  *   super bomb, then it goes off where it stands (DRAGON_BLAST_REACH either side).
@@ -325,11 +329,13 @@ export const STUCK_TURNS = 3;
  *   knocking it out would have paid, takes their vests, and the bounty if the leader is one of them. A magic box
  *   is always good for it (points or a vest).
  * - rider: the first time the dragon would eat or blow up one of its player's pieces, it goes in their place (not
- *   from the takeoff spot). It slays the dragon for a king's prize, but more dragons come.
- * - wizard: where it stops, other colours' pieces there but kings are charmed: its player moves them for
- *   CHARM_ROUNDS rounds (CHARM), then they're their owners' again. Kings and heroes there it knocks out.
- * - death: knocking out a king, it sends one of that colour's pieces in the centre back to its hangar, and takes
- *   the points it brought (POINTS.home).
+ *   from the takeoff spot). It slays the dragon for a king's prize, but more dragons come. (The archer slays it too,
+ *   as a plain piece; no other hero does.)
+ * - wizard: where it stops, other colours' pieces there but kings are charmed: for CHARM_ROUNDS rounds its player
+ *   moves them (CHARM) round the track, past their own home column, as its own piece: they knock out anyone, and
+ *   anyone can knock them out. Then they're their owners' again, where they stand.
+ * - death: knocks out kings only, and for each it sends one of that colour's pieces in the centre back to its
+ *   hangar, taking the points it brought (POINTS.home).
  */
 export type HeroKind = 'archer' | 'engineer' | 'guardian' | 'frost' | 'thief' | 'rider' | 'wizard' | 'death';
 export const HERO_KINDS: readonly HeroKind[] = ['archer', 'engineer', 'guardian', 'frost', 'thief', 'rider', 'wizard', 'death'];
@@ -900,8 +906,8 @@ function wallsAgainst(state: GameState, seat: Seat): Set<number> {
   for (const other of state.active) {
     if (other === seat) continue;
     const seen = new Set<number>();
-    for (const p of state.pieces[other]) {
-      if (!isOnTrack(p)) continue;
+    for (const [j, p] of state.pieces[other].entries()) {
+      if (!isOnTrack(p) || charmedBy(state, other, j) !== null) continue;
       const sq = trackIndex(other, p);
       if (seen.has(sq)) walls.add(sq);
       seen.add(sq);
@@ -915,8 +921,8 @@ export function wallSquares(state: GameState): number[] {
   if (!state.rules.walls) return [];
   const count = new Map<string, number>();
   for (const seat of state.active) {
-    for (const p of state.pieces[seat]) {
-      if (!isOnTrack(p)) continue;
+    for (const [j, p] of state.pieces[seat].entries()) {
+      if (!isOnTrack(p) || charmedBy(state, seat, j) !== null) continue;
       const key = `${seat}:${trackIndex(seat, p)}`;
       count.set(key, (count.get(key) ?? 0) + 1);
     }
@@ -970,16 +976,26 @@ function worth(state: GameState, hitter: Seat | null, victim: Seat, victimPiece:
   const revenge = state.lastHitBy?.[hitter] === victim;
   const night = state.event?.kind === 'darkNight' ? EVENT_BOOST : 1;
   const times = (revenge ? REVENGE : 1) * (king ? KING : 1) * killStreakBonus(streak) * night;
-  const points = Math.min(POINTS.firstHome, Math.round(captureValue(pos) * times) + bounty);
+  const points = Math.min(POINTS.firstHome, Math.round(captureValue(along(victim, pos)) * times) + bounty);
   return { points, revenge, king, ...extra };
 }
 
 /**
- * Everyone `seat` knocks out by landing on track square `square`: other colours' pieces and heroes, unless on
- * their own safe square, or charmed by `seat`. A guardian watching over pieces there goes in their place, and they
- * go in `saves`. `taken` (keys "seat:piece") are already out, and the mover's kill streak counts on from `streakFrom`.
+ * Everyone `seat` knocks out by landing on track square `square`: other players' pieces and heroes (a charmed piece
+ * is its charmer's, so its own colour can knock it out and its charmer can't), unless on their own safe square. A
+ * guardian watching over pieces there goes in their place, and they go in `saves`. `taken` (keys "seat:piece") are
+ * already out, and the mover's kill streak counts on from `streakFrom`. `kingsOnly`: death's way, kings and nothing else.
  */
-function knockOutsAt(state: GameState, seat: Seat, square: number, taken: Set<string>, streakFrom: number, atStep: number, saves: HeroSave[]): Capture[] {
+function knockOutsAt(
+  state: GameState,
+  seat: Seat,
+  square: number,
+  taken: Set<string>,
+  streakFrom: number,
+  atStep: number,
+  saves: HeroSave[],
+  kingsOnly = false,
+): Capture[] {
   const out: Capture[] = [];
   const hit = (other: Seat, piece: number, from: number, sacrifice = false) => {
     taken.add(`${other}:${piece}`);
@@ -987,10 +1003,12 @@ function knockOutsAt(state: GameState, seat: Seat, square: number, taken: Set<st
     out.push({ seat: other, piece, from, atStep, byFlight: false, streak, ...worth(state, seat, other, piece, from, streak), ...(sacrifice ? { sacrifice } : {}) });
   };
   for (const other of state.active) {
-    if (other === seat || isSafe(state, other, square)) continue;
-    const here = state.pieces[other].flatMap((p, j) =>
-      taken.has(`${other}:${j}`) || !isOnTrack(p) || trackIndex(other, p) !== square || charmedBy(state, other, j) === seat ? [] : [j],
-    );
+    if (isSafe(state, other, square)) continue;
+    const here = state.pieces[other].flatMap((p, j) => {
+      if (taken.has(`${other}:${j}`) || !isOnTrack(p) || trackIndex(other, p) !== square) return [];
+      if ((charmedBy(state, other, j) ?? other) === seat) return [];
+      return kingsOnly && state.rules.kings && !isKing(state, j) ? [] : [j];
+    });
     // A guardian watches over its own colour's pieces, not ones under a spell.
     const watched = here.filter((j) => charmedBy(state, other, j) === null);
     const h = state.heroes?.[other];
@@ -1001,7 +1019,7 @@ function knockOutsAt(state: GameState, seat: Seat, square: number, taken: Set<st
     } else {
       for (const j of here) hit(other, j, state.pieces[other][j]);
     }
-    if (h && h.square === square && !taken.has(`${other}:${HERO}`)) hit(other, HERO, square);
+    if (other !== seat && !kingsOnly && h && h.square === square && !taken.has(`${other}:${HERO}`)) hit(other, HERO, square);
   }
   return out;
 }
@@ -1219,9 +1237,10 @@ function planLaunch(state: GameState, seat: Seat, i: number, dice: number): Move
 /**
  * Where a hero would go with this roll, or null if it can't move. It goes round the track only, as far as the
  * dice says (the archer forward or back) but no further than its life has left, and can't pass another
- * colour's wall. Where it stops it knocks out other colours (the thief robs them instead, the wizard charms
- * them), slays the dragon and sets off a bomb (the engineer takes over every bomb on its way instead). It takes no
- * colour jump, flight, bridge or power square, and opens no magic box, but the thief, for whom it's always good.
+ * colour's wall. Where it stops it does what its power does: the archer knocks out other colours, death their kings,
+ * the thief robs them, the wizard charms them. A bomb there sets it off (the engineer takes over every bomb on its
+ * way instead). It takes no colour jump, flight, bridge or power square, and opens no magic box, but the thief, for
+ * whom it's always good.
  */
 function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean, openBox?: OpenBox): MovePlan | null {
   const h = state.heroes?.[seat];
@@ -1278,16 +1297,13 @@ function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean,
     if (state.rules.bounty && state.bounty && move.stolen.some((x) => x.seat === state.bounty!.seat)) move.bounty = state.bounty.value;
     const box = state.boxes?.find((b) => b.square === to);
     if (box) plan.box = { owner: box.owner, square: to, pos: to, atStep, outcome: openBox?.(THIEF_BOX), saved: false, points: 0, revenge: false, king: false };
-  } else {
-    if (h.kind === 'wizard') {
-      // Pieces there fall under its spell, but kings; those, and heroes, it knocks out as any hero would.
-      for (const v of here) {
-        if (v.piece >= HERO || isKing(state, v.piece) || isSafe(state, v.seat, to)) continue;
-        move.charmed.push(v);
-        taken.add(`${v.seat}:${v.piece}`);
-      }
+  } else if (h.kind === 'wizard') {
+    // Pieces there fall under its spell, but kings.
+    for (const v of here) {
+      if (v.piece < HERO && !isKing(state, v.piece) && !isSafe(state, v.seat, to)) move.charmed.push(v);
     }
-    plan.captures = knockOutsAt(state, seat, to, taken, h.kills, atStep, (plan.heroSaves ??= []));
+  } else if (h.kind === 'archer' || h.kind === 'death') {
+    plan.captures = knockOutsAt(state, seat, to, taken, h.kills, atStep, (plan.heroSaves ??= []), h.kind === 'death');
     if (h.kind === 'death') {
       // Each king it takes brings one of its colour's pieces back from the centre (with kings off, any piece).
       const home = new Map<Seat, number[]>();
@@ -1303,8 +1319,8 @@ function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean,
     }
   }
 
-  if (dragonOn(state, to)) {
-    // The dragon rider slays it for a king's prize, but it isn't gone for good; any other hero as a plain piece.
+  if (dragonOn(state, to) && (h.kind === 'rider' || h.kind === 'archer')) {
+    // The dragon rider slays it for a king's prize, but it isn't gone for good; the archer as a plain piece.
     const rider = h.kind === 'rider';
     plan.dragon = { at: state.dragon!.at, atStep, points: rider ? DRAGON_PRIZE.king : DRAGON_PRIZE.piece, king: false };
   }
@@ -1330,20 +1346,22 @@ function finishHeroPlan(plan: MovePlan, to: number, state: GameState): MovePlan 
 }
 
 /**
- * A charmed piece moving for the player who charmed it: along its own colour's track as a hero would (no jump,
- * flight, bridge, box or power square), never up its home column. It knocks out anyone where it stops but the
- * mover's own (its own colour's too), slays the dragon, and a bomb sends it back to its own hangar.
+ * A charmed piece moving for the player who charmed it, as its own: round the track as a hero would (no jump,
+ * flight, bridge, box or power square), past its own home column, its positions ABSOLUTE ones. It knocks out
+ * anyone where it stops but the mover's own (its own colour's too), slays the dragon, and a bomb sends it back to
+ * its own hangar.
  */
 function planCharmMove(state: GameState, seat: Seat, move: number, dice: number): MovePlan | null {
   const { seat: owner, piece } = charmOf(move);
   if (!state.active.includes(owner) || charmedBy(state, owner, piece) !== seat || state.frozen?.[owner]?.[piece]) return null;
   const from = state.pieces[owner][piece];
-  if (!isOnTrack(from) || from + dice > TRACK_LAST) return null;
-  const path: PathStep[] = Array.from({ length: dice }, (_, i) => ({ pos: from + i + 1, kind: 'step' }));
+  if (!isOnTrack(from)) return null;
+  const start = trackIndex(owner, from);
+  const path: PathStep[] = Array.from({ length: dice }, (_, i) => ({ pos: ABSOLUTE + ((start + i + 1) % TRACK_LEN), kind: 'step' }));
   const walls = wallsAgainst(state, seat);
   if (path.slice(0, -1).some((step) => walls.has(trackIndex(owner, step.pos)))) return null;
-  const to = from + dice;
-  const square = trackIndex(owner, to);
+  const to = path[path.length - 1].pos;
+  const square = to - ABSOLUTE;
   const atStep = dice - 1;
   const plan: MovePlan = { seat, piece: move, dice, from, to, path, captures: [], jumped: false, flew: false, points: 0, charm: { seat: owner, piece } };
   const taken = new Set([`${owner}:${piece}`]);
@@ -1478,9 +1496,20 @@ function newRound(s: GameState, rand: Rand): void {
   updateBounty(s);
 }
 
-/** Spells end after CHARM_ROUNDS, or when the piece is back in its hangar. */
+/**
+ * Spells end after CHARM_ROUNDS, or when the piece is back in its hangar. A piece let go on the track is its
+ * owner's again where it stands, counted on its own route (from its first square if it's past its turn home).
+ */
 function breakCharms(s: GameState): void {
-  s.charmed = (s.charmed ?? []).filter((c) => c.until > s.turnNo && isOnTrack(s.pieces[c.seat][c.piece]));
+  s.charmed = (s.charmed ?? []).filter((c) => {
+    const pos = s.pieces[c.seat][c.piece];
+    if (c.until > s.turnNo && isOnTrack(pos)) return true;
+    if (pos >= ABSOLUTE) {
+      const own = seatPos(c.seat, pos - ABSOLUTE);
+      s.pieces[c.seat][c.piece] = own > TRACK_LAST ? TRACK_FIRST : own;
+    }
+    return false;
+  });
 }
 
 /** Takes a piece off the board: a piece back to its hangar (and out of any spell), a hero gone for good. */
@@ -1666,7 +1695,7 @@ export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRa
       const back = s.rules.threeSixes === 'hangar' ? s.pieces[seat].map((_, j) => j) : [...new Set(s.streakMoved)];
       for (const j of back) {
         const from = s.pieces[seat][j];
-        if (from === GOAL || from === HANGAR) continue;
+        if (from === GOAL || from === HANGAR || charmedBy(s, seat, j) !== null) continue;
         s.pieces[seat][j] = HANGAR;
         if (s.frozen) s.frozen[seat][j] = 0;
         if (s.kills) s.kills[seat][j] = 0;
@@ -1825,6 +1854,7 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   // Revenge settles a score; each new knock-out opens one.
   s.lastHitBy ??= SEATS.map(() => null);
   for (const c of plan.captures) {
+    if (c.seat === seat) continue;
     if (c.revenge) s.lastHitBy[seat] = null;
     s.lastHitBy[c.seat] = seat;
   }
@@ -1921,7 +1951,10 @@ function heroDoes(s: GameState, plan: MovePlan, hero: Hero | null): void {
   if (move.charmed.length) {
     const until = holdUntil(s, CHARM_ROUNDS);
     s.charmed = (s.charmed ?? []).filter((c) => !move.charmed.some((v) => v.seat === c.seat && v.piece === c.piece));
-    for (const v of move.charmed) s.charmed.push({ seat: v.seat, piece: v.piece, by: plan.seat, until });
+    for (const v of move.charmed) {
+      s.charmed.push({ seat: v.seat, piece: v.piece, by: plan.seat, until });
+      s.pieces[v.seat][v.piece] = ABSOLUTE + trackIndex(v.seat, v.from);
+    }
   }
   for (const r of move.raised) {
     s.pieces[r.seat][r.piece] = HANGAR;
@@ -2008,7 +2041,7 @@ function resumeAfterPower(s: GameState, rand: Rand): void {
 
 /** Pieces that can be given a vest: any not yet in the centre, in the hangar or out. */
 export function vestOptions(state: GameState): number[] {
-  return state.pieces[state.turn].flatMap((p, j) => (p === GOAL ? [] : [j]));
+  return state.pieces[state.turn].flatMap((p, j) => (p === GOAL || charmedBy(state, state.turn, j) !== null ? [] : [j]));
 }
 
 /** Puts the vest from a magic box on one of the mover's pieces, where it stays until it stops a bomb. */
@@ -2147,6 +2180,6 @@ export function standingsOf(state: GameState): Seat[] {
 
 /** Rough distance covered by a seat's planes, for tie-breaks and bots. */
 export function progressOf(state: GameState, seat: Seat): number {
-  return state.pieces[seat].reduce((sum, p) => sum + (p === HANGAR ? 0 : p + 1), 0);
+  return state.pieces[seat].reduce((sum, p) => sum + (p === HANGAR ? 0 : along(seat, p) + 1), 0);
 }
 

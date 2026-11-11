@@ -67,17 +67,34 @@ export interface Square {
   spot: Point;
 }
 
+/**
+ * A charmed piece's position while under a wizard's spell: ABSOLUTE plus its absolute track square. It goes round
+ * past its own home column then, which its colour's numbering (home column after TRACK_LAST) can't hold.
+ */
+export const ABSOLUTE = 100;
+
 export function isOnTrack(pos: number): boolean {
-  return pos >= TRACK_FIRST && pos <= TRACK_LAST;
+  return (pos >= TRACK_FIRST && pos <= TRACK_LAST) || (pos >= ABSOLUTE && pos < ABSOLUTE + TRACK_LEN);
 }
 
 export function isOwnColor(pos: number): boolean {
-  return isOnTrack(pos) && pos % 4 === 2;
+  return pos >= TRACK_FIRST && pos <= TRACK_LAST && pos % 4 === 2;
 }
 
-/** Absolute track index (0..51) for a seat-relative track position. */
+/** Absolute track index (0..51) for a seat-relative track position (or an ABSOLUTE one). */
 export function trackIndex(seat: Seat, pos: number): number {
+  if (pos >= ABSOLUTE) return pos - ABSOLUTE;
   return (pos - 1 + ARM_LEN * seat + ENTRY_OFFSET) % TRACK_LEN;
+}
+
+/** A seat's own track position for an absolute square: 1..TRACK_LEN, past TRACK_LAST for the two after its turn home. */
+export function seatPos(seat: Seat, square: number): number {
+  return ((((square - ARM_LEN * seat - ENTRY_OFFSET) % TRACK_LEN) + TRACK_LEN) % TRACK_LEN) + 1;
+}
+
+/** How far along its own route a piece is, for scoring: an ABSOLUTE position counts where it stands on that route. */
+export function along(seat: Seat, pos: number): number {
+  return pos >= ABSOLUTE ? Math.min(TRACK_LAST, seatPos(seat, pos - ABSOLUTE)) : pos;
 }
 
 /** Seat whose colour a track square has. */

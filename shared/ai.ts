@@ -7,6 +7,7 @@ import {
   HOME_LAST,
   TAKEOFF,
   TRACK_LAST,
+  along,
   flightCrossedSeat,
   isOnTrack,
   trackColor,
@@ -110,7 +111,7 @@ function score(state: GameState, plan: MovePlan, careful: boolean): number {
   const onBoard = state.pieces[plan.seat].filter((p) => p !== HANGAR && p !== GOAL).length;
   let s = value(plan.to) - value(plan.from);
   if (plan.from === HANGAR) s += 9 - onBoard * 2;
-  for (const c of plan.captures) s += 12 + value(c.from) * 0.6;
+  for (const c of plan.captures) s += 12 + value(along(c.seat, c.from)) * 0.6;
   if (plan.to === GOAL) s += 18;
   if (plan.from < HOME_FIRST && plan.to >= HOME_FIRST) s += 6;
   if (plan.path.some((p) => p.kind === 'bounce')) s -= 4;
@@ -266,7 +267,7 @@ function safeCandidate(state: GameState): { square: number; value: number } | nu
   let best: { square: number; value: number } | null = null;
   state.pieces[me].forEach((p, j) => {
     if (!isOnTrack(p) || !options.has(trackIndex(me, p))) return;
-    const worth = threatTo(state, me, j) * value(p);
+    const worth = threatTo(state, me, j) * value(along(me, p));
     if (!best || worth > best.value) best = { square: trackIndex(me, p), value: worth };
   });
   return best;
@@ -331,7 +332,7 @@ function superBombPlan(state: GameState): { square: number; value: number } | nu
       const sq = trackIndex(seat, p);
       for (let d = -SUPER_BOMB_REACH; d <= SUPER_BOMB_REACH; d++) {
         const at = (sq + d + 52) % 52;
-        near.set(at, (near.get(at) ?? 0) + sign * (1 + p / 20));
+        near.set(at, (near.get(at) ?? 0) + sign * (1 + along(seat, p) / 20));
       }
     }
   }

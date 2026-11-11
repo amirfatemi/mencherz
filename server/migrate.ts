@@ -1,4 +1,4 @@
-import { GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, type Seat } from '../shared/board.ts';
+import { ABSOLUTE, GOAL, HANGAR, LAYOUT_VERSION, SEATS, TAKEOFF, TRACK_FIRST, TRACK_LAST, trackIndex, type Seat } from '../shared/board.ts';
 import { DEFAULT_RULES, DRAGON_FIRST_ROUNDS, DRAGON_PATH, HERO_KINDS, HERO_TEAM, EVENT_EVERY_ROUNDS, legalPieces, newStats, perPiece, standingsOf, type GameState } from '../shared/rules.ts';
 import { POINTS } from '../shared/scoring.ts';
 
@@ -64,6 +64,11 @@ export function upgradeGame(game: GameState): GameState {
   g.heroEnding ??= null;
   g.heroBlast ??= null;
   g.charmed ??= [];
+  // Charmed pieces used to keep their own colour's numbering; now they stand on absolute squares while charmed.
+  for (const c of g.charmed) {
+    const pos = g.pieces[c.seat][c.piece];
+    if (pos >= TRACK_FIRST && pos <= TRACK_LAST) g.pieces[c.seat][c.piece] = ABSOLUTE + trackIndex(c.seat, pos);
+  }
   // Heroes used to be earned one at a time; now each player has a team picked at the start. Games already under
   // way get the heroes each player had had, filled up from the top of the list, and play on without a pick.
   const earned = g as GameState & { heroesUsed?: GameState['heroTeams'][number][]; heroPicks?: unknown; heroMilestones?: unknown; heroAt?: unknown; sixPenalties?: unknown };

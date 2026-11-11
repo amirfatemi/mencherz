@@ -1,4 +1,4 @@
-import { BOARD_SIZE, GOAL, HANGAR, HANGAR_CENTERS, HOME_CELLS, HOME_FIRST, TAKEOFF, TAKEOFF_CELLS, TRACK_CELLS, piecePoint, rotatePoint, type Point, type Seat } from '../../shared/board.ts';
+import { ABSOLUTE, BOARD_SIZE, GOAL, HANGAR, HANGAR_CENTERS, HOME_CELLS, HOME_FIRST, TAKEOFF, TAKEOFF_CELLS, TRACK_CELLS, piecePoint, rotatePoint, type Point, type Seat } from '../../shared/board.ts';
 import { CHARM, DRAGON_PATH, HERO, HERO_START, charmOf } from '../../shared/rules.ts';
 
 export const CELL = 40;
@@ -40,7 +40,7 @@ const CENTER: Point = { x: BOARD_SIZE / 2, y: BOARD_SIZE / 2 };
 export function restHeading(seat: Seat, piece: number, pos: number): number {
   const here = piecePoint(seat, piece, pos);
   if (pos === HANGAR || pos === GOAL) return heading(here, CENTER);
-  const next = pos === TAKEOFF ? 1 : pos + 1;
+  const next = pos === TAKEOFF ? 1 : pos >= ABSOLUTE ? ABSOLUTE + ((pos - ABSOLUTE + 1) % TRACK_CELLS.length) : pos + 1;
   return heading(here, piecePoint(seat, piece, next));
 }
 
