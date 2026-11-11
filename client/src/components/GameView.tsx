@@ -29,9 +29,7 @@ import { BoxRevealCard } from './BoxReveal.tsx';
 import type { PieceStyle } from './Piece.tsx';
 import { BombBadge, BoxBadge, Dice, EmojiBadge } from './Dice.tsx';
 import { EventCard } from './EventCard.tsx';
-import { HeroFace } from './HeroArt.tsx';
 import { HeroPicker } from './HeroPicker.tsx';
-import { HERO_LOOK } from '../heroes.ts';
 import { HowToPlay } from './HowToPlay.tsx';
 import { preloadReactions } from './Reaction.tsx';
 import { Modal } from './Modal.tsx';
@@ -133,7 +131,7 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   const myHero = game.heroes?.[game.turn] ?? null;
   // The archer can go back as well as forward: two buttons, as the board's tap moves it forward.
   const archer = myTurn && game.phase === 'move' && !busy && game.movable.includes(HERO_BACK);
-  // A roll that launches a piece can bring on one of the player's heroes instead.
+  // A roll that launches a piece can bring on one of the player's heroes instead, from the hangar's fifth piece.
   const launches = myTurn && game.phase === 'move' && !busy ? game.movable.filter((j) => j >= LAUNCH && j < CHARM) : [];
   const engineerEnds = game.phase === 'place' && game.heroEnding !== null && game.heroEnding !== undefined;
   // A bridge or magic box picked on a power square, being put down.
@@ -225,7 +223,14 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
             : `${game.placing === 'heaven' ? '🌈' : '🔥'} ${pick} where your ${game.placing} bridge starts`;
   } else if (myTurn) {
     const whose = mySeat === game.turn ? 'Your' : `${you}'s`;
-    status = game.phase === 'roll' ? `${whose} turn — roll the dice` : forced ? `${you} rolled ${game.dice} — move your piece` : `${you} rolled ${game.dice} — pick a piece`;
+    status =
+      game.phase === 'roll'
+        ? `${whose} turn — roll the dice`
+        : launches.length
+          ? `${you} rolled ${game.dice} — pick a piece, or 🦸 in your hangar for a hero`
+          : forced
+            ? `${you} rolled ${game.dice} — move your piece`
+            : `${you} rolled ${game.dice} — pick a piece`;
   } else {
     const s = view.seats[game.turn];
     const thinking =
@@ -361,19 +366,6 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                   >
                     ◀ Back {Math.min(game.dice ?? 0, myHero.left)} 🏹
                   </button>
-                </div>
-              ) : launches.length ? (
-                <div className="power-choices hero-launch">
-                  <span>{launches.length < game.movable.length ? '🦸 Launch a piece, or bring on a hero instead:' : '🦸 Bring on a hero:'}</span>
-                  {launches.map((j) => {
-                    const kind = game.heroTeams[game.turn][j - LAUNCH];
-                    return (
-                      <button key={j} className="btn hero-launch-btn" style={{ '--hero': HERO_LOOK[kind].ring } as CSSProperties} onClick={() => act('game:move', j)}>
-                        <HeroFace kind={kind} />
-                        <span lang="fa">{HERO_LOOK[kind].fa}</span>
-                      </button>
-                    );
-                  })}
                 </div>
               ) : givingVest ? (
                 <span>

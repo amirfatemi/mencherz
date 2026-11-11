@@ -41,9 +41,11 @@ import {
   DRAGON_PATH,
   DRAGON_PRIZE,
   GUARD_REACH,
+  CHARM,
   HERO,
   HERO_BACK,
   KING_PIECE,
+  LAUNCH,
   SUPER_BOMB_REACH,
   asSeen,
   charmMove,
@@ -61,7 +63,8 @@ import { BOARD_PX, CELL, dragonPoint, heading, movePoint, restHeading, toPx } fr
 import type { ActiveReaction, AnimFrame, Countdown, Popup } from '../useRoomStream.ts';
 import { PLANE_PATH, Piece, PieceDefs, type PieceStyle } from './Piece.tsx';
 import { ReactionArt } from './Reaction.tsx';
-import { HeroDefs, HeroMedal, HeroToken } from './HeroArt.tsx';
+import { HeroBench, HeroDefs, HeroMedal, HeroToken } from './HeroArt.tsx';
+import { HERO_LOOK } from '../heroes.ts';
 
 const PIECE_SIZE = CELL * 0.42;
 /** Without hover, the first tap on a piece shows its move and the second makes it. */
@@ -595,12 +598,15 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
   const [hover, setHover] = useState<number | null>(null);
   // The archer's two ways, shown on the board after a tap on it.
   const [archerOpen, setArcherOpen] = useState(false);
+  // The heroes to launch, shown over the hangar after a tap on its fifth piece.
+  const [benchOpen, setBenchOpen] = useState(false);
   const [bombHover, setBombHover] = useState<number | null>(null);
   const hovered = previewMove != null && movable.includes(previewMove) ? previewMove : hover !== null && movable.includes(hover) ? hover : null;
   useEffect(() => {
     setHover(null);
     setBombHover(null);
     setArcherOpen(false);
+    setBenchOpen(false);
   }, [game.seq]);
 
   // Fog hides bombs, boxes and bridges, from the move preview too.
@@ -610,6 +616,8 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
     const seen = asSeen(game);
     return planMove(seen, seen.turn, hovered, game.dice);
   }, [game, hovered, archerOpen]);
+  // A roll that launches a piece can launch one of the player's heroes instead.
+  const launches = movable.filter((j) => j >= LAUNCH && j < CHARM);
   const archerWays = useMemo(() => {
     if (!archerOpen || !game.dice || !movable.includes(HERO) || !movable.includes(HERO_BACK)) return [];
     const seen = asSeen(game);
@@ -965,6 +973,59 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             />
           );
         })}
+
+        {/* The fifth piece in each hangar while that player's heroes are all off the board. */}
+        {game.rules.heroes &&
+          game.active.map((seat) => {
+            if (game.heroes?.[seat] || !(game.heroTeams?.[seat]?.length) || anim?.pieces.has(`${seat}:${HERO}`)) return null;
+            const c = toPx(HANGAR_CENTERS[seat], rot);
+            const canLaunch = seat === game.turn && launches.length > 0;
+            return (
+              <HeroBench
+                key={`bench${seat}`}
+                seat={seat}
+                x={c.x}
+                y={c.y}
+                r={CELL * 0.3}
+                movable={canLaunch}
+                onClick={canLaunch ? () => setBenchOpen((o) => !o) : undefined}
+              />
+            );
+          })}
+
+        {/* Its heroes to pick from, across the hangar. */}
+        {benchOpen &&
+          launches.length > 0 &&
+          (() => {
+            const seat = game.turn;
+            const c = toPx(HANGAR_CENTERS[seat], rot);
+            const h = rotateShape(HANGARS[seat], rot);
+            const gap = CELL * 1.15;
+            return (
+              <g className="bench-choices">
+                <g onClick={() => setBenchOpen(false)}>
+                  <ShapeEl s={h} fill="rgba(16, 20, 48, 0.6)" stroke="none" strokeWidth={0} inset={CELL * 0.06} rx={18} />
+                </g>
+                {launches.map((j, i) => {
+                  const kind = game.heroTeams[seat][j - LAUNCH];
+                  const x = c.x + (i - (launches.length - 1) / 2) * gap;
+                  return (
+                    <g key={j} className="archer-choice" transform={`translate(${x} ${c.y - CELL * 0.15})`} onClick={() => onMove(j)} role="button" aria-label={`Bring on the ${HERO_LOOK[kind].en}`}>
+                      <title>{HERO_LOOK[kind].power}</title>
+                      <circle className="archer-choice-ring" r={CELL * 0.5} fill="rgba(255,255,255,0.92)" stroke={HERO_LOOK[kind].ring} strokeWidth={3} />
+                      <HeroMedal kind={kind} r={CELL * 0.33} />
+                      <g transform={`translate(0 ${CELL * 0.78})`}>
+                        <rect x={-CELL * 0.56} y={-CELL * 0.22} width={CELL * 1.12} height={CELL * 0.44} rx={CELL * 0.22} fill={HERO_LOOK[kind].dark} stroke="#fff" strokeWidth={1.5} />
+                        <text textAnchor="middle" dominantBaseline="central" fontSize={CELL * 0.24} fontWeight={800} fill="#fff" direction="rtl">
+                          {HERO_LOOK[kind].fa}
+                        </text>
+                      </g>
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          })()}
 
         {/* The archer's two ways: its path to each end, and a button there to go that way. */}
         {archerWays.map((plan) => {

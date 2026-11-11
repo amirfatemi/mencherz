@@ -1,17 +1,21 @@
 import { CHARM_ROUNDS, DRAGON_PRIZE, FROST_REACH, FROST_TURNS, GUARD_REACH, GUARDIAN_KILL, THIEF_TIMES, type HeroKind } from '../../shared/rules.ts';
 import { POINTS } from '../../shared/scoring.ts';
 import archerArt from './assets/heroes/archer.webp';
+import deathArt from './assets/heroes/death.webp';
 import engineerArt from './assets/heroes/engineer.webp';
 import frostArt from './assets/heroes/frost.webp';
 import guardianArt from './assets/heroes/guardian.webp';
 import riderArt from './assets/heroes/rider.webp';
 import thiefArt from './assets/heroes/thief.webp';
+import wizardArt from './assets/heroes/wizard.webp';
 import archerFace from './assets/heroes/token-archer.webp';
+import deathFace from './assets/heroes/token-death.webp';
 import engineerFace from './assets/heroes/token-engineer.webp';
 import frostFace from './assets/heroes/token-frost.webp';
 import guardianFace from './assets/heroes/token-guardian.webp';
 import riderFace from './assets/heroes/token-rider.webp';
 import thiefFace from './assets/heroes/token-thief.webp';
+import wizardFace from './assets/heroes/token-wizard.webp';
 
 const fa = (n: number) => n.toLocaleString('fa-IR');
 
@@ -40,6 +44,8 @@ export const HERO_ART: Partial<Record<HeroKind, string>> = {
   frost: frostArt,
   thief: thiefArt,
   rider: riderArt,
+  wizard: wizardArt,
+  death: deathArt,
 };
 
 /** Each hero's round portrait, for its piece on the board (likewise). */
@@ -50,6 +56,8 @@ export const HERO_FACE: Partial<Record<HeroKind, string>> = {
   frost: frostFace,
   thief: thiefFace,
   rider: riderFace,
+  wizard: wizardFace,
+  death: deathFace,
 };
 
 /** How each hero looks and what its card says. */

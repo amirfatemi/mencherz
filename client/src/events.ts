@@ -78,7 +78,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
     if (ev.ends) return `${who}'s engineer 👷 put down its last super bomb 💥, then went off`;
     return ev.super ? `${who} put down a super bomb 💥` : `${who} dropped a bomb 💣`;
   }
-  if (ev.type === 'hero') return `${who} picked their heroes: ${ev.kinds.map((k) => `${HERO_LOOK[k].en.toLowerCase()} ${HERO_LOOK[k].face}`).join(', ')}`;
+  if (ev.type === 'hero') return `${who} picked their heroes 🦸`;
   if (ev.type === 'box') return `${who} hid a magic box 🎁`;
   if (ev.type === 'power') {
     if (ev.choice === 'ambush') {

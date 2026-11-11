@@ -3157,15 +3157,6 @@ svg.board {
   transform-origin: center;
   animation: power-pulse 0.8s ease-in-out infinite alternate;
 }
-.mark-hero {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid;
-  vertical-align: -4px;
-  margin-inline-end: 2px;
-}
-/* Bringing on a hero: a button per hero in the player's team, its portrait and name, ringed in its colour. */
 /* A piece under a wizard's spell: a dashed ring in its own colour, and a wand. */
 .piece-charm {
   fill: none;
@@ -3183,47 +3174,12 @@ svg.board {
   stroke: #00a88f;
   stroke-width: 1.5;
 }
-.hero-launch-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 2px solid var(--hero);
-  background: color-mix(in srgb, var(--hero) 12%, #fff);
-  font-weight: 700;
+/* The fifth piece in the hangar, while none of its player's heroes is out. */
+.hero-bench.movable {
+  cursor: pointer;
 }
-.hero-launch-btn .mark-hero {
-  width: 28px;
-  height: 28px;
-  margin: 0;
-  vertical-align: middle;
-}
-.hero-launch-btn .mark-hero.emoji {
-  font-size: 16px;
-}
-.mark-hero.emoji {
-  display: inline-grid;
-  place-items: center;
-  box-sizing: border-box;
-  font-size: 10px;
-  line-height: 1;
-}
-/* A player's heroes: the one out lit, with its squares left; the rest waiting, faded. */
-.mark-team {
-  display: inline-flex;
-  gap: 1px;
-  vertical-align: -4px;
-}
-.mark-team-hero {
-  display: inline-flex;
-  align-items: center;
-  opacity: 0.7;
-  filter: grayscale(0.35);
-}
-.mark-team-hero.out {
-  opacity: 1;
-  filter: none;
-}
-.mark-team-hero b {
-  font-size: 0.75rem;
-  margin-inline-end: 3px;
+.hero-bench .hero-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: power-pulse 0.8s ease-in-out infinite alternate;
 }
