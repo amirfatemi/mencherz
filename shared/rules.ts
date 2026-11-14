@@ -7,6 +7,7 @@ import {
   HANGAR,
   HOME_FIRST,
   HOME_LAST,
+  homeCell,
   JUMP_DISTANCE,
   LAYOUT_VERSION,
   PIECES_PER_SEAT,
@@ -74,7 +75,8 @@ export interface Rules {
   /**
    * After DRAGON_FIRST_ROUNDS rounds a dragon appears and goes once round DRAGON_PATH, moved by every roll:
    * the track and, on the way, up every home column and back. It eats any piece where it stops, and two
-   * sixes in a row leave a bomb where it stops. Landing on it pays DRAGON_PRIZE. If nobody slays it, it explodes
+   * sixes in a row leave a bomb where it stops, three a super bomb, home columns too. It plays like a player: what
+   * it takes scores for it (dragonStats). Landing on it pays DRAGON_PRIZE. If nobody slays it, it explodes
    * when its lap is done, taking the pieces next to it (DRAGON_BLAST_REACH) along. Slain (by a king too) or
    * exploded, the next one comes DRAGON_EVERY_ROUNDS rounds later. It sets off nothing and takes no bridge.
    */
@@ -123,15 +125,18 @@ export const DEFAULT_RULES: Rules = {
 export type Phase = 'box' | 'roll' | 'move' | 'bomb' | 'power' | 'place' | 'vest' | 'hero' | 'over';
 
 export interface Bomb {
-  /** Absolute track index (0..51), as in TRACK. */
+  /** Absolute track index (0..51), as in TRACK; the dragon's can also be in a home column (homeCell). */
   square: number;
-  /** Null for a bomb the dragon left: it scores for nobody. */
+  /** Null for a bomb the dragon left: it scores for the dragon (dragonStats). */
   owner: Seat | null;
   /** A super bomb, from a power square: its blast also takes every piece within SUPER_BOMB_REACH squares. */
   super?: boolean;
 }
 
-/** How far along the track, ahead or behind, a super bomb's blast reaches. Home columns are out of reach. */
+/**
+ * How far along the track, ahead or behind, a super bomb's blast reaches. A track bomb's blast doesn't reach into
+ * home columns; the dragon's super bomb in a home column blasts that column as far.
+ */
 export const SUPER_BOMB_REACH = 3;
 
 /** Surprise events, and how many rounds each lasts (an earthquake just happens, and stays announced a round). */
@@ -315,7 +320,8 @@ export const STUCK_TURNS = 3;
 
 /**
  * The heroes. Each player picks HERO_TEAM kinds before the game starts, and from then on any roll that would launch
- * a piece can launch one of them instead (LAUNCH), as often as they like but one on the board at a time. A hero
+ * a piece can launch one of them instead (LAUNCH), one on the board at a time. A hero that has left the board rests
+ * for HERO_REST_ROUNDS rounds before it can come on again; the other two can come on meanwhile. A hero
  * waits at its player's takeoff spot (HERO_START), then goes round the track for HERO_LIFE squares and is gone. It
  * never goes home, so a player with every piece home plays on with it. Only the archer knocks anyone out (and death
  * kings); the others just have their power, and can stop where anyone stands.
@@ -343,6 +349,8 @@ export type HeroKind = 'archer' | 'engineer' | 'guardian' | 'frost' | 'thief' | 
 export const HERO_KINDS: readonly HeroKind[] = ['archer', 'engineer', 'guardian', 'frost', 'thief', 'rider', 'wizard', 'death'];
 /** How many hero kinds each player picks for the game. */
 export const HERO_TEAM = 3;
+/** Rounds a hero rests after it leaves the board, knocked out or done, before its player can launch it again. */
+export const HERO_REST_ROUNDS = 9;
 /** How many squares a hero goes before it's gone: once round the track. */
 export const HERO_LIFE = TRACK_LEN;
 /** Knocking out a hero, by any means; the guardian pays more. */
@@ -507,6 +515,13 @@ export interface GameState {
   heroes: (Hero | null)[];
   /** The hero kinds each seat picked for the game (empty until it has). */
   heroTeams: HeroKind[][];
+  /** Per seat, the turn number from which each of its hero kinds that has left the board can be launched again. */
+  heroRest: Partial<Record<HeroKind, number>>[];
+  /**
+   * The dragon as a player: the points it has made eating and blowing up pieces and heroes (and with its bombs),
+   * how many it took, and how many times it was slain.
+   */
+  dragonStats: { points: number; captures: number; slain: number };
   /** Pieces under a wizard's spell. */
   charmed: Charm[];
   /** The engineer at the end of its life, waiting for its player to put down its super bomb. */
@@ -824,6 +839,8 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     dragonBlast: null,
     heroes: SEATS.map(() => null),
     heroTeams: SEATS.map(() => []),
+    heroRest: SEATS.map(() => ({})),
+    dragonStats: { points: 0, captures: 0, slain: 0 },
     charmed: [],
     heroEnding: null,
     heroBlast: null,
@@ -1048,6 +1065,18 @@ function blastAround(state: GameState, owner: Seat | null, center: number, skip:
   return out;
 }
 
+/** The pieces a super bomb in `seat`'s home column at `pos` takes along: that column's, SUPER_BOMB_REACH either side. */
+function blastAroundHome(state: GameState, owner: Seat | null, seat: Seat, pos: number, skip: Set<string>): BlastHit[] {
+  const out: BlastHit[] = [];
+  state.pieces[seat].forEach((p, j) => {
+    if (skip.has(`${seat}:${j}`) || p < HOME_FIRST || p >= GOAL || Math.abs(p - pos) > SUPER_BOMB_REACH) return;
+    const saved = vestsOf(state, seat, j) > 0;
+    const hit = saved || owner === seat ? { points: 0, revenge: false } : worth(state, owner, seat, j, p);
+    out.push({ seat, piece: j, from: p, saved, points: hit.points, revenge: hit.revenge, king: isKing(state, j) });
+  });
+  return out;
+}
+
 /**
  * Works out where a piece would go with this roll, or null if the move is not allowed. Does not change `state`.
  * `openBox` draws what a magic box holds; without it (previews, bots) a box's outcome is left unknown.
@@ -1112,8 +1141,20 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     return true;
   };
   const land = (pos: number): 'hangar' | 'stay' | 'on' => {
-    // The dragon goes up home columns too, so a piece can meet it there.
-    if (!isOnTrack(pos)) return slay(pos) ? 'stay' : 'on';
+    // The dragon goes up home columns too, so a piece can meet it there, or one of its bombs.
+    if (!isOnTrack(pos)) {
+      const square = pos >= HOME_FIRST && pos < GOAL ? homeCell(seat, pos) : -1;
+      const bomb = state.bombs.find((b) => b.square === square);
+      if (bomb && !plan.bombed) {
+        const saved = vests > 0;
+        if (saved) vests--;
+        const { points, revenge } = saved || bomb.owner === seat ? { points: 0, revenge: false } : worth(state, bomb.owner, seat, piece, pos);
+        plan.bombed = { owner: bomb.owner, square, pos, atStep: plan.path.length - 1, saved, points, revenge, king: isKing(state, piece) };
+        if (bomb.super) plan.bombed.blast = blastAroundHome(state, bomb.owner, seat, pos, new Set([`${seat}:${piece}`]));
+        if (!saved) return 'hangar';
+      }
+      return slay(pos) ? 'stay' : 'on';
+    }
     const square = trackIndex(seat, pos);
     const atStep = plan.path.length - 1;
     const bomb = state.bombs.find((b) => b.square === square);
@@ -1225,10 +1266,21 @@ export type OpenBox = (options: readonly BoxOutcome[]) => BoxOutcome;
 /** A hero's move before anything happens on it. */
 const heroMove = (kind: HeroKind, back = false): HeroMove => ({ kind, back, hijacked: [], stolen: [], froze: [], charmed: [], raised: [], ends: false });
 
-/** Launching the `i`th hero of the seat's team: with a roll that launches a piece, and none of its heroes out. */
+/** Rounds left before a hero kind that left the board can come on again; 0 when it can. */
+export function heroRestLeft(state: GameState, seat: Seat, kind: HeroKind): number {
+  const until = state.heroRest?.[seat]?.[kind] ?? 0;
+  if (until <= state.turnNo) return 0;
+  return Math.ceil((until - state.turnNo) / Math.max(1, state.active.filter((x) => takesTurns(state, x)).length));
+}
+
+/**
+ * Launching the `i`th hero of the seat's team: with a roll that launches a piece, none of its heroes out, and
+ * this one not resting since it last left the board.
+ */
 function planLaunch(state: GameState, seat: Seat, i: number, dice: number): MovePlan | null {
   const kind = state.heroTeams?.[seat]?.[i];
   if (!state.rules.heroes || !kind || state.heroes?.[seat] || !canLaunch(state.rules, dice)) return null;
+  if ((state.heroRest?.[seat]?.[kind] ?? 0) > state.turnNo) return null;
   const hero: HeroMove = { ...heroMove(kind), launch: true };
   return { seat, piece: LAUNCH + i, dice, from: HANGAR, to: HERO_START, path: [{ pos: HERO_START, kind: 'launch' }], captures: [], jumped: false, flew: false, points: 0, hero };
 }
@@ -1520,9 +1572,24 @@ function knockOut(s: GameState, seat: Seat, piece: number): void {
   breakCharms(s);
 }
 
-/** A hero leaves the board; its player can launch one again. */
+/** A hero leaves the board; its player can launch one again, but this one only after it has rested. */
 function heroGone(s: GameState, seat: Seat): void {
+  const h = s.heroes[seat];
+  if (h) (s.heroRest ??= SEATS.map(() => ({})))[seat][h.kind] = holdUntil(s, HERO_REST_ROUNDS);
   s.heroes[seat] = null;
+}
+
+/** What the dragon makes for taking a piece or hero: a hero's knock-out value, or a piece's by where it stood (a king's more). */
+function dragonWorth(state: GameState, victim: Seat, piece: number, pos: number): number {
+  if (piece >= HERO) return state.heroes?.[victim]?.kind === 'guardian' ? GUARDIAN_KILL : HERO_KILL;
+  return Math.round(captureValue(along(victim, pos)) * (isKing(state, piece) ? KING : 1));
+}
+
+/** The dragon scores for a piece or hero it takes, worked out on `before` (the game before it was taken). */
+function creditDragon(s: GameState, before: GameState, v: { seat: Seat; piece: number; from: number }): void {
+  const st = (s.dragonStats ??= { points: 0, captures: 0, slain: 0 });
+  st.points += dragonWorth(before, v.seat, v.piece, v.from);
+  st.captures++;
 }
 
 /** Whether the dragon leaves a piece or hero alone: on its own safe square. */
@@ -1570,7 +1637,10 @@ function dragonExplodes(s: GameState): void {
     const vest = vestsOf(s, v.seat, v.piece) > 0 && !(v.piece >= HERO && saved.some((x) => x.seat === v.seat));
     hit.push({ ...v, saved: vest });
     if (vest) useVest(s, v.seat, v.piece);
-    else knockOut(s, v.seat, v.piece);
+    else {
+      creditDragon(s, s, v);
+      knockOut(s, v.seat, v.piece);
+    }
   }
   s.dragonBlast = { n: (s.dragonBlast?.n ?? 0) + 1, at, hit, ...(saved.length ? { saved } : {}) };
   s.dragon = null;
@@ -1656,15 +1726,27 @@ function moveDragon(s: GameState, dice: number, event: RollEvent): void {
     return;
   }
   const { taken: eaten, saved } = dragonTakes(s, piecesOn(s, DRAGON_PATH[to]), false);
-  for (const v of eaten) knockOut(s, v.seat, v.piece);
+  for (const v of eaten) {
+    creditDragon(s, s, v);
+    knockOut(s, v.seat, v.piece);
+  }
   event.dragon.eaten = eaten;
   if (saved.length) event.dragon.saved = saved;
   const cell = DRAGON_PATH[to];
   d.sixes = dice === 6 ? (d.sixes ?? 0) + 1 : 0;
-  if (d.sixes >= 2 && 'square' in cell && freeSquares(s).includes(cell.square)) {
+  // In a home column, on a cell with no piece left on it and no bomb.
+  const square =
+    'square' in cell
+      ? freeSquares(s).includes(cell.square)
+        ? cell.square
+        : null
+      : !s.pieces[cell.seat].includes(cell.pos) && !s.bombs.some((b) => b.square === homeCell(cell.seat, cell.pos))
+        ? homeCell(cell.seat, cell.pos)
+        : null;
+  if (d.sixes >= 2 && square !== null) {
     const big = d.sixes >= 3;
-    s.bombs.push({ square: cell.square, owner: null, ...(big ? { super: true } : {}) });
-    event.dragon.bomb = cell.square;
+    s.bombs.push({ square, owner: null, ...(big ? { super: true } : {}) });
+    event.dragon.bomb = square;
     if (big) event.dragon.superBomb = true;
   }
   // Three in a row is as far as it goes: the count starts over.
@@ -1775,6 +1857,7 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   if (plan.dragon) {
     // Whoever slays it, a king too, another comes later.
     s.dragon = null;
+    (s.dragonStats ??= { points: 0, captures: 0, slain: 0 }).slain++;
     s.dragonAt = s.turnNo + roundsOf(s, DRAGON_EVERY_ROUNDS);
     s.stats[seat].dragons = (s.stats[seat].dragons ?? 0) + 1;
   }
@@ -1808,6 +1891,11 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
   if (plan.bombed) {
     const { owner, square, points, saved } = plan.bombed;
     s.bombs = s.bombs.filter((b) => b.square !== square);
+    // The dragon's bomb: what it takes scores for the dragon.
+    if (owner === null) {
+      if (!saved) creditDragon(s, state, { seat: ps, piece: hero ? HERO : pp, from: plan.bombed.pos });
+      for (const v of plan.bombed.blast ?? []) if (!v.saved) creditDragon(s, state, v);
+    }
     if (saved) {
       useVest(s, ps, pp);
     } else {

@@ -1,5 +1,5 @@
 import { COLOR_NAMES, GOAL, HANGAR, TAKEOFF, type Seat } from '../../shared/board.ts';
-import type { SeatView } from '../../shared/protocol.ts';
+import { BOT_NAMES, type SeatView } from '../../shared/protocol.ts';
 import { HERO, ICE_TURNS, type GameEvent, type MoveEvent, type RollEvent } from '../../shared/rules.ts';
 import { HERO_LOOK } from './heroes.ts';
 import { POINTS, killStreakName } from '../../shared/scoring.ts';
@@ -7,7 +7,7 @@ import { POINTS, killStreakName } from '../../shared/scoring.ts';
 export function seatName(seats: SeatView[], seat: Seat): string {
   const s = seats[seat];
   if (s?.name) return s.name;
-  if (s?.kind === 'bot') return `${COLOR_NAMES[seat]} bot`;
+  if (s?.kind === 'bot') return BOT_NAMES[seat];
   return COLOR_NAMES[seat];
 }
 

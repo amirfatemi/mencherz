@@ -1,6 +1,6 @@
 import { HOME_FIRST, TRACK_LAST } from './board.ts';
 
-// Small numbers, with 100 the biggest award. The three track values were lowered on 2026-10-23 after a game
+// Small numbers, with the first player home the biggest award. The three track values were lowered on 2026-10-23 after a game
 // where the runner-up out-scored the first player home; the home column and kill streaks kept their values.
 export const POINTS = {
   /** A piece reaching the centre. */
@@ -17,8 +17,8 @@ export const POINTS = {
   boxPenalty: 10,
   /** Won when a magic box turns out to give points. */
   boxBonus: 20,
-  /** For the first player to bring all four pieces home. */
-  firstHome: 100,
+  /** For the first player to bring all four pieces home: about a fifth of all the points a game hands out. */
+  firstHome: 200,
 } as const;
 
 /** Knocking out the player who last knocked out one of yours is worth this much more, once per knock-out received. */

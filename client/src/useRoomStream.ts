@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GOAL, HANGAR, HANGAR_CENTERS, HANGAR_SLOTS, TRACK_CELLS, type Point, type Seat } from '../../shared/board.ts';
+import { GOAL, HANGAR, HANGAR_CENTERS, HANGAR_SLOTS, TRACK_CELLS, squarePoint, type Point, type Seat } from '../../shared/board.ts';
 import type { RoomUpdate, RoomView } from '../../shared/protocol.ts';
 import { REACTION_MS } from '../../shared/reactions.ts';
 import { CHARM, EVENT_ROUNDS, HERO, blastOf, charmOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind } from '../../shared/rules.ts';
@@ -253,7 +253,7 @@ function scoreMoments(ev: MoveEvent, cinematic: boolean): ScoreMoment[] {
     const text = b.saved ? '🦺 Saved!' : b.points ? `💣 +${b.points}` : '💣';
     // The dragon's bomb scores for nobody: its pop is in the mover's colour.
     const bomber = b.owner ?? ev.seat;
-    out.push({ at: TRACK_CELLS[b.square], delay: stepEnd(ev, b.atStep), text, seat: b.saved ? ev.seat : bomber });
+    out.push({ at: squarePoint(b.square), delay: stepEnd(ev, b.atStep), text, seat: b.saved ? ev.seat : bomber });
     for (const v of b.blast ?? []) {
       out.push({ at: movePoint(v.seat, v.piece, v.from), delay: stepEnd(ev, b.atStep), text: v.saved ? '🦺 Saved!' : v.points ? `💥 +${v.points}` : '💥', seat: v.saved ? v.seat : bomber });
     }
@@ -304,7 +304,7 @@ function moveTimeline(ev: MoveEvent): Timeline {
     // Later motions for the same piece take over, so it flies home from where it blew up.
     const at = blastAt(ev);
     tl.motions.push(returnHome(ms, mp, blast.pos, at));
-    tl.booms.push({ at: TRACK_CELLS[blast.square], start: at });
+    tl.booms.push({ at: squarePoint(blast.square), start: at });
     tl.total = Math.max(tl.total, at + CAPTURE_MS);
   }
   // A super bomb takes the pieces around it along, whether or not the one that set it off survived.
@@ -567,7 +567,7 @@ export function useRoomStream(code: string) {
                 setTimeout(() => {
                   if (!alive.current) return;
                   sfx.place();
-                  showBanner('🐉💣 دو شیش پشت هم! اژدها بمب گذاشت', 'kill');
+                  showBanner(d.superBomb ? '🐉💥 سه شیش پشت هم! اژدها ابر بمب گذاشت' : '🐉💣 دو شیش پشت هم! اژدها بمب گذاشت', 'kill');
                 }, stops);
               }
               await play(dragonTimeline(ev), speed);

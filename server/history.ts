@@ -1,6 +1,6 @@
 import { gameAwards, medalsWon } from '../shared/awards.ts';
 import { COLOR_NAMES, type Seat } from '../shared/board.ts';
-import { peopleIn, type GameRecord, type HistoryPage, type SeatView } from '../shared/protocol.ts';
+import { BOT_NAMES, peopleIn, type GameRecord, type HistoryPage, type SeatView } from '../shared/protocol.ts';
 import { RANKED_MIN_PEOPLE } from '../shared/scoring.ts';
 import type { Db } from './db.ts';
 import { upgradeGame } from './migrate.ts';
@@ -43,7 +43,7 @@ export function recordOf(code: string, data: string, createdAt: number, updatedA
       const person = s.userId !== undefined;
       return {
         seat,
-        name: s.name ?? `${COLOR_NAMES[seat]} bot`,
+        name: s.name ?? (s.kind === 'bot' ? BOT_NAMES[seat] : COLOR_NAMES[seat]),
         kind: person ? 'human' : 'bot',
         ...(person ? {} : { botLevel: s.botLevel }),
         left: !!s.left,

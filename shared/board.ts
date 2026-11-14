@@ -174,6 +174,25 @@ const TOP_HOME: Square[] = [0, 1, 2, 3, 4].map((k) =>
 export const HOME: Square[][] = SEATS.map((s) => TOP_HOME.map((sq) => rotateSquare(sq, s - 1)));
 export const HOME_CELLS: Point[][] = HOME.map((col) => col.map((s) => s.spot));
 
+/**
+ * A home-column cell as one number, for things that sit on squares (the dragon's bombs): HOME_CELL + 8 x seat +
+ * the cell's place in the column. Track squares are 0..TRACK_LEN-1, so the two never meet.
+ */
+export const HOME_CELL = 200;
+export function homeCell(seat: Seat, pos: number): number {
+  return HOME_CELL + 8 * seat + (pos - HOME_FIRST);
+}
+/** The seat and position of a home-column cell number, or null for a track square. */
+export function homeCellOf(square: number): { seat: Seat; pos: number } | null {
+  if (square < HOME_CELL) return null;
+  return { seat: Math.floor((square - HOME_CELL) / 8) as Seat, pos: HOME_FIRST + ((square - HOME_CELL) % 8) };
+}
+/** Where a track square or a home-column cell number is, in board grid units. */
+export function squarePoint(square: number): Point {
+  const home = homeCellOf(square);
+  return home ? HOME_CELLS[home.seat][home.pos - HOME_FIRST] : TRACK_CELLS[square];
+}
+
 export const TAKEOFF_SQUARES: Square[] = SEATS.map((s) => rotateSquare(square(tri(0, H, D, H, 0, H + D)), s));
 export const TAKEOFF_CELLS: Point[] = TAKEOFF_SQUARES.map((s) => s.spot);
 

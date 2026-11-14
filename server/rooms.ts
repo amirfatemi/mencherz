@@ -257,8 +257,10 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         .filter((r) => r.status === 'playing' || r.seats.some((s) => s.kind === 'open'))
         .slice(0, 50)
         .map((r) => summary(r, userId)),
+      // Games still going (paused ones too) first, so one left for days is always there to pick up.
       mine: all
         .filter((r) => involved(r, userId))
+        .sort((a, b) => Number(b.status === 'playing') - Number(a.status === 'playing'))
         .slice(0, 20)
         .map((r) => summary(r, userId)),
     };
@@ -376,12 +378,18 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     const winner = room.game.standings[0] ?? room.game.ranking[0];
     const minutes = Math.max(1, Math.round(playedMs(room) / 60000));
     room.seats.forEach((s, i) => {
+      const st = room.game!.stats[i];
+      const stats = { points: st?.points ?? 0, captures: st?.captures ?? 0, lost: st?.lost ?? 0, minutes };
       if (s.kind === 'human' && s.userId !== undefined && !s.left) {
-        const st = room.game!.stats[i];
         const medals = medalsWon(room.game!, i as Seat).map((m) => m.id);
-        auth.recordGame(s.userId, i === winner, { points: st?.points ?? 0, captures: st?.captures ?? 0, lost: st?.lost ?? 0, minutes, medals });
+        auth.recordGame(s.userId, i === winner, { ...stats, medals });
       }
+      // Each colour's computer player counts on the leaderboard too, under its own name.
+      if (s.kind === 'bot' && !s.left && room.game!.active.includes(i as Seat)) auth.recordNpc(`bot:${i}`, i === winner, stats);
     });
+    // So does the dragon: what it took, and how many times it was slain.
+    const d = room.game.dragonStats;
+    if (room.game.rules.dragon && d) auth.recordNpc('dragon', false, { points: d.points, captures: d.captures, lost: d.slain, minutes });
   }
 
   function roll(room: Room) {

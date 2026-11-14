@@ -68,6 +68,8 @@ export function upgradeGame(game: GameState): GameState {
     g.dragon = { at: oldDragon.at!, moved: oldDragon.moved!, sixes: oldDragon.six ? 1 : 0 };
   }
   g.heroes ??= SEATS.map(() => null);
+  g.heroRest ??= SEATS.map(() => ({}));
+  g.dragonStats ??= { points: 0, captures: 0, slain: 0 };
   g.heroEnding ??= null;
   g.heroBlast ??= null;
   g.charmed ??= [];
@@ -100,6 +102,9 @@ export function upgradeGame(game: GameState): GameState {
   delete old.rerolls;
   delete old.preRoll;
   if (old.phase === 'bridge') old.phase = 'place';
+  // A saved roll's choices are worked out again under the rules of this version, so a game paused or saved
+  // before an update never offers a move the rules no longer allow (which would leave it stuck).
+  if (g.phase === 'move' && g.dice !== null) g.movable = legalPieces(g, g.turn, g.dice);
   if (g.phase === 'move' && !g.movable.length) Object.assign(g, { phase: 'roll', dice: null });
   g.stuck ??= SEATS.map(() => 0);
   g.standings ??= g.phase === 'over' && g.ranking.length ? standingsOf(g) : [];

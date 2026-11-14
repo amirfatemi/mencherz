@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { COLOR_HEX, PIECES_PER_SEAT, type Seat } from '../../../shared/board.ts';
-import type { SeatView } from '../../../shared/protocol.ts';
+import { DRAGON_NAME, type SeatView } from '../../../shared/protocol.ts';
 import { DRAGON_PATH, type GameEvent, type GameState } from '../../../shared/rules.ts';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { describe, seatName } from '../events.ts';
@@ -52,6 +52,29 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
     over && game.standings.length
       ? game.standings
       : [...game.active].sort((a, b) => game.stats[b].points - game.stats[a].points);
+  // The dragon plays as one more player: it goes in by its points, with no place of its own.
+  const dragon = game.rules.dragon ? (game.dragonStats ?? { points: 0, captures: 0, slain: 0 }) : null;
+  const dragonAt = dragon ? rows.findIndex((s) => game.stats[s].points < dragon.points) : -1;
+  const dragonRow = dragon && (
+    <tr key="dragon" className="dragon-row" style={{ '--seat': '#e65100' } as CSSProperties}>
+      <td className="place">🐉</td>
+      <td className="who">
+        <span className="swatch" />
+        <span className="who-name">{DRAGON_NAME}</span>
+        <span className="mark" title="The dragon plays too: what it eats or blows up, and what its bombs take, scores for it">
+          🐉
+        </span>
+      </td>
+      <td>—</td>
+      <td title="Pieces and heroes it took">{dragon.captures}</td>
+      <td title="Times it was slain">{dragon.slain}</td>
+      <td className="num">
+        <span key={dragon.points} className="points">
+          {dragon.points}
+        </span>
+      </td>
+    </tr>
+  );
   const last = events.at(-1);
   // Who just scored: the mover, and the owner of a bomb that went off.
   const gains = new Map<Seat, number>();
@@ -101,7 +124,8 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
         <tbody>
           {rows.map((seat, i) => {
             const st = game.stats[seat];
-            return (
+            return [
+              i === dragonAt ? dragonRow : null,
               <tr
                 key={seat}
                 className={`${seat === game.turn && !over ? 'current' : ''}${seat === mySeat ? ' me' : ''}`}
@@ -132,9 +156,10 @@ export function Scoreboard({ game, seats, events, mySeat, over, userId, spectato
                     </span>
                   )}
                 </td>
-              </tr>
-            );
+              </tr>,
+            ];
           })}
+          {dragonAt === -1 && dragonRow}
         </tbody>
       </table>
       <p className="score-key">🏁 pieces home · 💥 hits made · 🤕 hits taken</p>

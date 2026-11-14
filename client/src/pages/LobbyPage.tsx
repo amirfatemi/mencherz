@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { MEDALS, titleFor } from '../../../shared/awards.ts';
+import { COLOR_HEX, COLOR_NAMES } from '../../../shared/board.ts';
 import {
   LEADER_SORTS,
   type AdminUserRow,
@@ -75,8 +76,9 @@ function Leaderboard({ rows, me, sort, onSort }: { rows: LeaderRow[] | null; me:
     <section className="card leaderboard">
       <h2>🏆 Leaderboard</h2>
       <p className="muted small">
-        Totals over every game with at least two people (games against computers alone don't count). ⌀ average points per game · 💥 hits
-        made · 🤕 hits taken · ⏱ minutes played. Tap a column to sort by it.
+        Totals over every game with at least two people (games against computers alone don't count). The computer players, one name per
+        colour, and the dragon play there too and count like everyone else. ⌀ average points per game · 💥 hits made · 🤕 hits taken ·
+        ⏱ minutes played. Tap a column to sort by it.
       </p>
       {!rows ? (
         <p className="muted">Loading…</p>
@@ -100,10 +102,19 @@ function Leaderboard({ rows, me, sort, onSort }: { rows: LeaderRow[] | null; me:
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.username} className={r.username === me ? 'me' : ''}>
+              <tr key={`${r.npc ?? 'user'}:${r.username}`} className={!r.npc && r.username === me ? 'me' : r.npc ? 'npc' : ''}>
                 <td className="place">{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td>
                 <td className="who">
-                  <span title={titleFor(r.points).name}>{titleFor(r.points).icon}</span> {r.username}
+                  {r.npc === 'dragon' ? (
+                    <span title="The dragon">🐉</span>
+                  ) : r.npc === 'bot' ? (
+                    <span title={`The ${COLOR_NAMES[r.seat ?? 0].toLowerCase()} computer player`} style={{ color: COLOR_HEX[r.seat ?? 0] }}>
+                      🤖
+                    </span>
+                  ) : (
+                    <span title={titleFor(r.points).name}>{titleFor(r.points).icon}</span>
+                  )}{' '}
+                  {r.username}
                   <span className="leader-medals">
                     {MEDALS.filter((m) => r.medals?.[m.id]).map((m) => (
                       <span key={m.id} title={`${m.name}: ${m.how}`}>

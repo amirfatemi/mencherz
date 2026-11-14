@@ -27,13 +27,14 @@ import {
   flightCrossedSeat,
   rotatePoint,
   rotateShape,
+  squarePoint,
   trackColor,
   trackIndex,
   type Point,
   type Seat,
   type Shape,
 } from '../../../shared/board.ts';
-import type { SeatView } from '../../../shared/protocol.ts';
+import { BOT_NAMES, type SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
 import {
@@ -52,6 +53,7 @@ import {
   asSeen,
   charmMove,
   charmedBy,
+  heroRestLeft,
   isKing,
   planMove,
   ambushStart,
@@ -733,7 +735,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           const seat = seats[s];
           const rank = game.standings.indexOf(s);
           const medal = game.phase === 'over' && rank >= 0 ? `${['🥇', '🥈', '🥉', '4th'][rank]} ` : '';
-          const name = seat?.name ?? (seat?.kind === 'bot' ? `Bot · ${seat.botLevel}` : '');
+          const name = seat?.name ?? (seat?.kind === 'bot' ? BOT_NAMES[s] : '');
           // The leader's hangar says MOST WANTED in its border, on the side facing the middle, opposite the name.
           const wanted = game.rules.bounty && game.bounty?.seat === s && game.phase !== 'over' ? game.bounty.value : 0;
           const centre = toPx(HANGAR_CENTERS[s], rot);
@@ -806,7 +808,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             })}
             {preview.bombed?.saved &&
               (() => {
-                const b = toPx(TRACK[preview.bombed.square].spot, rot);
+                const b = toPx(squarePoint(preview.bombed.square), rot);
                 return (
                   <text x={b.x} y={b.y - CELL * 0.8} className="preview-points" textAnchor="middle">
                     🦺 safe
@@ -820,7 +822,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 return v.saved ? null : <circle key={`${v.seat}:${v.piece}`} cx={q.x} cy={q.y} r={CELL * 0.5} fill="none" stroke="#d50000" strokeWidth={4} className="threat" />;
               });
               if (preview.bombed && !preview.bombed.saved) {
-                const b = toPx(TRACK[preview.bombed.square].spot, rot);
+                const b = toPx(squarePoint(preview.bombed.square), rot);
                 return (
                   <>
                     {blast}
@@ -906,12 +908,12 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           })}
         {!fog &&
           game.bombs.map((b) => {
-            const p = toPx(TRACK[b.square].spot, rot);
+            const p = toPx(squarePoint(b.square), rot);
             return <BombIcon key={b.square} x={p.x} y={p.y} owner={b.owner} big={b.super} />;
           })}
         {dropped &&
           (() => {
-            const p = toPx(TRACK[dropped.square].spot, rot);
+            const p = toPx(squarePoint(dropped.square), rot);
             return <BombIcon x={p.x} y={p.y} owner={dropped.owner} big={dropped.super} />;
           })()}
         {(game.power ?? []).map((sq) => (
@@ -1037,18 +1039,28 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 <g onClick={() => setBenchOpen(false)}>
                   <ShapeEl s={h} fill="rgba(16, 20, 48, 0.6)" stroke="none" strokeWidth={0} inset={CELL * 0.06} rx={18} />
                 </g>
-                {launches.map((j, i) => {
-                  const kind = game.heroTeams[seat][j - LAUNCH];
-                  const x = c.x + (i - (launches.length - 1) / 2) * gap;
+                {game.heroTeams[seat].map((kind, i) => {
+                  const j = LAUNCH + i;
+                  const ready = launches.includes(j);
+                  const rest = heroRestLeft(game, seat, kind);
+                  const team = game.heroTeams[seat].length;
+                  const x = c.x + (i - (team - 1) / 2) * gap;
                   return (
-                    <g key={j} className="archer-choice" transform={`translate(${x} ${c.y - CELL * 0.15})`} onClick={() => onMove(j)} role="button" aria-label={`Bring on the ${HERO_LOOK[kind].en}`}>
-                      <title>{HERO_LOOK[kind].power}</title>
+                    <g
+                      key={j}
+                      className={ready ? 'archer-choice' : 'bench-resting'}
+                      transform={`translate(${x} ${c.y - CELL * 0.15})`}
+                      onClick={ready ? () => onMove(j) : undefined}
+                      role={ready ? 'button' : undefined}
+                      aria-label={ready ? `Bring on the ${HERO_LOOK[kind].en}` : `The ${HERO_LOOK[kind].en} rests ${rest} more rounds`}
+                    >
+                      <title>{ready ? HERO_LOOK[kind].power : `${HERO_LOOK[kind].fa}: ${rest.toLocaleString('fa-IR')} دور دیگر استراحت می‌کند`}</title>
                       <circle className="archer-choice-ring" r={CELL * 0.5} fill="rgba(255,255,255,0.92)" stroke={HERO_LOOK[kind].ring} strokeWidth={3} />
                       <HeroMedal kind={kind} r={CELL * 0.33} />
                       <g transform={`translate(0 ${CELL * 0.78})`}>
-                        <rect x={-CELL * 0.56} y={-CELL * 0.22} width={CELL * 1.12} height={CELL * 0.44} rx={CELL * 0.22} fill={HERO_LOOK[kind].dark} stroke="#fff" strokeWidth={1.5} />
+                        <rect x={-CELL * 0.56} y={-CELL * 0.22} width={CELL * 1.12} height={CELL * 0.44} rx={CELL * 0.22} fill={ready ? HERO_LOOK[kind].dark : '#616161'} stroke="#fff" strokeWidth={1.5} />
                         <text textAnchor="middle" dominantBaseline="central" fontSize={CELL * 0.24} fontWeight={800} fill="#fff" direction="rtl">
-                          {HERO_LOOK[kind].fa}
+                          {ready ? HERO_LOOK[kind].fa : `⏳ ${rest.toLocaleString('fa-IR')} دور`}
                         </text>
                       </g>
                     </g>

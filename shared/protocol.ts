@@ -136,8 +136,17 @@ export interface AdminUserRow {
   isAdmin: boolean;
 }
 
+/** Computer players' names, one per colour and the same in every game: gods of Greek myth (sun, sea, olive, war). */
+export const BOT_NAMES = ['آپولو', 'پوزئیدون', 'آتنا', 'آرس'] as const;
+/** The dragon's name on the scoreboard and the leaderboard, where it plays as one more player. */
+export const DRAGON_NAME = 'اژدها';
+
 export interface LeaderRow {
+  /** A person's username, or a computer player's or the dragon's name (see `npc`). */
   username: string;
+  /** Not a person: a colour's computer player (with its seat), or the dragon. */
+  npc?: 'bot' | 'dragon';
+  seat?: Seat;
   points: number;
   gamesPlayed: number;
   wins: number;

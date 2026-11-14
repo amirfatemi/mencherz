@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react';
 import { COLOR_HEX, type Seat } from '../../../shared/board.ts';
-import { GUARDIAN_KILL, HERO_KILL, HERO_KINDS, HERO_LIFE, HERO_TEAM, type HeroKind } from '../../../shared/rules.ts';
+import { GUARDIAN_KILL, HERO_KILL, HERO_KINDS, HERO_LIFE, HERO_REST_ROUNDS, HERO_TEAM, type HeroKind } from '../../../shared/rules.ts';
 import { HERO_ART, HERO_LOOK } from '../heroes.ts';
 import { HeroIcon } from './HeroArt.tsx';
 
@@ -52,8 +52,9 @@ export function HeroPicker({ seat, name, onPick, onHide }: Props) {
             🦸 {name}، {fa(HERO_TEAM)} هیرو برای این بازی انتخاب کن
           </h2>
           <p>
-            هر بار که تاست اجازهٔ بیرون آوردن مهره بدهد، می‌توانی به‌جایش با زدن مهرهٔ پنجمِ وسط آشیانه یکی از این هیروها را بیاوری؛ هر چند بار
-            که بخواهی، ولی هر بار فقط یکی روی صفحه. هیرو از خانهٔ صف شروع می‌کند و {fa(HERO_LIFE)} خانه (یک دور کامل) روی مسیر می‌چرخد. فقط
+            هر بار که تاست اجازهٔ بیرون آوردن مهره بدهد، می‌توانی به‌جایش با زدن مهرهٔ پنجمِ وسط آشیانه یکی از این هیروها را بیاوری، ولی هر بار
+            فقط یکی روی صفحه. هیرویی که از صفحه بیرون برود {fa(HERO_REST_ROUNDS)} دور استراحت می‌کند و تا آن موقع فقط دو هیروی دیگر را می‌شود
+            آورد. هیرو از خانهٔ صف شروع می‌کند و {fa(HERO_LIFE)} خانه (یک دور کامل) روی مسیر می‌چرخد. فقط
             کماندار مهره‌ها را می‌زند (و مرگ فقط پادشاه را)؛ بقیه فقط قدرت خودشان را دارند. اگر کسی هیرو را بزند {fa(HERO_KILL)} امتیاز می‌گیرد
             (نگهبان {fa(GUARDIAN_KILL)}).
           </p>

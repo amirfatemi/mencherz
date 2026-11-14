@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import WebSocket from 'ws';
 import { botAction } from '../shared/ai.ts';
-import type { AdminUserRow, Captcha, HistoryPage, LeaderRow, PublicUser, RoomUpdate, RoomView } from '../shared/protocol.ts';
+import { BOT_NAMES, DRAGON_NAME, type AdminUserRow, type Captcha, type HistoryPage, type LeaderRow, type PublicUser, type RoomUpdate, type RoomView } from '../shared/protocol.ts';
 import type { GameState } from '../shared/rules.ts';
 import { REACTION_BY_ID } from '../shared/reactions.ts';
 import { GameSocket, type WsLike } from '../shared/socket-client.ts';
@@ -336,10 +336,17 @@ describe('online game', () => {
       assert.deepEqual(record.players.map((p) => p.place), [1, 2, 3]);
       assert.deepEqual(
         record.players.map((p) => [p.name, p.kind, p.points]),
-        final.game!.standings.map((seat) => [['alice', 'bob', 'Green bot'][seat], seat === 2 ? 'bot' : 'human', final.game!.stats[seat].points]),
+        final.game!.standings.map((seat) => [['alice', 'bob', BOT_NAMES[2]][seat], seat === 2 ? 'bot' : 'human', final.game!.stats[seat].points]),
       );
       assert.ok(record.finishedAt >= record.startedAt && record.awards.length > 0);
     }
+
+    // The green computer player is on the leaderboard under its own name, and so is the dragon.
+    const board = (await (await fetch(`${base}/api/leaderboard`, { headers: { cookie: bobCookie } })).json()) as LeaderRow[];
+    const bot = board.find((r) => r.npc === 'bot')!;
+    assert.deepEqual([bot.username, bot.seat, bot.gamesPlayed, bot.points], [BOT_NAMES[2], 2, 1, final.game!.stats[2].points]);
+    const dragon = board.find((r) => r.npc === 'dragon')!;
+    assert.deepEqual([dragon.username, dragon.gamesPlayed, dragon.points, dragon.wins], [DRAGON_NAME, 1, final.game!.dragonStats.points, 0]);
 
     alice.disconnect();
     bob.disconnect();
@@ -510,6 +517,42 @@ describe('pause', () => {
     assert.equal(resumed.paused, false);
     host.disconnect();
     guest.disconnect();
+  });
+
+  test('a paused game waits through a restart: still paused, first in the lobby, and plays on once resumed', async () => {
+    const hostCookie = await signUp('longpause');
+    let host = await socketFor(hostCookie);
+    const { code } = await call<{ code: string }>(host, 'room:create', {
+      settings: { name: 'Back next week', isPublic: false, turnSeconds: 10 },
+      seats: [{ kind: 'host' }, { kind: 'bot', botLevel: 'easy' }, { kind: 'closed' }, { kind: 'closed' }],
+      startNow: true,
+    });
+    // Newer games of the same player come after it in the lobby once it's paused and they're finished or waiting.
+    const later = await call<{ code: string }>(host, 'room:create', {
+      settings: { name: 'Another', isPublic: false, turnSeconds: 0 },
+      seats: [{ kind: 'host' }, { kind: 'open' }, { kind: 'closed' }, { kind: 'closed' }],
+    });
+    await call<RoomView>(host, 'room:join', { code });
+    await call(host, 'game:pause', { code, paused: true });
+    const before = await call<RoomView>(host, 'room:join', { code });
+    host.disconnect();
+    await server.close();
+    await boot();
+
+    host = await socketFor(hostCookie);
+    const lobby = await call<{ mine: { code: string }[] }>(host, 'lobby:list');
+    assert.deepEqual(lobby.mine.map((r) => r.code).slice(0, 2), [code, later.code], 'the game still going comes first');
+    const back = await call<RoomView>(host, 'room:join', { code });
+    assert.deepEqual([back.status, back.paused, back.turnDeadline, back.game!.seq], ['playing', true, null, before.game!.seq]);
+    await call(host, 'game:pause', { code, paused: false });
+    const resumed = await call<RoomView>(host, 'room:join', { code });
+    assert.equal(resumed.paused, false);
+    // The game carries on: the host can roll on their turn, or the bot plays its own.
+    if (resumed.game!.turn === 0) await playAsBot(host, code, resumed.game!);
+    else await new Promise((r) => setTimeout(r, 300));
+    const on = await call<RoomView>(host, 'room:join', { code });
+    assert.ok(on.game!.seq > before.game!.seq, 'play went on');
+    host.disconnect();
   });
 });
 

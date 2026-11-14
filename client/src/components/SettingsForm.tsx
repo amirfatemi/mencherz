@@ -151,13 +151,13 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Dragon 🐉"
-          hint="After 10 rounds a dragon goes once round the board, moving with every roll, up home columns too. It eats what it stops on; two sixes in a row leave a bomb, three a super bomb. A king that lands on it gets 40; other pieces get 5. If nobody does, it counts to three and explodes, taking the pieces next to it. Slain (by a king too) or exploded, another comes 10 rounds later."
+          hint="After 10 rounds a dragon goes once round the board, moving with every roll, up home columns too. It eats what it stops on; two sixes in a row leave a bomb, three a super bomb, home columns too. What it takes scores for it, as for a player. A king that lands on it gets 40; other pieces get 5. If nobody does, it counts to three and explodes, taking the pieces next to it. Slain (by a king too) or exploded, another comes 10 rounds later."
           checked={rules.dragon}
           onChange={(v) => setRules({ dragon: v })}
         />
         <Toggle
           label="Heroes 🦸"
-          hint="Each player picks 3 of 8 heroes before the game: archer, bomb engineer, guardian, frost mage, thief, dragon rider, wizard and death. Any roll that launches a piece can bring one on instead, as often as you like, one at a time. It goes once round the track with its own power, and players with every piece home play on with theirs. Knocking one out pays 15 (the guardian 20)."
+          hint="Each player picks 3 of 8 heroes before the game: archer, bomb engineer, guardian, frost mage, thief, dragon rider, wizard and death. Any roll that launches a piece can bring one on instead, one at a time; one that has left the board rests 9 rounds before it can come again. It goes once round the track with its own power, and players with every piece home play on with theirs. Knocking one out pays 15 (the guardian 20)."
           checked={rules.heroes}
           onChange={(v) => setRules({ heroes: v })}
         />

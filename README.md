@@ -64,7 +64,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
   - Join by code or invite link.
   - A list of open public games, which can be joined, or watched once they're in progress.
   - "Your games", which lets you resume any game and flags the ones where it's your turn.
-  - A leaderboard of every player's total points, average points per game, games and wins.
+  - A leaderboard of every player's total points, average points per game, games and wins. The computer players count there too, one name per colour (Apollo, Poseidon, Athena and Ares, in Persian), and so does the dragon.
   - **Game history:** every finished game, newest first, 20 at a time. Tapping one shows when it started and ended, how long it took, who played (bots too, and who left), the final table, the highlights and the medals won: its whole end-of-game report. Each report is worked out once, the first time it's asked for, and kept with the game (`server/history.ts`).
 - **Waiting room:** four seats (Red, Blue, Green, Yellow). The host sets each seat to *open*, *computer (easy / normal / hard)* or *nobody*, and can remove players, change settings and start the game. Players can switch to any free seat.
 - **Game:**
@@ -82,7 +82,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
   - Opening a magic box always shows one: happy for a vest or an empty box, sad for a bomb, ice or lost points.
   - Each game deals them like a shuffled deck: no GIF comes back until every GIF of its group has been shown, and a new round never opens with the one that closed the last.
   - The GIFs are Giphy links in `shared/reactions.ts`, and each game can turn them off.
-- **A roll that can't be played** stays on the dice until the next roll. In a game with a computer player, the next player waits 5 seconds first, so everyone sees it before a bot rolls over it; among people the next player can roll straight away.
+- **A roll that can't be played** stays on the dice until the next roll. In a game with a computer player, the next player waits 2 seconds first, so everyone sees it before a bot rolls over it; among people the next player can roll straight away.
 - **Turn timer:** off, or 10–90 s. When time runs out, the move is made for the player. The host can **pause** the game, which stops the clock and all turns, bots included, and resume it later.
 - **Absent players:** a player who closes the tab has their turns played for them, so the others can carry on. A game where no human is present pauses.
 - **Auto-save:** every change is written to SQLite, and games survive a server restart. Leaving mid-game hands your seat to a computer player.
@@ -131,11 +131,12 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 14. **Bounty on the leader 🎯:** whoever leads on points (alone) gets a MOST WANTED poster by their hangar. Knocking out one of their pieces, bombs included, pays the bounty on top: it starts at 3, grows by 1 each time their turn comes round in the lead (up to 8), and starts again at 3 once claimed. It's meant to make the leader a little juicier, not to outweigh the knock-out itself.
 15. **Dragon 🐉:** after 10 rounds a dragon appears on a random free square and goes once round its route (88 squares). It belongs to nobody and moves with every roll, as far as the dice says: the dice shows its number first, then the dragon moves, then the player moves. Its route is the track and, at each arrow square, up that home column to the end and back. A number by it shows the squares left of its lap.
     - Any piece where it stops is eaten (back to the hangar), unless on its own safe square. It sets off no bomb or box and takes no bridge.
-    - Two sixes in a row: it leaves a bomb where the second one takes it; a third six in a row leaves a super bomb where that one takes it (never in a home column). The dragon's bombs blow up whoever lands on them and score for nobody.
+    - Two sixes in a row: it leaves a bomb where the second one takes it; a third six in a row leaves a super bomb where that one takes it, in a home column too (a super bomb there blasts that column 3 cells either side). The dragon's bombs blow up whoever lands on them.
+    - It plays like a player: every piece or hero it eats, blows up or catches with its bombs scores for it, worth what knocking it out would pay (a hero 15, the guardian 20). Its points, takes and times slain show as a row of the scoreboard, and on the leaderboard, where it counts like a player.
     - A king that lands on it, in a home column too, slays it for 40 points; any other piece for 5. With kings off, every piece counts as a king.
     - If nobody slays it, it explodes when its lap is done, back where it started: it stops there, a 1, 2, 3 is counted on the board, then it goes off, taking the pieces on its square and one square either side (a vest or safe square saves them).
     - Whoever slays it, a king too, or if it explodes, the next one comes 10 rounds later, on a random free square.
-16. **Heroes 🦸:** a hero is a fifth piece. Before the game starts (before the magic boxes go down), each player picks 3 of the 8 heroes, and keeps those for the whole game. Any roll that would launch a piece (a 6, by default) can bring one of them on instead, from the fifth piece 🦸 in the middle of the hangar (it glows; a tap shows the three to pick from), as often as the player likes, but only one hero is on the board at a time, even while it still waits at the takeoff spot. It comes on at the player's takeoff spot, like a piece just launched, where nothing can reach it; its first move takes it onto the track. A player with every piece home isn't out of the game: they keep taking turns, and play on with their heroes until the game ends.
+16. **Heroes 🦸:** a hero is a fifth piece. Before the game starts (before the magic boxes go down), each player picks 3 of the 8 heroes, and keeps those for the whole game. Any roll that would launch a piece (a 6, by default) can bring one of them on instead, from the fifth piece 🦸 in the middle of the hangar (it glows; a tap shows the three to pick from), but only one hero is on the board at a time, even while it still waits at the takeoff spot. A hero that leaves the board, knocked out or done, rests for 9 rounds before that player can bring it on again (the bench shows ⏳ and the rounds left); the other two can come on meanwhile. The same goes once every piece is home. It comes on at the player's takeoff spot, like a piece just launched, where nothing can reach it; its first move takes it onto the track. A player with every piece home isn't out of the game: they keep taking turns, and play on with their heroes until the game ends.
     - It goes round the track only, never up a home column, for 52 squares (one lap), then leaves, and can be brought on again. The archer, which goes either way, has a number by it showing the squares it has left. Moving it uses the roll, like moving a piece. It takes no colour jump, flight, bridge or power square, and can't pass another colour's wall.
     - Only the archer knocks out pieces and heroes where it stops (scored as usual), and death kings only; the others just have their power, and can stop where others stand and leave them be. A bomb where a hero stops blows it up. Knocking out a hero pays 15 (the guardian 20).
     - **Archer 🧝🏹:** the one hero that knocks out pieces and heroes. Goes forward or back with each roll, as its player likes (but not back off the takeoff spot). Tapping it shows both ways on the board, «جلو» and «عقب», to pick one. Landing on the dragon it slays it as a plain piece.
@@ -154,7 +155,7 @@ By default the game is scored, so knocking pieces out pays as well as racing:
 
 | | Points |
 | --- | --- |
-| The first player to bring all four pieces home | 100 |
+| The first player to bring all four pieces home | 200 |
 | A piece reaches the centre | 20 |
 | Knock out a piece in the first half of its track (squares 1–25) | 4 |
 | …between halfway and the last 15% (26–42) | 6 |
@@ -167,9 +168,9 @@ By default the game is scored, so knocking pieces out pays as well as racing:
 | A magic box that gives points | +20 |
 | A magic box that takes points | −10 |
 
-Bonuses multiply, and a single knock-out is capped at 100.
+Bonuses multiply, and a single knock-out is capped at 200.
 
-The numbers are kept small, with 100 the biggest award. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. They have come down twice: from 10/15/20/40, when a busy hunter could collect close to the first-home bonus before anyone finished, and the three track values from 5/7/10 to 4/6/8 (with the bonus for hitting with the king dropped) after a game where the runner-up out-scored the first player home.
+The numbers are kept small, with the first-home bonus the biggest award: it went from 100 to 200 in November 2026, so it is about a fifth of all the points a game hands out. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. They have come down twice: from 10/15/20/40, when a busy hunter could collect close to the first-home bonus before anyone finished, and the three track values from 5/7/10 to 4/6/8 (with the bonus for hitting with the king dropped) after a game where the runner-up out-scored the first player home.
 
 The game goes on after the first player finishes, until third place is decided (only one player left). Places go by points, with ties broken by pieces home and then finishing order, so finishing first nearly always decides the winner, and knock-outs settle the places behind.
 

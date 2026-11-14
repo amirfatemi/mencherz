@@ -10,6 +10,7 @@ import {
   HANGAR,
   HOME,
   HOME_FIRST,
+  homeCell,
   HOME_LAST,
   SEATS,
   TAKEOFF,
@@ -67,6 +68,8 @@ import {
   HERO_LIFE,
   ICE_TURNS,
   LAUNCH,
+  HERO_REST_ROUNDS,
+  heroRestLeft,
   THIEF_TIMES,
   type BombEvent,
   type HeroKind,
@@ -1432,7 +1435,7 @@ describe('the dragon', () => {
     assert.deepEqual([r.bombs.length, r.boxes.length, r.bridges.length], [1, 1, 1]);
   });
 
-  test('two sixes in a row leave a bomb where it stops and three a super bomb, for nobody, but not in a home column', () => {
+  test('two sixes in a row leave a bomb where it stops and three a super bomb, home columns too; what they take scores for the dragon', () => {
     let g = at(game([0, 1], { dragon: true }), 0, []);
     g.frozen[0] = [99, 99, 99, 99];
     // From square 10 a six takes it up blue's home column; the next to square 13, the third to 19.
@@ -1446,20 +1449,48 @@ describe('the dragon', () => {
     assert.deepEqual([third.event.dragon?.bomb, third.event.dragon?.superBomb], [19, true]);
     assert.deepEqual(third.state.bombs[1], { square: 19, owner: null, super: true });
     assert.equal(third.state.dragon?.sixes, 0, 'and the count starts over');
-    // Landing on the dragon's bomb blows a piece up and scores for nobody.
+    // Landing on the dragon's bomb blows a piece up: no player scores, the dragon does.
     const blown = at(game([0, 1], { dragon: true }), 1, [blueAt(24)]);
     blown.bombs = [{ square: 26, owner: null }];
     blown.turn = 1;
     const plan = planMove(blown, 1, 0, 2)!;
     assert.deepEqual([plan.to, plan.bombed?.points, plan.bombed?.owner], [HANGAR, 0, null]);
     Object.assign(blown, { phase: 'move', dice: 2, movable: [0] });
-    assert.deepEqual(applyMove(blown, 0).state.stats.map((st) => st.points), [0, 0, 0, 0]);
-    // A second six that takes it up a home column leaves none.
+    const after = applyMove(blown, 0).state;
+    assert.deepEqual(after.stats.map((st) => st.points), [0, 0, 0, 0]);
+    assert.deepEqual(after.dragonStats, { points: captureValue(blueAt(26)), captures: 1, slain: 0 });
+    // A second six that takes it up a home column leaves a bomb on that cell.
     const home = at(game([0, 1], { dragon: true }), 0, []);
     home.dragon = { at: onTrack(trackIndex(1, TRACK_LAST)) - 3, moved: 0, sixes: 1 };
     const up = applyRoll(home, 6);
-    assert.equal(up.event.dragon?.bomb, undefined);
-    assert.deepEqual(up.state.bombs, []);
+    const cell = DRAGON_PATH[up.state.dragon!.at] as { seat: Seat; pos: number };
+    assert.ok(cell.seat === 1 && cell.pos >= HOME_FIRST, 'up blue\'s home column');
+    assert.deepEqual([up.event.dragon?.bomb, up.state.bombs], [homeCell(1, cell.pos), [{ square: homeCell(1, cell.pos), owner: null }]]);
+    // Blue stepping on it there goes back, and the dragon scores a home-column knock-out.
+    const step = at(up.state, 1, [cell.pos - 2]);
+    Object.assign(step, { turn: 1, phase: 'move', dice: 2, movable: [0] });
+    const hit = applyMove(step, 0);
+    assert.deepEqual([hit.event.bombed?.square, hit.state.pieces[1][0], hit.state.bombs], [homeCell(1, cell.pos), HANGAR, []]);
+    assert.equal(hit.state.dragonStats.points, POINTS.captureHomeColumn);
+    // A super bomb in a home column takes that column's pieces within reach along.
+    const big = at(game([0, 1], { dragon: true }), 1, [HOME_FIRST, HOME_FIRST + 3, TRACK_LAST]);
+    big.bombs = [{ square: homeCell(1, HOME_FIRST + 2), owner: null, super: true }];
+    Object.assign(big, { turn: 1, phase: 'move', dice: 2, movable: [0, 1, 2] });
+    const boom = applyMove(big, 0);
+    assert.deepEqual(boom.event.bombed?.blast?.map((v) => [v.piece, v.from]), [[1, HOME_FIRST + 3]]);
+    assert.deepEqual(boom.state.pieces[1].slice(0, 3), [HANGAR, HANGAR, TRACK_LAST], 'the track is out of its reach');
+    assert.deepEqual([boom.state.dragonStats.captures, boom.state.dragonStats.points], [2, 2 * POINTS.captureHomeColumn]);
+  });
+
+  test('the dragon plays like a player: what it eats scores for it, and slaying it counts against it', () => {
+    const g = at(game([0, 1], { dragon: true }), 1, [blueAt(24)]);
+    g.dragon = { at: onTrack(20), moved: 0, sixes: 0 };
+    const r = applyRoll(g, 4);
+    assert.deepEqual(r.state.dragonStats, { points: captureValue(blueAt(24)), captures: 1, slain: 0 });
+    const s = at(game([0, 1], { dragon: true }), 0, [10]);
+    s.dragon = { at: onTrack(trackIndex(0, 13)), moved: 5, sixes: 0 };
+    Object.assign(s, { phase: 'move', dice: 3, movable: [0] });
+    assert.equal(applyMove(s, 0).state.dragonStats.slain, 1);
   });
 
   test('a king that lands on it slays it for the big prize, any other piece for a little; either way another comes ten rounds later', () => {
@@ -1596,6 +1627,30 @@ describe('heroes', () => {
     end.heroes[0]!.left = 2;
     const e = applyMove(rollFor(end, 5), HERO);
     assert.deepEqual([e.event.to, e.event.hero?.ends, e.state.heroes[0]], [22, true, null]);
+  });
+
+  test('a hero that leaves the board rests nine rounds before it can come again; the other two can come meanwhile', () => {
+    // The frost's lap ends: it rests, the archer and wizard don't.
+    const end = withHero('frost', 20);
+    end.heroTeams[0] = ['frost', 'archer', 'wizard'];
+    end.heroes[0]!.left = 2;
+    let g = applyMove(rollFor(end, 5), HERO).state;
+    assert.equal(g.heroes[0], null);
+    assert.equal(g.heroRest[0].frost, end.turnNo + HERO_REST_ROUNDS * 2);
+    assert.equal(heroRestLeft(g, 0, 'frost'), HERO_REST_ROUNDS);
+    rollFor(g, 6);
+    assert.deepEqual(g.movable, [0, 1, 2, 3, LAUNCH + 1, LAUNCH + 2], 'pieces, but not the frost again yet');
+    // Eight rounds on it still rests; after nine it can come.
+    g.turnNo = end.turnNo + 8 * 2;
+    assert.deepEqual([heroRestLeft(g, 0, 'frost'), rollFor(g, 6).movable], [1, [0, 1, 2, 3, LAUNCH + 1, LAUNCH + 2]]);
+    g.turnNo = end.turnNo + 9 * 2;
+    assert.deepEqual([heroRestLeft(g, 0, 'frost'), rollFor(g, 6).movable], [0, [0, 1, 2, 3, LAUNCH, LAUNCH + 1, LAUNCH + 2]]);
+    // Knocked out counts as leaving, too.
+    const shot = withHero('thief', 30);
+    at(shot, 1, [blueAt(28)]);
+    Object.assign(shot, { turn: 1, phase: 'move', dice: 2, movable: [0] });
+    const out = applyMove(shot, 0).state;
+    assert.deepEqual([out.heroes[0], out.heroRest[0].thief], [null, shot.turnNo + HERO_REST_ROUNDS * 2]);
   });
 
   test('the archer goes either way and knocks out what it lands on; whoever lands on a hero gets HERO_KILL, GUARDIAN_KILL for the guardian', () => {

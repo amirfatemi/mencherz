@@ -20,7 +20,7 @@ export const BOX_REVEAL_MS = 3000;
  * A roll that can't be played stays on the dice this long before the next player goes, in games with a
  * computer player, which would otherwise roll before anyone saw it. Among people the next one just rolls.
  */
-export const PASS_HOLD_MS = 5000;
+export const PASS_HOLD_MS = 2000;
 /** Picking a power on a power square. */
 export const POWER_MS = 300;
 /** A hero coming on to the board (launched). */

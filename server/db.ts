@@ -40,6 +40,17 @@ export function initSchema(db: Db) {
       attempts INTEGER NOT NULL DEFAULT 0
     );
 
+    -- The leaderboard's computer players ('bot:<seat>', one per colour) and the dragon, counted like people.
+    CREATE TABLE IF NOT EXISTS npc_stats (
+      id TEXT PRIMARY KEY,
+      games_played INTEGER NOT NULL DEFAULT 0,
+      wins INTEGER NOT NULL DEFAULT 0,
+      total_points INTEGER NOT NULL DEFAULT 0,
+      total_captures INTEGER NOT NULL DEFAULT 0,
+      total_lost INTEGER NOT NULL DEFAULT 0,
+      total_minutes INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS games (
       code TEXT PRIMARY KEY,
       status TEXT NOT NULL,

@@ -3367,3 +3367,10 @@ svg.board {
   transform-origin: center;
   animation: power-pulse 0.8s ease-in-out infinite alternate;
 }
+
+/* A hero resting after it left the board: on the bench, but not to be picked yet. */
+.bench-resting {
+  opacity: 0.62;
+  filter: grayscale(0.85);
+  cursor: not-allowed;
+}

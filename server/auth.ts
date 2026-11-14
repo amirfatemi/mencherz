@@ -1,5 +1,8 @@
 import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto';
+import type { Seat } from '../shared/board.ts';
 import {
+  BOT_NAMES,
+  DRAGON_NAME,
   LEADER_SORTS,
   type AccountStatus,
   type AdminUserRow,
@@ -72,6 +75,16 @@ interface UserRow {
 }
 
 // Each order breaks ties by points, then wins, then fewer games.
+/** A leaderboard id for a computer player ('bot:<seat>') or the dragon ('dragon'): what kind it is, and its seat. */
+function npcOf(id: string | null): Pick<LeaderRow, 'npc' | 'seat'> {
+  if (!id) return {};
+  if (id === 'dragon') return { npc: 'dragon' };
+  return { npc: 'bot', seat: Number(id.slice(4)) as Seat };
+}
+function npcName(id: string): string {
+  return id === 'dragon' ? DRAGON_NAME : (BOT_NAMES[Number(id.slice(4))] ?? id);
+}
+
 const LEADER_ORDER: Record<LeaderSort, string> = {
   points: 'total_points DESC, wins DESC, games_played ASC',
   // Points per game played (every listed player has played one).
@@ -156,11 +169,22 @@ export function createAuth(
     `),
     medalsOf: db.prepare('SELECT medals FROM users WHERE id = ?'),
     setMedals: db.prepare('UPDATE users SET medals = ? WHERE id = ?'),
+    recordNpc: db.prepare(`
+      INSERT INTO npc_stats (id, games_played, wins, total_points, total_captures, total_lost, total_minutes) VALUES (?, 1, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET games_played = games_played + 1, wins = wins + excluded.wins,
+        total_points = total_points + excluded.total_points, total_captures = total_captures + excluded.total_captures,
+        total_lost = total_lost + excluded.total_lost, total_minutes = total_minutes + excluded.total_minutes
+    `),
+    // People, and the computer players and the dragon (npc = their id), in one list.
     leaderboard: Object.fromEntries(
       LEADER_SORTS.map((sort) => [
         sort,
         db.prepare(`
-          SELECT username, total_points, games_played, wins, total_captures, total_lost, total_minutes, medals FROM users WHERE games_played > 0
+          SELECT * FROM (
+            SELECT username, NULL AS npc, total_points, games_played, wins, total_captures, total_lost, total_minutes, medals FROM users WHERE games_played > 0
+            UNION ALL
+            SELECT id AS username, id AS npc, total_points, games_played, wins, total_captures, total_lost, total_minutes, '{}' AS medals FROM npc_stats WHERE games_played > 0
+          )
           ORDER BY ${LEADER_ORDER[sort]}, username LIMIT 50
         `),
       ]),
@@ -279,14 +303,15 @@ export function createAuth(
   function leaderboard(req: Request): Response {
     const asked = new URL(req.url).searchParams.get('sort') as LeaderSort | null;
     const sort = asked && LEADER_SORTS.includes(asked) ? asked : 'points';
-    const rows = q.leaderboard[sort].all() as Pick<
+    const rows = q.leaderboard[sort].all() as (Pick<
       UserRow,
       'username' | 'total_points' | 'games_played' | 'wins' | 'total_captures' | 'total_lost' | 'total_minutes' | 'medals'
-    >[];
+    > & { npc: string | null })[];
     return json(
       rows.map(
         (r): LeaderRow => ({
-          username: r.username,
+          ...npcOf(r.npc),
+          username: r.npc ? npcName(r.npc) : r.username,
           points: r.total_points,
           gamesPlayed: r.games_played,
           wins: r.wins,
@@ -416,6 +441,10 @@ export function createAuth(
       const status = row ? statusOf(row) : 'disabled';
       if (status === 'pending') throw new InputError(`${who} is waiting for an admin to approve it. Until then it can't create or join games.`);
       if (status === 'disabled') throw new InputError(`${who} has been disabled by an admin, so it can't create or join games.`);
+    },
+    /** A computer player's ('bot:<seat>') or the dragon's ('dragon') game, for the leaderboard. */
+    recordNpc(id: string, won: boolean, stats: { points: number; captures: number; lost: number; minutes: number }) {
+      q.recordNpc.run(id, won ? 1 : 0, Math.max(0, Math.round(stats.points)), stats.captures, stats.lost, stats.minutes);
     },
     recordGame(userId: number, won: boolean, stats: { points: number; captures: number; lost: number; minutes: number; medals: string[] }) {
       q.recordGame.run(won ? 1 : 0, Math.max(0, Math.round(stats.points)), stats.captures, stats.lost, stats.minutes, userId);
