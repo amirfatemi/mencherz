@@ -139,7 +139,7 @@ export interface AdminUserRow {
 /** Computer players' names, one per colour and the same in every game: gods of Greek myth (sun, sea, olive, war). */
 export const BOT_NAMES = ['Apollo', 'Poseidon', 'Athena', 'Ares'] as const;
 /** The dragon's name on the scoreboard and the leaderboard, where it plays as one more player. */
-export const DRAGON_NAME = 'اژدها';
+export const DRAGON_NAME = 'Dragon';
 
 export interface LeaderRow {
   /** A person's username, or a computer player's or the dragon's name (see `npc`). */
