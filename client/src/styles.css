@@ -3014,9 +3014,6 @@ svg.board {
   align-items: center;
   gap: 4px;
 }
-.history-more {
-  margin-top: 10px;
-}
 .history-meta {
   margin: 0 0 12px;
   color: var(--muted);
@@ -3373,4 +3370,32 @@ svg.board {
   opacity: 0.62;
   filter: grayscale(0.85);
   cursor: not-allowed;
+}
+
+/* The game history's filters, and its pages of five. */
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 4px 0 10px;
+}
+.history-filters label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.history-filters label span {
+  white-space: nowrap;
+}
+.history-filters select {
+  min-width: 9em;
+}
+.history-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
 }

@@ -201,10 +201,27 @@ export interface GameRecord {
   awards: Award[];
 }
 
-/** A page of the game history, newest first; `next` asks for the page after it. */
+/** How long a game took, for filtering the history: under 30 minutes, 30 to 60, or over 60. */
+export const GAME_LENGTHS = ['short', 'medium', 'long'] as const;
+export type GameLength = (typeof GAME_LENGTHS)[number];
+export function lengthOf(playedMs: number): GameLength {
+  const minutes = playedMs / 60000;
+  return minutes < 30 ? 'short' : minutes <= 60 ? 'medium' : 'long';
+}
+
+/** How many finished games a page of the history holds. */
+export const HISTORY_PAGE = 5;
+
+/**
+ * A page of the game history (practice games left out), newest first, filtered by winner and length: the page's
+ * games, which page it is (from 1) of how many, how many games match, and everyone who has won one, to filter by.
+ */
 export interface HistoryPage {
   games: GameRecord[];
-  next: number | null;
+  page: number;
+  pages: number;
+  total: number;
+  winners: string[];
 }
 
 export interface PairCode {

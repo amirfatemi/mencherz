@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { MEDAL_BY_ID } from '../../../shared/awards.ts';
 import { COLOR_HEX } from '../../../shared/board.ts';
-import type { GameRecord, HistoryPage } from '../../../shared/protocol.ts';
+import { GAME_LENGTHS, type GameLength, type GameRecord, type HistoryPage } from '../../../shared/protocol.ts';
 import { api } from '../api.ts';
 import { formatDuration } from '../duration.ts';
 import { Modal } from './Modal.tsx';
@@ -77,7 +77,6 @@ function GameReport({ game, me, onClose }: { game: GameRecord; me: string; onClo
         </>
       )}
       {game.stopped && <p className="muted">Everyone left, so the game was stopped.</p>}
-      {!game.ranked && <p className="muted small">Practice game: with only one person playing, it didn't count on the leaderboard.</p>}
       <div className="modal-actions">
         <button className="btn primary" onClick={onClose}>
           Close
@@ -87,36 +86,80 @@ function GameReport({ game, me, onClose }: { game: GameRecord; me: string; onClo
   );
 }
 
-/** Every finished game, newest first, a page at a time; picking one opens its report. */
+const LENGTH_LABELS: Record<GameLength, string> = { short: 'Under 30 min', medium: '30–60 min', long: 'Over 60 min' };
+
+/** Every finished game that counted, newest first, five to a page, by winner and length; picking one opens its report. */
 export function GameHistory({ me }: { me: string }) {
-  const [games, setGames] = useState<GameRecord[] | null>(null);
-  const [next, setNext] = useState<number | null>(null);
+  const [data, setData] = useState<HistoryPage | null>(null);
+  const [page, setPage] = useState(1);
+  const [winner, setWinner] = useState('');
+  const [length, setLength] = useState<GameLength | ''>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<GameRecord | null>(null);
 
-  const load = (before: number | null) => {
+  useEffect(() => {
     setLoading(true);
-    api<HistoryPage>(`/history${before ? `?before=${before}` : ''}`)
-      .then((page) => {
-        setGames((list) => (before && list ? [...list, ...page.games] : page.games));
-        setNext(page.next);
+    const query = new URLSearchParams({ page: String(page), ...(winner ? { winner } : {}), ...(length ? { length } : {}) });
+    api<HistoryPage>(`/history?${query}`)
+      .then((d) => {
+        setData(d);
         setError(null);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  };
-  useEffect(() => load(null), []);
+  }, [page, winner, length]);
+  const games = data?.games ?? null;
+  const filtered = !!winner || !!length;
 
   return (
     <section className="card history">
       <h2>🗂 Game history</h2>
-      <p className="muted small">Every finished game. Tap one to see when it was played, who was there, and its end-of-game report.</p>
+      <p className="muted small">
+        Every finished game that counted (practice games against computers alone aren't listed). Tap one to see when it was played, who was
+        there, and its end-of-game report.
+      </p>
+      <div className="history-filters">
+        <label>
+          <span>🥇 Winner</span>
+          <select
+            value={winner}
+            onChange={(e) => {
+              setWinner(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">Anyone</option>
+            {(data?.winners ?? []).map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>⏱ Length</span>
+          <select
+            value={length}
+            onChange={(e) => {
+              setLength(e.target.value as GameLength | '');
+              setPage(1);
+            }}
+          >
+            <option value="">Any length</option>
+            {GAME_LENGTHS.map((l) => (
+              <option key={l} value={l}>
+                {LENGTH_LABELS[l]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {error && <div className="error small">{error}</div>}
       {!games ? (
         !error && <p className="muted">Loading…</p>
       ) : games.length === 0 ? (
-        <p className="muted">No finished games yet.</p>
+        <p className="muted">{filtered ? 'No games match these filters.' : 'No finished games yet.'}</p>
       ) : (
         <ul className="history-list">
           {games.map((g) => {
@@ -128,7 +171,6 @@ export function GameHistory({ me }: { me: string }) {
                   <span className="history-main">
                     <span className="history-name">
                       {g.name}
-                      {!g.ranked && <span className="pill">practice</span>}
                       {g.stopped && <span className="pill">stopped</span>}
                     </span>
                     <span className="history-players">
@@ -149,10 +191,18 @@ export function GameHistory({ me }: { me: string }) {
           })}
         </ul>
       )}
-      {next !== null && (
-        <button className="btn ghost small history-more" disabled={loading} onClick={() => load(next)}>
-          {loading ? 'Loading…' : 'Show older games'}
-        </button>
+      {data && data.total > 0 && (
+        <div className="history-pager">
+          <button className="btn ghost small" disabled={loading || data.page <= 1} onClick={() => setPage(data.page - 1)}>
+            ‹ Newer
+          </button>
+          <span className="muted small">
+            Page {data.page} of {data.pages} · {data.total} {data.total === 1 ? 'game' : 'games'}
+          </span>
+          <button className="btn ghost small" disabled={loading || data.page >= data.pages} onClick={() => setPage(data.page + 1)}>
+            Older ›
+          </button>
+        </div>
       )}
       {open && <GameReport game={open} me={me} onClose={() => setOpen(null)} />}
     </section>
