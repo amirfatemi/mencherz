@@ -137,7 +137,7 @@ export interface AdminUserRow {
 }
 
 /** Computer players' names, one per colour and the same in every game: gods of Greek myth (sun, sea, olive, war). */
-export const BOT_NAMES = ['آپولو', 'پوزئیدون', 'آتنا', 'آرس'] as const;
+export const BOT_NAMES = ['Apollo', 'Poseidon', 'Athena', 'Ares'] as const;
 /** The dragon's name on the scoreboard and the leaderboard, where it plays as one more player. */
 export const DRAGON_NAME = 'اژدها';
 

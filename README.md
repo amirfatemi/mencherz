@@ -64,7 +64,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
   - Join by code or invite link.
   - A list of open public games, which can be joined, or watched once they're in progress.
   - "Your games", which lets you resume any game and flags the ones where it's your turn.
-  - A leaderboard of every player's total points, average points per game, games and wins. The computer players count there too, one name per colour (Apollo, Poseidon, Athena and Ares, in Persian), and so does the dragon.
+  - A leaderboard of every player's total points, average points per game, games and wins. The computer players count there too, one name per colour (Apollo, Poseidon, Athena and Ares), and so does the dragon.
   - **Game history:** every finished game that counted (practice games against computers alone are left out), newest first, 5 to a page, filtered by winner and by length (under 30 minutes, 30–60, over 60). Tapping one shows when it started and ended, how long it took, who played (bots too, and who left), the final table, the highlights and the medals won: its whole end-of-game report. Each report is worked out once, the first time it's asked for, and kept with the game (`server/history.ts`).
 - **Waiting room:** four seats (Red, Blue, Green, Yellow). The host sets each seat to *open*, *computer (easy / normal / hard)* or *nobody*, and can remove players, change settings and start the game. Players can switch to any free seat.
 - **Game:**
