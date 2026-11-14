@@ -17,8 +17,8 @@ export const POINTS = {
   boxPenalty: 10,
   /** Won when a magic box turns out to give points. */
   boxBonus: 20,
-  /** For the first player to bring all four pieces home: about a fifth of all the points a game hands out. */
-  firstHome: 200,
+  /** For the first player to bring all four pieces home: about a sixth of all the points a game hands out. */
+  firstHome: 150,
 } as const;
 
 /** Knocking out the player who last knocked out one of yours is worth this much more, once per knock-out received. */

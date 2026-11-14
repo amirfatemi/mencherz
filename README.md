@@ -155,7 +155,7 @@ By default the game is scored, so knocking pieces out pays as well as racing:
 
 | | Points |
 | --- | --- |
-| The first player to bring all four pieces home | 200 |
+| The first player to bring all four pieces home | 150 |
 | A piece reaches the centre | 20 |
 | Knock out a piece in the first half of its track (squares 1–25) | 4 |
 | …between halfway and the last 15% (26–42) | 6 |
@@ -168,9 +168,9 @@ By default the game is scored, so knocking pieces out pays as well as racing:
 | A magic box that gives points | +20 |
 | A magic box that takes points | −10 |
 
-Bonuses multiply, and a single knock-out is capped at 200.
+Bonuses multiply, and a single knock-out is capped at 150.
 
-The numbers are kept small, with the first-home bonus the biggest award: it went from 100 to 200 in November 2026, so it is about a fifth of all the points a game hands out. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. They have come down twice: from 10/15/20/40, when a busy hunter could collect close to the first-home bonus before anyone finished, and the three track values from 5/7/10 to 4/6/8 (with the bonus for hitting with the king dropped) after a game where the runner-up out-scored the first player home.
+The numbers are kept small, with the first-home bonus the biggest award: it went from 100 to 150 in November 2026 (200 for a day, when the first player home won nearly every game), so it is about a sixth of all the points a game hands out. They were balanced with bot games played to third place: knock-outs make up about a fifth of all points. They have come down twice: from 10/15/20/40, when a busy hunter could collect close to the first-home bonus before anyone finished, and the three track values from 5/7/10 to 4/6/8 (with the bonus for hitting with the king dropped) after a game where the runner-up out-scored the first player home.
 
 The game goes on after the first player finishes, until third place is decided (only one player left). Places go by points, with ties broken by pieces home and then finishing order, so finishing first nearly always decides the winner, and knock-outs settle the places behind.
 
