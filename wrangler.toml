@@ -33,8 +33,8 @@ binding = "CF_VERSION_METADATA"
 [vars]
 # Usernames that are admins: they can list every account and set passwords at /admin.
 ADMINS = "amir"
-# Monthly encrypted backups go to a draft release of this repository (see DEPLOY.md, "Backups"). The token and the
-# key are secrets: wrangler secret put GITHUB_TOKEN, wrangler secret put BACKUP_KEY.
+# Monthly backups go to a draft release of this repository (see DEPLOY.md, "Backups"). The GitHub token is a
+# secret: wrangler secret put GITHUB_TOKEN.
 BACKUP_REPO = "amirfatemi/mencherz"
 BACKUP_KEEP = "12"
 

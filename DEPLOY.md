@@ -87,37 +87,30 @@ The live site has its own data, in the Durable Object. It starts empty: accounts
 
 ## Backups
 
-On the 1st of every month at 02:30 UTC (06:00 in Tehran) the Worker's schedule (`[triggers]` in `wrangler.toml`) has the Durable Object back up every account, game and leaderboard record. The backup is gzipped, encrypted with AES-256-GCM, and uploaded as an asset of a **draft** release, "Database backups", in the GitHub repository named by `BACKUP_REPO`. The newest `BACKUP_KEEP` (12, a year's worth) are kept. A draft release is seen only by people who can push to the repository, and an uploaded asset is no commit, so it starts no deploy. Sessions and pairing codes are left out: after a restore everyone signs in again.
+On the 1st of every month at 02:30 UTC (06:00 in Tehran) the Worker's schedule (`[triggers]` in `wrangler.toml`) has the Durable Object back up every account, game and leaderboard record, as gzipped JSON, uploaded as an asset of a **draft** release, "Database backups", in the GitHub repository named by `BACKUP_REPO`. The newest `BACKUP_KEEP` (12, a year's worth) are kept. A draft release is seen only by people who can push to the repository, and an uploaded asset is no commit, so it starts no deploy. The backups aren't encrypted (they hold every account, with its password hash), so **never publish that release**. Sessions and pairing codes are left out: after a restore everyone signs in again.
 
-Set it up once (backups are skipped until both secrets exist):
+Set it up once (backups are skipped until the token exists):
 
 1. On GitHub, create a fine-grained personal access token: **Settings → Developer settings → Fine-grained tokens**, repository access **Only select repositories → mencherz**, permission **Contents: Read and write**. Give it an expiry date you'll remember to renew.
-2. Make the backup key and keep a copy somewhere safe, such as a password manager. Without it no backup can be opened:
-
-   ```sh
-   openssl rand -base64 32
-   ```
-
-3. Add both as Worker secrets (each command asks for the value):
+2. Add it as a Worker secret (the command asks for the value):
 
    ```sh
    set -a; . ~/.cloudflare.env; set +a
    npx wrangler secret put GITHUB_TOKEN
-   npx wrangler secret put BACKUP_KEY
    ```
 
-4. Check it works: **Admin → Backups → Back up now**. The backup appears in the list and under the repository's **Releases** (as a draft).
+3. Check it works: **Admin → Backups → Back up now**. The backup appears in the list and under the repository's **Releases** (as a draft).
 
 **Restoring:** **Admin → Backups → Restore** on the backup to go back to. The server first backs up what's there (a `before-restore` backup), then replaces all accounts, games and records with the backup's, and starts over on it. Everyone signs in again.
 
-**Reading a backup on your machine:** download it from the draft release, then:
+**Reading a backup on your machine:** download it from the draft release. It's gzipped JSON, so any unzip tool opens it; or:
 
 ```sh
-BACKUP_KEY=... node server/backup-cli.ts json   mencherz-….mzb backup.json   # everything, as JSON
-BACKUP_KEY=... node server/backup-cli.ts sqlite mencherz-….mzb copy.db       # then DB_PATH=copy.db npm start
+node server/backup-cli.ts sqlite mencherz-….json.gz copy.db    # then DB_PATH=copy.db npm start
+node server/backup-cli.ts json   mencherz-….json.gz backup.json
 ```
 
-The Node server takes the same settings from its environment (`GITHUB_TOKEN`, `BACKUP_KEY`, `BACKUP_REPO`, `BACKUP_KEEP`), for **Back up now** and restores; it has no schedule of its own.
+The Node server takes the same settings from its environment (`GITHUB_TOKEN`, `BACKUP_REPO`, `BACKUP_KEEP`), for **Back up now** and restores; it has no schedule of its own.
 
 ## Admins
 

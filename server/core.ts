@@ -20,7 +20,7 @@ export interface CoreConfig {
   signInTries?: number;
   /** The deployed version, reported by /api/health. */
   version?: string;
-  /** Where and how backups go (GitHub, encrypted); without it there are none. */
+  /** Where backups go (a GitHub repository's draft release); without it there are none. */
   backup?: BackupConfig;
   /** Runs a function as one database transaction (the Durable Object's own way, or BEGIN/COMMIT on Node). */
   transaction?: <T>(fn: () => T) => T;
@@ -72,7 +72,7 @@ export function createGameServer(config: CoreConfig) {
     if (!user) return auth.json({ error: 'Not signed in' }, 401);
     if (!user.isAdmin) return auth.json({ error: 'Admins only' }, 403);
     const cfg = config.backup;
-    if (!cfg) return auth.json({ error: "Backups aren't set up: the server needs GITHUB_TOKEN and BACKUP_KEY" }, 400);
+    if (!cfg) return auth.json({ error: "Backups aren't set up: the server needs a GITHUB_TOKEN" }, 400);
     try {
       if (path === '/admin/backups' && request.method === 'GET') return auth.json(await listBackups(cfg, config.fetcher));
       if (path === '/admin/backup' && request.method === 'POST') return auth.json(await backUp(db, cfg, config.fetcher, 'manual'));

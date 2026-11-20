@@ -1,6 +1,6 @@
 import type { Db, SqlValue } from './db.ts';
 
-// Backups of everything worth keeping (accounts, games, the computer players' and dragon's records), encrypted and
+// Backups of everything worth keeping (accounts, games, the computer players' and dragon's records), as gzipped JSON
 // kept as assets of a draft release of the project's GitHub repository: drafts are seen only by those who can push,
 // and an asset is no commit, so it starts no deploy. Sessions and pairing codes are left out: after a restore,
 // everyone signs in again.
@@ -22,8 +22,6 @@ export interface BackupConfig {
   token: string;
   /** owner/name of the repository. */
   repo: string;
-  /** The AES-256 key, as base64 of 32 bytes. Without it a backup can't be read. */
-  key: string;
   /** How many backups to keep; older ones are deleted. */
   keep: number;
 }
@@ -64,41 +62,19 @@ export function importData(db: Db, data: BackupData, transaction: <T>(fn: () => 
   });
 }
 
-// ---------- encryption: gzip, then AES-256-GCM. A file is MAGIC, a 12-byte IV, then the ciphertext. ----------
-
-const MAGIC = new TextEncoder().encode('MZB1');
-
-async function aesKey(base64: string): Promise<CryptoKey> {
-  const raw = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  if (raw.length !== 32) throw new Error('BACKUP_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)');
-  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
-}
+// ---------- a backup file is the data as JSON, gzipped ----------
 
 async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream): Promise<Uint8Array> {
   return new Uint8Array(await new Response(new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(stream)).arrayBuffer());
 }
 
-export async function encrypt(data: BackupData, key: string): Promise<Uint8Array> {
-  const packed = await pipe(new TextEncoder().encode(JSON.stringify(data)), new CompressionStream('gzip'));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await aesKey(key), packed as Uint8Array<ArrayBuffer>));
-  const out = new Uint8Array(MAGIC.length + iv.length + sealed.length);
-  out.set(MAGIC);
-  out.set(iv, MAGIC.length);
-  out.set(sealed, MAGIC.length + iv.length);
-  return out;
+export async function pack(data: BackupData): Promise<Uint8Array> {
+  return pipe(new TextEncoder().encode(JSON.stringify(data)), new CompressionStream('gzip'));
 }
 
-export async function decrypt(file: Uint8Array, key: string): Promise<BackupData> {
-  if (MAGIC.some((b, i) => file[i] !== b)) throw new Error('Not a Mencherz backup file');
-  const iv = file.slice(MAGIC.length, MAGIC.length + 12);
-  let packed: Uint8Array;
-  try {
-    packed = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await aesKey(key), file.slice(MAGIC.length + 12)));
-  } catch {
-    throw new Error("That backup can't be opened with this key");
-  }
-  return JSON.parse(new TextDecoder().decode(await pipe(packed, new DecompressionStream('gzip'))));
+export async function unpack(file: Uint8Array): Promise<BackupData> {
+  if (file[0] !== 0x1f || file[1] !== 0x8b) throw new Error('Not a Mencherz backup file');
+  return JSON.parse(new TextDecoder().decode(await pipe(file, new DecompressionStream('gzip'))));
 }
 
 // ---------- GitHub: one draft release holds the backups as assets ----------
@@ -133,7 +109,7 @@ function github(cfg: BackupConfig, fetcher: typeof fetch) {
     const all = (await (await call('/releases?per_page=100')).json()) as Release[];
     const found = all.find((r) => r.tag_name === RELEASE_TAG && r.draft);
     if (found) return found;
-    const body = { tag_name: RELEASE_TAG, name: 'Database backups', draft: true, body: 'Encrypted monthly backups of the live game database, made by the server. Never publish this release.' };
+    const body = { tag_name: RELEASE_TAG, name: 'Database backups', draft: true, body: 'Monthly backups of the live game database (gzipped JSON), made by the server. Never publish this release: they hold every account.' };
     return (await (await call('/releases', { method: 'POST', body: JSON.stringify(body) })).json()) as Release;
   };
   return { call, release };
@@ -149,10 +125,10 @@ export async function listBackups(cfg: BackupConfig, fetcher: typeof fetch = fet
 
 /** Takes a backup, puts it on GitHub, and deletes the oldest beyond `keep`. */
 export async function backUp(db: Db, cfg: BackupConfig, fetcher: typeof fetch = fetch, label = 'monthly'): Promise<BackupFile> {
-  const bytes = await encrypt(exportData(db), cfg.key);
+  const bytes = await pack(exportData(db));
   const gh = github(cfg, fetcher);
   const rel = await gh.release();
-  const name = `mencherz-${new Date().toISOString().replace(/[:.]/g, '-')}-${label}.mzb`;
+  const name = `mencherz-${new Date().toISOString().replace(/[:.]/g, '-')}-${label}.json.gz`;
   const upload = rel.upload_url.replace(/\{.*\}$/, '') + `?name=${encodeURIComponent(name)}`;
   const asset = (await (await gh.call(upload, { method: 'POST', body: bytes, headers: { 'content-type': 'application/octet-stream' } })).json()) as Release['assets'][number];
   for (const old of newestFirst(rel).filter((a) => a.name !== name).slice(Math.max(0, cfg.keep - 1))) {
@@ -175,5 +151,5 @@ export async function fetchBackup(cfg: BackupConfig, name: string, fetcher: type
   const location = res.headers.get('location');
   if (res.status >= 300 && res.status < 400 && location) res = await fetcher(location);
   if (!res.ok) throw new Error(`GitHub download of ${name}: ${res.status}`);
-  return decrypt(new Uint8Array(await res.arrayBuffer()), cfg.key);
+  return unpack(new Uint8Array(await res.arrayBuffer()));
 }

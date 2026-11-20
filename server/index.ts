@@ -15,9 +15,7 @@ const server = await startServer({
   admins: env.ADMINS?.split(',').map((s) => s.trim()).filter(Boolean),
   clientDir: join(root, 'dist', 'client'),
   backup:
-    env.GITHUB_TOKEN && env.BACKUP_KEY && env.BACKUP_REPO
-      ? { token: env.GITHUB_TOKEN, key: env.BACKUP_KEY, repo: env.BACKUP_REPO, keep: Number(env.BACKUP_KEEP) || 12 }
-      : undefined,
+    env.GITHUB_TOKEN && env.BACKUP_REPO ? { token: env.GITHUB_TOKEN, repo: env.BACKUP_REPO, keep: Number(env.BACKUP_KEEP) || 12 } : undefined,
   restartOnRestore: true,
 });
 console.log(`Mencherz listening on http://localhost:${server.port}`);

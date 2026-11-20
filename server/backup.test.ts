@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { backUp, decrypt, encrypt, exportData, fetchBackup, importData, listBackups, type BackupConfig } from './backup.ts';
+import { gunzipSync } from 'node:zlib';
+import { backUp, exportData, fetchBackup, importData, listBackups, pack, unpack, type BackupConfig } from './backup.ts';
 import { createGameServer } from './core.ts';
 import { initSchema } from './db.ts';
 import { openSqlite } from './sqlite.ts';
 
-const KEY = Buffer.alloc(32, 7).toString('base64');
-const CFG: BackupConfig = { token: 't0ken', repo: 'someone/game', key: KEY, keep: 3 };
+const CFG: BackupConfig = { token: 't0ken', repo: 'someone/game', keep: 3 };
 
 /** Just enough of GitHub's releases API: one repository's releases, their assets, and downloads by redirect. */
 function fakeGitHub() {
@@ -62,18 +62,18 @@ function filledDb() {
   return db;
 }
 
-test('a backup opens only with its key, and puts back accounts, games and records, signing everyone out', async () => {
+test('a backup is gzipped JSON, and puts back accounts, games and records, signing everyone out', async () => {
   const from = filledDb();
   const data = exportData(from);
   assert.deepEqual(data.tables.games, [{ code: 'ABCDE', status: 'finished', data: '{"paused":true}', created_at: 5, updated_at: 6 }], 'no cached report');
-  const file = await encrypt(data, KEY);
-  assert.ok(!new TextDecoder().decode(file).includes('hash1'), 'nothing readable in it');
-  await assert.rejects(decrypt(file, Buffer.alloc(32, 8).toString('base64')), /can't be opened/);
-  assert.deepEqual(await decrypt(file, KEY), data);
+  const file = await pack(data);
+  assert.deepEqual(JSON.parse(gunzipSync(file).toString()), data, 'any unzip tool opens it');
+  assert.deepEqual(await unpack(file), data);
+  await assert.rejects(unpack(new TextEncoder().encode('{}')), /Not a Mencherz backup/);
 
   const to = filledDb();
   to.prepare("INSERT INTO users (id, username, password_hash, created_at) VALUES (3, 'newer', 'hash3', 3)").run();
-  importData(to, await decrypt(file, KEY));
+  importData(to, await unpack(file));
   assert.deepEqual(to.prepare('SELECT id, username, password_hash, total_points FROM users ORDER BY id').all().map((r) => ({ ...(r as object) })), [
     { id: 1, username: 'amir', password_hash: 'hash1', total_points: 120 },
     { id: 2, username: 'mom', password_hash: 'hash2', total_points: 80 },
@@ -99,10 +99,10 @@ test('backups go to one draft release on GitHub, keeping the newest few', async 
   assert.deepEqual([gh.releases[0].tag_name, gh.releases[0].draft], ['database-backups', true]);
   const list = await listBackups(CFG, gh.fetcher);
   assert.deepEqual(list.map((f) => f.name), names.slice(2).reverse(), 'the newest three, newest first');
-  assert.ok(list.every((f) => /^mencherz-\d{4}-\d\d-\d\dT[\d-]+Z-n\d\.mzb$/.test(f.name)));
+  assert.ok(list.every((f) => /^mencherz-\d{4}-\d\d-\d\dT[\d-]+Z-n\d\.json\.gz$/.test(f.name)));
   const back = await fetchBackup(CFG, list[0].name, gh.fetcher);
   assert.equal(back.tables.users.length, 2);
-  await assert.rejects(fetchBackup(CFG, 'nope.mzb', gh.fetcher), /No backup called/);
+  await assert.rejects(fetchBackup(CFG, 'nope.json.gz', gh.fetcher), /No backup called/);
 });
 
 test('an admin can take a backup and restore one; the server starts over on it', async () => {
@@ -122,7 +122,7 @@ test('an admin can take a backup and restore one; the server starts over on it',
   const boss = await signUp('boss');
   const as = (init: RequestInit = {}) => ({ ...init, headers: { cookie: boss, 'content-type': 'application/json' } });
   const made = (await (await api('/admin/backup', as({ method: 'POST' }))).json()) as { name: string };
-  assert.match(made.name, /-manual\.mzb$/);
+  assert.match(made.name, /-manual\.json\.gz$/);
   // Later someone is wiped out; the backup brings them back.
   db.prepare("DELETE FROM users WHERE username = 'mom'").run();
   const res = await api('/admin/restore', as({ method: 'POST', body: JSON.stringify({ name: made.name }) }));
@@ -131,7 +131,7 @@ test('an admin can take a backup and restore one; the server starts over on it',
   // Everyone is signed out by a restore, the admin too.
   assert.equal((await api('/admin/backups', as())).status, 401);
   const list = await listBackups(CFG, gh.fetcher);
-  assert.ok(list.some((f) => f.name.endsWith('-before-restore.mzb')), 'what was there is kept too');
+  assert.ok(list.some((f) => f.name.endsWith('-before-restore.json.gz')), 'what was there is kept too');
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(restarted, 1);
   server.shutdown();
