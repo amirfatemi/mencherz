@@ -111,8 +111,8 @@ export function createGameServer(config: CoreConfig) {
       }
     },
 
-    /** Takes a backup now (the daily one, from the Worker's schedule); null when backups aren't set up. */
-    async backUp(label = 'daily') {
+    /** Takes a backup now (the monthly one, from the Worker's schedule); null when backups aren't set up. */
+    async backUp(label = 'monthly') {
       return config.backup ? backUp(db, config.backup, config.fetcher, label) : null;
     },
 

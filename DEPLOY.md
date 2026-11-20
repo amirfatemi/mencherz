@@ -87,7 +87,7 @@ The live site has its own data, in the Durable Object. It starts empty: accounts
 
 ## Backups
 
-Every day at 02:30 UTC (06:00 in Tehran) the Worker's schedule (`[triggers]` in `wrangler.toml`) has the Durable Object back up every account, game and leaderboard record. The backup is gzipped, encrypted with AES-256-GCM, and uploaded as an asset of a **draft** release, "Database backups", in the GitHub repository named by `BACKUP_REPO`. The newest `BACKUP_KEEP` (14) are kept. A draft release is seen only by people who can push to the repository, and an uploaded asset is no commit, so it starts no deploy. Sessions and pairing codes are left out: after a restore everyone signs in again.
+On the 1st of every month at 02:30 UTC (06:00 in Tehran) the Worker's schedule (`[triggers]` in `wrangler.toml`) has the Durable Object back up every account, game and leaderboard record. The backup is gzipped, encrypted with AES-256-GCM, and uploaded as an asset of a **draft** release, "Database backups", in the GitHub repository named by `BACKUP_REPO`. The newest `BACKUP_KEEP` (12, a year's worth) are kept. A draft release is seen only by people who can push to the repository, and an uploaded asset is no commit, so it starts no deploy. Sessions and pairing codes are left out: after a restore everyone signs in again.
 
 Set it up once (backups are skipped until both secrets exist):
 
@@ -117,7 +117,7 @@ BACKUP_KEY=... node server/backup-cli.ts json   mencherz-….mzb backup.json   #
 BACKUP_KEY=... node server/backup-cli.ts sqlite mencherz-….mzb copy.db       # then DB_PATH=copy.db npm start
 ```
 
-The Node server takes the same settings from its environment (`GITHUB_TOKEN`, `BACKUP_KEY`, `BACKUP_REPO`, `BACKUP_KEEP`), for **Back up now** and restores; it has no daily schedule of its own.
+The Node server takes the same settings from its environment (`GITHUB_TOKEN`, `BACKUP_KEY`, `BACKUP_REPO`, `BACKUP_KEEP`), for **Back up now** and restores; it has no schedule of its own.
 
 ## Admins
 

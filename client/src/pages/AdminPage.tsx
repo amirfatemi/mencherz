@@ -77,7 +77,7 @@ interface BackupFile {
 }
 
 /**
- * The database's backups on GitHub (a draft release of the project's repository, encrypted): taken every day by
+ * The database's backups on GitHub (a draft release of the project's repository, encrypted): taken every month by
  * the server, or now; any can be put back, which first backs up what's there and signs everyone out.
  */
 function Backups() {
@@ -133,8 +133,8 @@ function Backups() {
         </button>
       </div>
       <p className="muted small">
-        Every day at 06:00 (Tehran) the server backs up all accounts, games and records, encrypted, to a draft release of the project's GitHub
-        repository, keeping the last two weeks. Only someone with the backup key can open one.
+        On the 1st of every month at 06:00 (Tehran) the server backs up all accounts, games and records, encrypted, to a draft release of the
+        project's GitHub repository, keeping the last 12. Only someone with the backup key can open one.
       </p>
       {error && <div className="error">{error}</div>}
       {note && <div className="notice">{note}</div>}

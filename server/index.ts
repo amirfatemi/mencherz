@@ -16,7 +16,7 @@ const server = await startServer({
   clientDir: join(root, 'dist', 'client'),
   backup:
     env.GITHUB_TOKEN && env.BACKUP_KEY && env.BACKUP_REPO
-      ? { token: env.GITHUB_TOKEN, key: env.BACKUP_KEY, repo: env.BACKUP_REPO, keep: Number(env.BACKUP_KEEP) || 14 }
+      ? { token: env.GITHUB_TOKEN, key: env.BACKUP_KEY, repo: env.BACKUP_REPO, keep: Number(env.BACKUP_KEEP) || 12 }
       : undefined,
   restartOnRestore: true,
 });

@@ -86,7 +86,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 - **Turn timer:** off, or 10–90 s. When time runs out, the move is made for the player. The host can **pause** the game, which stops the clock and all turns, bots included, and resume it later.
 - **Absent players:** a player who closes the tab has their turns played for them, so the others can carry on. A game where no human is present pauses.
 - **Auto-save:** every change is written to SQLite, and games survive a server restart. Leaving mid-game hands your seat to a computer player.
-- **Backups:** every day the live server backs up all accounts, games and records, encrypted, to a draft release of this repository, keeping two weeks; an admin can back up now or restore one from the Admin page (see DEPLOY.md).
+- **Backups:** once a month the live server backs up all accounts, games and records, encrypted, to a draft release of this repository, keeping a year's worth; an admin can back up now or restore one from the Admin page (see DEPLOY.md).
 - **Game clock:** the scoreboard shows the time played (pauses left out), and the results the whole game's length.
 - **End-of-game report:** with the results come the game's highlights (player of the match, top hunter, biggest hit, longest kill streak, demolition expert, frequent flyer, six machine, unluckiest) and the medals each person won.
 - **Medals and titles** (`shared/awards.ts`): in games that count, players win medals for good (Rocket, Hunter, Triple kill, Sniper, Demolisher, Untouchable, Dragon slayer, Phoenix), shown on the leaderboard and the Settings page. A title comes with total points: Rookie, Pilot (150), Captain (500), Ace (1200), Legend (2500).
@@ -229,7 +229,7 @@ server/     the game server, independent of where it runs
   hub.ts      rooms, broadcasts and acks over plain WebSockets
   auth.ts     sign-up/in, sessions, login rate limit, one-time codes, account approval, leaderboard
   history.ts  the game history: each finished game's end-of-game report
-  backup.ts   daily encrypted backups to a draft GitHub release, and restoring one (backup-cli.ts opens a file)
+  backup.ts   monthly encrypted backups to a draft GitHub release, and restoring one (backup-cli.ts opens a file)
   rooms.ts    lobby, seats, turn flow, bots, timers, persistence
   db.ts       SQLite schema, behind an interface both runtimes implement
   app.ts, index.ts, sqlite.ts   the Node runtime: Express for the client, `ws`, node:sqlite

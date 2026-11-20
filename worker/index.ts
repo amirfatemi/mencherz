@@ -24,7 +24,7 @@ interface Env {
   BACKUP_KEEP?: string;
 }
 
-/** Asked by the daily schedule; not under /api, so nothing from outside reaches it. */
+/** Asked by the monthly schedule; not under /api, so nothing from outside reaches it. */
 const BACKUP_PATH = '/_backup';
 
 const VERSION_HEADER = 'x-mencherz-version';
@@ -44,7 +44,7 @@ export class MencherzHub extends DurableObject<Env> {
       version: env.CF_VERSION_METADATA?.id,
       backup:
         env.GITHUB_TOKEN && env.BACKUP_KEY && env.BACKUP_REPO
-          ? { token: env.GITHUB_TOKEN, key: env.BACKUP_KEY, repo: env.BACKUP_REPO, keep: Number(env.BACKUP_KEEP) || 14 }
+          ? { token: env.GITHUB_TOKEN, key: env.BACKUP_KEY, repo: env.BACKUP_REPO, keep: Number(env.BACKUP_KEEP) || 12 }
           : undefined,
       transaction: (fn) => ctx.storage.transactionSync(fn),
       // A restored backup is read in by a fresh object.
@@ -119,7 +119,7 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  /** The daily backup (wrangler.toml [triggers]). */
+  /** The monthly backup (wrangler.toml [triggers]). */
   async scheduled(_controller, env, ctx) {
     const hub = env.HUB.get(env.HUB.idFromName('mencherz'));
     ctx.waitUntil(

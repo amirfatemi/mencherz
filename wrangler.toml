@@ -33,14 +33,14 @@ binding = "CF_VERSION_METADATA"
 [vars]
 # Usernames that are admins: they can list every account and set passwords at /admin.
 ADMINS = "amir"
-# Daily encrypted backups go to a draft release of this repository (see DEPLOY.md, "Backups"). The token and the
+# Monthly encrypted backups go to a draft release of this repository (see DEPLOY.md, "Backups"). The token and the
 # key are secrets: wrangler secret put GITHUB_TOKEN, wrangler secret put BACKUP_KEY.
 BACKUP_REPO = "amirfatemi/mencherz"
-BACKUP_KEEP = "14"
+BACKUP_KEEP = "12"
 
-# The daily backup, at 02:30 UTC (06:00 in Tehran).
+# The monthly backup, on the 1st at 02:30 UTC (06:00 in Tehran).
 [triggers]
-crons = ["30 2 * * *"]
+crons = ["30 2 1 * *"]
 
 [[durable_objects.bindings]]
 name = "HUB"

@@ -133,7 +133,7 @@ function github(cfg: BackupConfig, fetcher: typeof fetch) {
     const all = (await (await call('/releases?per_page=100')).json()) as Release[];
     const found = all.find((r) => r.tag_name === RELEASE_TAG && r.draft);
     if (found) return found;
-    const body = { tag_name: RELEASE_TAG, name: 'Database backups', draft: true, body: 'Encrypted daily backups of the live game database, made by the server. Never publish this release.' };
+    const body = { tag_name: RELEASE_TAG, name: 'Database backups', draft: true, body: 'Encrypted monthly backups of the live game database, made by the server. Never publish this release.' };
     return (await (await call('/releases', { method: 'POST', body: JSON.stringify(body) })).json()) as Release;
   };
   return { call, release };
@@ -148,7 +148,7 @@ export async function listBackups(cfg: BackupConfig, fetcher: typeof fetch = fet
 }
 
 /** Takes a backup, puts it on GitHub, and deletes the oldest beyond `keep`. */
-export async function backUp(db: Db, cfg: BackupConfig, fetcher: typeof fetch = fetch, label = 'daily'): Promise<BackupFile> {
+export async function backUp(db: Db, cfg: BackupConfig, fetcher: typeof fetch = fetch, label = 'monthly'): Promise<BackupFile> {
   const bytes = await encrypt(exportData(db), cfg.key);
   const gh = github(cfg, fetcher);
   const rel = await gh.release();
