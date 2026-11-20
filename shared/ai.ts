@@ -21,7 +21,8 @@ import {
   ambushTargets,
   asSeen,
   HERO_KINDS,
-  HERO_TEAM,
+  HERO_ROLE,
+  HERO_ROLES,
   bridgeTarget,
   distinctMoves,
   freeSquares,
@@ -136,17 +137,15 @@ function charmScore(plan: MovePlan): number {
   return 1 + plan.points * 1.5 + plan.captures.length * 12 - plan.dice * 0.3 - (plan.to === HANGAR ? 4 : 0);
 }
 
-/** Picks a bot's heroes for the game: at random, or two of its character's favourites and one more at random. */
+/** Picks a bot's heroes for the game, one of each category: its character's favourite there if it has one, or any. */
 export function chooseTeam(rand: () => number = Math.random, persona?: BotPersona): HeroKind[] {
-  const shuffle = <T>(xs: T[]) => {
-    for (let i = xs.length - 1; i > 0; i--) {
-      const j = Math.floor(rand() * (i + 1));
-      [xs[i], xs[j]] = [xs[j], xs[i]];
-    }
-    return xs;
-  };
-  const liked = shuffle([...styleOf(persona).heroes]).slice(0, HERO_TEAM - 1);
-  return [...liked, ...shuffle(HERO_KINDS.filter((k) => !liked.includes(k)))].slice(0, HERO_TEAM);
+  const any = <T>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)];
+  const liked = styleOf(persona).heroes;
+  return HERO_ROLES.map((role) => {
+    const kinds = HERO_KINDS.filter((k) => HERO_ROLE[k] === role);
+    const fav = kinds.filter((k) => liked.includes(k));
+    return any(fav.length ? fav : kinds);
+  });
 }
 
 function score(state: GameState, plan: MovePlan, careful: boolean, style: Style = PLAIN): number {

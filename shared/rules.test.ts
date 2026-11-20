@@ -72,6 +72,8 @@ import {
   LAUNCH,
   HERO_REST_ROUNDS,
   HERO_TEAM,
+  HERO_ROLE,
+  HERO_ROLES,
   heroRestLeft,
   THIEF_TIMES,
   type BombEvent,
@@ -854,8 +856,8 @@ describe('bot priorities', () => {
       ['poseidon', ['engineer', 'jester', 'thief']],
     ] as const) {
       const team = chooseTeam(() => 0.3, persona);
-      assert.equal(new Set(team).size, HERO_TEAM);
-      assert.equal(team.filter((k) => (liked as readonly string[]).includes(k)).length, 3, persona);
+      assert.deepEqual(team.map((k) => HERO_ROLE[k]), [...HERO_ROLES], 'one of each category');
+      assert.equal(team.filter((k) => (liked as readonly string[]).includes(k)).length, persona === 'ares' ? 2 : 3, persona);
     }
     assert.equal(botAction({ ...g, phase: 'hero' } as GameState, 'normal', () => 0.3, 'poseidon')?.type, 'hero');
   });
@@ -1579,11 +1581,12 @@ describe('the dragon', () => {
 describe('heroes', () => {
   const blueAt = (square: number) => [...Array(50).keys()].map((p) => p + 1).find((p) => trackIndex(1, p) === square)!;
   const cell = (square: number) => DRAGON_PATH.findIndex((c) => 'square' in c && c.square === square);
+  // One of each category (attack, defence, control, points), in no particular order.
   const TEAMS: HeroKind[][] = [
     ['archer', 'wizard', 'death', 'healer'],
-    ['thief', 'frost', 'rider', 'jester'],
-    ['guardian', 'engineer', 'archer', 'trickster'],
-    ['archer', 'thief', 'death', 'jester'],
+    ['thief', 'frost', 'rider', 'engineer'],
+    ['guardian', 'engineer', 'trickster', 'death'],
+    ['archer', 'healer', 'jester', 'thief'],
   ];
   /** Two players with heroes picked, yellow with a hero of this kind on this square, and nothing else out. */
   const withHero = (kind: HeroKind, square: number, rules: Partial<Rules> = {}) => {
@@ -1601,6 +1604,7 @@ describe('heroes', () => {
     assert.equal(HERO_TEAM, 4);
     assert.throws(() => applyHero(g, ['archer', 'archer', 'thief', 'frost']), /different/);
     assert.throws(() => applyHero(g, ['archer', 'thief', 'frost']), /different/);
+    assert.throws(() => applyHero(g, ['archer', 'engineer', 'guardian', 'thief']), /one hero of each kind/, 'two attackers and no control');
     assert.throws(() => applyRoll(g, 6), /Not time to roll/);
     const first = applyHero(g, TEAMS[0]);
     assert.deepEqual(first.event, { type: 'hero', seat: 0, kinds: TEAMS[0] });

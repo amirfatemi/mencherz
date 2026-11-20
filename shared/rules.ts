@@ -354,8 +354,26 @@ export const STUCK_TURNS = 3;
  */
 export type HeroKind = 'archer' | 'engineer' | 'guardian' | 'frost' | 'thief' | 'rider' | 'wizard' | 'death' | 'healer' | 'jester' | 'trickster';
 export const HERO_KINDS: readonly HeroKind[] = ['archer', 'engineer', 'guardian', 'frost', 'thief', 'rider', 'wizard', 'death', 'healer', 'jester', 'trickster'];
-/** How many hero kinds each player picks for the game. */
-export const HERO_TEAM = 4;
+/**
+ * What each hero is for. A team is one hero of each category, so nobody stacks up on one kind of power.
+ */
+export type HeroRole = 'attack' | 'defence' | 'control' | 'points';
+export const HERO_ROLES: readonly HeroRole[] = ['attack', 'defence', 'control', 'points'];
+export const HERO_ROLE: Record<HeroKind, HeroRole> = {
+  archer: 'attack',
+  engineer: 'attack',
+  guardian: 'defence',
+  healer: 'defence',
+  rider: 'defence',
+  frost: 'control',
+  wizard: 'control',
+  jester: 'control',
+  trickster: 'control',
+  thief: 'points',
+  death: 'points',
+};
+/** How many hero kinds each player picks for the game: one of each category. */
+export const HERO_TEAM = HERO_ROLES.length;
 /** Rounds a hero rests after it leaves the board, knocked out or done, before its player can launch it again. */
 export const HERO_REST_ROUNDS = 9;
 /** How many squares a hero goes before it's gone: once round the track. */
@@ -2181,6 +2199,9 @@ export function applyHero(state: GameState, kinds: readonly HeroKind[]): { state
   const team = [...new Set(kinds)];
   if (team.length !== HERO_TEAM || kinds.length !== HERO_TEAM || !team.every((k) => HERO_KINDS.includes(k))) {
     throw new RuleError(`Pick ${HERO_TEAM} different heroes`);
+  }
+  if (!HERO_ROLES.every((r) => team.some((k) => HERO_ROLE[k] === r))) {
+    throw new RuleError('Pick one hero of each kind: attack, defence, control and points');
   }
   const s = structuredClone(state);
   s.seq++;

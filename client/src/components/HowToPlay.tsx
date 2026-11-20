@@ -16,6 +16,8 @@ import {
   HERO_KILL,
   HERO_KINDS,
   HERO_LIFE,
+  HERO_ROLE,
+  HERO_ROLES,
   HERO_REST_ROUNDS,
   ICE_TURNS,
   HERO_TEAM,
@@ -27,7 +29,7 @@ import {
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { BOX_REVEAL_MS, PASS_HOLD_MS } from '../../../shared/timing.ts';
 import benchFace from '../assets/heroes/bench.webp';
-import { HERO_FACE, HERO_LOOK, HERO_ROLE, HERO_ROLES } from '../heroes.ts';
+import { HERO_FACE, HERO_LOOK, ROLE_LOOK } from '../heroes.ts';
 import { HeroIcon } from './HeroArt.tsx';
 import { Modal } from './Modal.tsx';
 
@@ -371,7 +373,8 @@ function Heroes() {
           <img src={benchFace} alt="" />
           <ol className="howto-steps">
             <li>
-              اول بازی، قبل از جعبهٔ جادو، {fa(HERO_TEAM)} هیرو از روی کارت‌ها انتخاب می‌کنید و تا آخر بازی همین‌ها را دارید.
+              اول بازی، قبل از جعبهٔ جادو، از هر دسته (حمله، دفاع، کنترل و امتیاز) یک هیرو انتخاب می‌کنید، یعنی {fa(HERO_TEAM)} هیرو، و
+              تا آخر بازی همین‌ها را دارید.
             </li>
             <li>وسط آشیانهٔ شما همین مهرهٔ پنجم هست. هر وقت تاس اجازهٔ بیرون آوردن مهره بدهد (مثلاً ۶)، می‌درخشد.</li>
             <li>رویش بزنید تا {fa(HERO_TEAM)} هیرویتان روی آشیانه باز شود، و یکی را انتخاب کنید. هیرو اول روی خانهٔ صف می‌آید، جایی که کسی به آن نمی‌رسد.</li>
@@ -393,7 +396,7 @@ function Heroes() {
       </Section>
 
       <div className="howto-heroes">
-        {HERO_KINDS.map((k) => {
+        {[...HERO_KINDS].sort((a, b) => HERO_ROLES.indexOf(HERO_ROLE[a]) - HERO_ROLES.indexOf(HERO_ROLE[b])).map((k) => {
           const look = HERO_LOOK[k];
           return (
             <article key={k} className="howto-hero" style={{ '--hero': look.ring, '--hero-deep': look.deep } as CSSProperties}>
@@ -408,8 +411,8 @@ function Heroes() {
                   <b>{look.fa}</b>
                   <small dir="ltr">{look.en}</small>
                 </span>
-                <span className="hero-card-role" style={{ '--role': HERO_ROLES[HERO_ROLE[k]].color } as CSSProperties}>
-                  {HERO_ROLES[HERO_ROLE[k]].icon} {HERO_ROLES[HERO_ROLE[k]].fa}
+                <span className="hero-card-role" style={{ '--role': ROLE_LOOK[HERO_ROLE[k]].color } as CSSProperties}>
+                  {ROLE_LOOK[HERO_ROLE[k]].icon} {ROLE_LOOK[HERO_ROLE[k]].fa}
                 </span>
               </div>
               <p>{look.power}</p>

@@ -157,7 +157,7 @@ export function SettingsForm({ value, onChange }: Props) {
         />
         <Toggle
           label="Heroes 🦸"
-          hint="Each player picks 4 of 11 heroes before the game: archer, bomb engineer, guardian, frost mage, thief, dragon rider, wizard, death, healer, jester and trickster. Any roll that launches a piece can bring one on instead, one at a time; one that has left the board rests 9 rounds before it can come again. It goes once round the track with its own power, and players with every piece home play on with theirs. Knocking one out pays 15 (the guardian 20)."
+          hint="Each player picks four heroes before the game, one of each kind: attack (archer, bomb engineer), defence (guardian, healer, dragon rider), control (frost mage, wizard, jester, trickster) and points (thief, death). Any roll that launches a piece can bring one on instead, one at a time; one that has left the board rests 9 rounds before it can come again. It goes once round the track with its own power, and players with every piece home play on with theirs. Knocking one out pays 15 (the guardian 20)."
           checked={rules.heroes}
           onChange={(v) => setRules({ heroes: v })}
         />
