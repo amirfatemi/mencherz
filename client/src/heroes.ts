@@ -1,20 +1,26 @@
-import { CHARM_ROUNDS, DRAGON_PRIZE, FROST_REACH, FROST_TURNS, GUARD_REACH, GUARDIAN_KILL, THIEF_TIMES, type HeroKind } from '../../shared/rules.ts';
+import { CHARM_ROUNDS, DRAGON_PRIZE, FROST_REACH, FROST_TURNS, GUARD_REACH, GUARDIAN_KILL, JESTER_REACH, JESTER_TURNS, THIEF_TIMES, type HeroKind } from '../../shared/rules.ts';
 import { POINTS } from '../../shared/scoring.ts';
 import archerArt from './assets/heroes/archer.webp';
 import deathArt from './assets/heroes/death.webp';
 import engineerArt from './assets/heroes/engineer.webp';
 import frostArt from './assets/heroes/frost.webp';
 import guardianArt from './assets/heroes/guardian.webp';
+import healerArt from './assets/heroes/healer.webp';
+import jesterArt from './assets/heroes/jester.webp';
 import riderArt from './assets/heroes/rider.webp';
 import thiefArt from './assets/heroes/thief.webp';
+import tricksterArt from './assets/heroes/trickster.webp';
 import wizardArt from './assets/heroes/wizard.webp';
 import archerFace from './assets/heroes/token-archer.webp';
 import deathFace from './assets/heroes/token-death.webp';
 import engineerFace from './assets/heroes/token-engineer.webp';
 import frostFace from './assets/heroes/token-frost.webp';
 import guardianFace from './assets/heroes/token-guardian.webp';
+import healerFace from './assets/heroes/token-healer.webp';
+import jesterFace from './assets/heroes/token-jester.webp';
 import riderFace from './assets/heroes/token-rider.webp';
 import thiefFace from './assets/heroes/token-thief.webp';
+import tricksterFace from './assets/heroes/token-trickster.webp';
 import wizardFace from './assets/heroes/token-wizard.webp';
 
 const fa = (n: number) => n.toLocaleString('fa-IR');
@@ -46,6 +52,9 @@ export const HERO_ART: Partial<Record<HeroKind, string>> = {
   rider: riderArt,
   wizard: wizardArt,
   death: deathArt,
+  healer: healerArt,
+  jester: jesterArt,
+  trickster: tricksterArt,
 };
 
 /** Each hero's round portrait, for its piece on the board (likewise). */
@@ -58,6 +67,9 @@ export const HERO_FACE: Partial<Record<HeroKind, string>> = {
   rider: riderFace,
   wizard: wizardFace,
   death: deathFace,
+  healer: healerFace,
+  jester: jesterFace,
+  trickster: tricksterFace,
 };
 
 /** How each hero looks and what its card says. */
@@ -149,5 +161,38 @@ export const HERO_LOOK: Record<HeroKind, HeroLook> = {
     ring: '#5d6d7e',
     dark: '#1c2833',
     power: `فقط پادشاه را می‌زند و روی بقیهٔ مهره‌ها کاری ندارد. پادشاهی که بزند، یکی از مهره‌هایی که آن حریف به خانه رسانده به آشیانه برمی‌گردد و ${fa(POINTS.home)} امتیازش مال تو می‌شود.`,
+  },
+  healer: {
+    fa: 'طبیب',
+    en: 'Healer',
+    face: '🧑‍⚕️',
+    badge: '🩺',
+    deep: '#33691e',
+    light: '#dcedc8',
+    ring: '#7cb342',
+    dark: '#33691e',
+    power: 'تا وقتی روی صفحه است، اولین مهره‌ات که زده شود (با بمب و اژدها هم) به‌جای آشیانه روی خانهٔ طبیب زنده می‌شود. هر بار که بیاید یک بار.',
+  },
+  jester: {
+    fa: 'دلقک',
+    en: 'Jester',
+    face: '🤡',
+    badge: '🎪',
+    deep: '#880e4f',
+    light: '#f8bbd0',
+    ring: '#ec407a',
+    dark: '#880e4f',
+    power: `هر جا بایستد، مهره‌های حریف روی مسیر تا ${fa(JESTER_REACH)} خانه جلو و عقبش ${fa(JESTER_TURNS)} نوبتِ بعدیِ صاحبشان برعکس حرکت می‌کنند: عقب‌عقب، بی‌پرش و بی‌پرواز.`,
+  },
+  trickster: {
+    fa: 'شعبده‌باز',
+    en: 'Trickster',
+    face: '🎩',
+    badge: '🃏',
+    deep: '#311b92',
+    light: '#d1c4e9',
+    ring: '#673ab7',
+    dark: '#311b92',
+    power: 'تا وقتی روی صفحه است، اولین باری که مهرهٔ حریفی یکی از مهره‌های تو را بزند، اول نوبت بعدت می‌توانی جای یکی از مهره‌هایت را با همان مهره عوض کنی: مهرهٔ او می‌رود جای مهرهٔ تو و مهرهٔ تو می‌آید جای او. هر بار که بیاید یک بار.',
   },
 };

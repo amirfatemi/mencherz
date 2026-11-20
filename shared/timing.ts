@@ -23,6 +23,8 @@ export const BOX_REVEAL_MS = 3000;
  * computer player, which would otherwise roll before anyone saw it. Among people the next one just rolls.
  */
 export const PASS_HOLD_MS = 2000;
+/** A trickster's swap: the two pieces fly to each other's square. */
+export const TRICK_MS = 1100;
 /** Picking a power on a power square. */
 export const POWER_MS = 300;
 /** A hero coming on to the board (launched). */
@@ -40,6 +42,7 @@ export function eventDuration(event: GameEvent | null | undefined, holdPasses = 
   if (event.type === 'bomb' && event.ends) return BOMB_MS + COUNTDOWN_MS + CAPTURE_MS;
   if (event.type === 'bomb' || event.type === 'box' || event.type === 'bridge' || event.type === 'safe') return BOMB_MS;
   if (event.type === 'power' || event.type === 'vest' || event.type === 'hero') return POWER_MS;
+  if (event.type === 'trick') return TRICK_MS;
   if (event.hero?.launch) return HERO_MS;
   let ms = settledAt(event);
   // Knocked-out pieces, the mover itself after a bomb, or a super bomb's blast fly back to the hangar.

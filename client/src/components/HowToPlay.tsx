@@ -374,7 +374,7 @@ function Heroes() {
               اول بازی، قبل از جعبهٔ جادو، {fa(HERO_TEAM)} هیرو از روی کارت‌ها انتخاب می‌کنید و تا آخر بازی همین‌ها را دارید.
             </li>
             <li>وسط آشیانهٔ شما همین مهرهٔ پنجم هست. هر وقت تاس اجازهٔ بیرون آوردن مهره بدهد (مثلاً ۶)، می‌درخشد.</li>
-            <li>رویش بزنید تا سه هیرویتان روی آشیانه باز شود، و یکی را انتخاب کنید. هیرو اول روی خانهٔ صف می‌آید، جایی که کسی به آن نمی‌رسد.</li>
+            <li>رویش بزنید تا {fa(HERO_TEAM)} هیرویتان روی آشیانه باز شود، و یکی را انتخاب کنید. هیرو اول روی خانهٔ صف می‌آید، جایی که کسی به آن نمی‌رسد.</li>
           </ol>
         </div>
         <ul>
@@ -399,7 +399,7 @@ function Heroes() {
             <article key={k} className="howto-hero" style={{ '--hero': look.ring, '--hero-deep': look.deep } as CSSProperties}>
               <div className="howto-hero-head">
                 <span className="howto-hero-face">
-                  <img src={HERO_FACE[k]} alt="" />
+                  {HERO_FACE[k] ? <img src={HERO_FACE[k]} alt="" /> : <span className="howto-hero-emoji">{look.face}</span>}
                   <span className="howto-hero-badge">
                     <HeroIcon kind={k} />
                   </span>

@@ -49,6 +49,7 @@ function heroMove(ev: MoveEvent, who: string, seats: SeatView[]): string {
   for (const r of h.raised) bits.push(`sent one of ${seatName(seats, r.seat)}'s pieces back from the centre 💀 +${r.points}`);
   if (h.bounty) bits.push(`took the bounty 🎯 +${h.bounty}`);
   if (h.froze.length) bits.push(`froze ${h.froze.length === 1 ? 'a piece' : `${h.froze.length} pieces`} ❄️`);
+  if (h.jested?.length) bits.push(`turned ${h.jested.length === 1 ? 'a piece' : `${h.jested.length} pieces`} round 🤡`);
   if (ev.box?.outcome) bits.push(ev.box.outcome === 'plus' ? `found +${POINTS.boxBonus} in a magic box 🎁` : 'found a vest in a magic box 🦺');
   if (ev.bombed && !ev.bombed.saved) bits.push('stepped on a bomb 💣 and is gone');
   else if (ev.bombed) bits.push('stepped on a bomb — its vest saved it 🦺');
@@ -92,6 +93,7 @@ export function describe(ev: GameEvent, seats: SeatView[]): string {
   if (ev.type === 'safe') return `${who} made a square safe 🛡 for two rounds`;
   if (ev.type === 'vest') return `${who} put the vest 🦺 on a piece`;
   if (ev.type === 'bridge') return `${who} built a ${ev.kind} bridge ${ev.kind === 'heaven' ? '🌈 +10' : '🔥 −20'}`;
+  if (ev.type === 'trick') return `${who}'s trickster 🎩 swapped one of their pieces with ${seatName(seats, ev.other.seat)}'s, the one that had knocked theirs out`;
   if (ev.hero) return heroMove(ev, who, seats);
   if (ev.charm) {
     const bits = [`${who} moved ${seatName(seats, ev.charm.seat)}'s charmed piece 🪄 ${ev.dice}`, ...knockOuts(ev, seats)];

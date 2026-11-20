@@ -8,6 +8,7 @@ import {
   TAKEOFF,
   TRACK_LAST,
   along,
+  seatPos,
   flightCrossedSeat,
   isOnTrack,
   trackColor,
@@ -26,6 +27,7 @@ import {
   freeSquares,
   planMove,
   safeSquareOptions,
+  trickOptions,
   ambushStart,
   vestOptions,
   type BridgeKind,
@@ -72,9 +74,9 @@ const PLAIN: Style = { first: 'hits', hunt: 1, race: 1, chase: 0, careful: false
 
 const STYLES: Record<BotPersona, Style> = {
   ares: { ...PLAIN, hunt: 1.8, race: 0.6, chase: 8, launch: 3, powers: { ambush: 1.6, hell: 1.4 }, heroes: ['archer', 'death', 'thief'] },
-  apollo: { ...PLAIN, first: 'homes', hunt: 0.6, race: 1.5, boxRisk: 2, launch: -3, powers: { heaven: 1.6, safe: 1.6 }, heroes: ['rider', 'guardian', 'frost'] },
-  poseidon: { ...PLAIN, power: 3, boxRisk: 0.3, powers: { superBomb: 2, hell: 1.6, box: 2.5 }, heroes: ['engineer', 'thief', 'frost'] },
-  athena: { ...PLAIN, careful: true, heroes: ['wizard', 'guardian', 'archer'] },
+  apollo: { ...PLAIN, first: 'homes', hunt: 0.6, race: 1.5, boxRisk: 2, launch: -3, powers: { heaven: 1.6, safe: 1.6 }, heroes: ['healer', 'guardian', 'frost'] },
+  poseidon: { ...PLAIN, power: 3, boxRisk: 0.3, powers: { superBomb: 2, hell: 1.6, box: 2.5 }, heroes: ['engineer', 'jester', 'thief'] },
+  athena: { ...PLAIN, careful: true, heroes: ['wizard', 'trickster', 'guardian'] },
 };
 const styleOf = (persona?: BotPersona) => (persona ? STYLES[persona] : PLAIN);
 
@@ -113,7 +115,7 @@ function applyPlan(state: GameState, plan: MovePlan): GameState {
  * progress to make, so a little goes to moving it at all, or bots would sit on it.
  */
 function heroScore(plan: MovePlan): number {
-  let s = 2 + plan.points * 1.5 + plan.captures.length * 12 + plan.hero!.froze.length * 3 + plan.hero!.hijacked.length * 5;
+  let s = 2 + plan.points * 1.5 + plan.captures.length * 12 + plan.hero!.froze.length * 3 + plan.hero!.hijacked.length * 5 + plan.hero!.jested.length * 4;
   if (plan.to === HANGAR) s -= 12;
   return s;
 }
@@ -413,6 +415,29 @@ export function chooseSafe(state: GameState, rand: () => number = Math.random): 
   return options[Math.floor(rand() * options.length)];
 }
 
+/**
+ * Whether to use the trickster's swap, and with which piece: the one whose swap gains most (its own progress, plus
+ * what the other piece loses), if that's worth it; null to just roll.
+ */
+export function chooseTrick(state: GameState): number | null {
+  const options = trickOptions(state);
+  const t = state.trick;
+  if (!t || !options.length) return null;
+  const theirs = state.pieces[t.seat][t.piece];
+  const at = trackIndex(t.seat, theirs);
+  let best: number | null = null;
+  let gain = 6;
+  for (const j of options) {
+    const mine = state.pieces[t.by][j];
+    const g = seatPos(t.by, at) - mine + (theirs - seatPos(t.seat, trackIndex(t.by, mine)));
+    if (g > gain) {
+      gain = g;
+      best = j;
+    }
+  }
+  return best;
+}
+
 /** Picks who wears a vest: the piece furthest along, which has most to lose to a bomb. */
 export function chooseVest(state: GameState): number {
   const pieces = state.pieces[state.turn];
@@ -425,7 +450,8 @@ export type BotAction =
   | { type: 'move' | 'vest'; piece: number }
   | { type: 'bomb' | 'box' | 'place'; square: number }
   | { type: 'power'; choice: PowerChoice; over?: Seat }
-  | { type: 'hero'; kinds: HeroKind[] };
+  | { type: 'hero'; kinds: HeroKind[] }
+  | { type: 'trick'; piece: number };
 
 /**
  * What a bot does next, whatever the phase, the way its character plays; also plays the turn of a player whose
@@ -433,8 +459,11 @@ export type BotAction =
  */
 export function botAction(state: GameState, level: BotLevel, rand: () => number = Math.random, persona?: BotPersona): BotAction | null {
   switch (state.phase) {
-    case 'roll':
-      return { type: 'roll' };
+    case 'roll': {
+      // A trickster's swap comes before the roll, when it's worth it.
+      const trick = chooseTrick(state);
+      return trick === null ? { type: 'roll' } : { type: 'trick', piece: trick };
+    }
     case 'move':
       return { type: 'move', piece: chooseMove(state, level, rand, persona) };
     case 'bomb':

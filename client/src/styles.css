@@ -3466,3 +3466,33 @@ svg.board {
   gap: 8px;
   margin-top: 10px;
 }
+
+/* A piece the jester turned round, and one the player's trickster can swap. */
+.piece-reversed circle {
+  fill: #fce4ec;
+  stroke: #ec407a;
+  stroke-width: 2;
+}
+.piece-trick circle {
+  fill: #ede7f6;
+  stroke: #673ab7;
+  stroke-width: 2;
+}
+.piece-trick {
+  animation: trick-pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes trick-pulse {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.howto-hero-emoji {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: 2.2rem;
+}

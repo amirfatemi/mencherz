@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { GOAL, HANGAR, HANGAR_CENTERS, HANGAR_SLOTS, TRACK_CELLS, squarePoint, type Point, type Seat } from '../../shared/board.ts';
 import type { RoomUpdate, RoomView } from '../../shared/protocol.ts';
 import { REACTION_MS } from '../../shared/reactions.ts';
-import { CHARM, EVENT_ROUNDS, HERO, blastOf, charmOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind } from '../../shared/rules.ts';
+import { CHARM, EVENT_ROUNDS, HERO, blastOf, charmOf, type BoxHit, type MoveEvent, type RollEvent, type StepKind, type TrickEvent } from '../../shared/rules.ts';
 import type { Bomb, GameState, WorldEventKind } from '../../shared/rules.ts';
 import { POINTS, killStreakName } from '../../shared/scoring.ts';
 import {
@@ -15,6 +15,7 @@ import {
   HERO_MS,
   ROLL_MS,
   SLOW_ROLL_MS,
+  TRICK_MS,
   STEP_MS,
   arrivalAt,
   blastAt,
@@ -114,6 +115,7 @@ function moveBanner(ev: MoveEvent): { at: number; text: string; tone: Banner['to
   }
   if (hero?.charmed.length) return { at: arrivalAt(ev), text: '🧙‍♀️🪄 طلسم شد! حالا مال توست', tone: 'event', slow: false };
   if (hero?.froze.length) return { at: arrivalAt(ev), text: '❄️ یخ زدند!', tone: 'event', slow: false };
+  if (hero?.jested?.length) return { at: arrivalAt(ev), text: '🤡 دلقک! حالا عقب‌عقب می‌روند', tone: 'event', slow: false };
   if (hero?.hijacked.length) {
     const n = hero.hijacked.length;
     return { at: arrivalAt(ev), text: n === 1 ? '👷💣 بمب مال مهندس شد!' : `👷💣 ${n.toLocaleString('fa-IR')} بمب مال مهندس شد!`, tone: 'gold', slow: false };
@@ -272,6 +274,16 @@ function returnHome(seat: Seat, piece: number, from: number, start: number): Mot
     startAngle: hero ? 0 : restHeading(seat, piece, from),
     segments: [{ from: at, to: hero ? HANGAR_CENTERS[seat] : HANGAR_SLOTS[seat][piece], start, dur: CAPTURE_MS, kind: 'capture' }],
   };
+}
+
+/** The trickster's swap: each piece flies straight to where the other stood. */
+function trickTimeline(ev: TrickEvent): Timeline {
+  const fly = (seat: Seat, piece: number, from: number, to: number): Motion => ({
+    key: pieceKey(seat, piece),
+    startAngle: restHeading(seat, piece, from),
+    segments: [{ from: movePoint(seat, piece, from), to: movePoint(seat, piece, to), start: 0, dur: TRICK_MS, kind: 'fly' }],
+  });
+  return { motions: [fly(ev.seat, ev.piece, ev.from, ev.to), fly(ev.other.seat, ev.other.piece, ev.other.from, ev.other.to)], booms: [], total: TRICK_MS };
 }
 
 function moveTimeline(ev: MoveEvent): Timeline {
@@ -506,6 +518,8 @@ export function useRoomStream(code: string) {
           } else if (after.dragon && !before.dragon) {
             showBanner('🐉 اژدها آمد! مراقب باشید', 'event');
             sfx.roar();
+          } else if (after.heal && after.heal.n !== before.heal?.n) {
+            showBanner('🩺 طبیب نجاتش داد! مهره به‌جای آشیانه کنار طبیب برگشت', 'event');
           }
         };
         // The dragon or the engineer going off: it stays where it is for a 1, 2, 3, then blows, just before the new state shows.
@@ -610,6 +624,14 @@ export function useRoomStream(code: string) {
             announce();
             showBanner(`${look.face} ${look.fa} آمد! ${look.badge}`, 'gold');
             await sleep(HERO_MS / speed);
+            continue;
+          } else if (ev.type === 'trick') {
+            // The trickster's swap: the two pieces fly to each other's square.
+            showBanner('🎩 شعبده‌بازی! جای دو مهره عوض شد', 'event');
+            sfx.fly();
+            await play(trickTimeline(ev), speed);
+            commit(u.room);
+            announce();
             continue;
           } else if (ev.type === 'bomb' && ev.ends) {
             // The engineer's last super bomb goes down, then it counts to three where it stands and goes off.

@@ -86,6 +86,28 @@ export function HeroIcon({ kind, size }: { kind: HeroKind; size?: number }) {
           <path d="M14.8 4.6C10.5 3 5.6 4.3 3 8.2c3.2-1.6 7.4-1.6 10.7.3Z" fill="#fff" stroke="#fff" strokeWidth={1} strokeLinejoin="round" />
         </>
       )}
+      {kind === 'healer' && (
+        <>
+          <path d="M9 3.5h6v5.5h5.5v6H15v5.5H9V15H3.5V9H9Z" {...line} fill="#fff" fillOpacity={0.25} />
+        </>
+      )}
+      {kind === 'jester' && (
+        <>
+          <path d="M3 17.5c1-6 4-9.5 9-10.5 5 1 8 4.5 9 10.5Z" {...line} fill="#fff" fillOpacity={0.2} />
+          <path d="M12 7c-1.8-2.2-4.6-3.2-7.4-2.8M12 7c1.8-2.2 4.6-3.2 7.4-2.8" {...line} />
+          <circle cx={4.4} cy={4.6} r={1.6} fill="#fff" />
+          <circle cx={19.6} cy={4.6} r={1.6} fill="#fff" />
+          <path d="M3 17.5h18" {...line} />
+        </>
+      )}
+      {kind === 'trickster' && (
+        <>
+          <path d="M7.5 6.5c0-1.4 2-2 4.5-2s4.5.6 4.5 2l-.6 9.5H8.1Z" {...line} fill="#fff" fillOpacity={0.22} />
+          <path d="M8 12.5h8" {...line} strokeWidth={2.6} />
+          <ellipse cx={12} cy={16.6} rx={9} ry={2.6} {...line} fill="#fff" fillOpacity={0.22} />
+          <path d="M19.5 3v3M18 4.5h3" {...line} strokeWidth={1.4} />
+        </>
+      )}
       {kind === 'rider' && (
         <path
           d="M12 2.5c.8 3.4 5.5 5.5 5.5 11a5.5 5.5 0 0 1-11 0c0-2.6 1.4-4.4 2.6-5.6.1 1.8.9 3 2 3.4-.4-3.3-.3-5.9.9-8.8Z"

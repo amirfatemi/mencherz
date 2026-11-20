@@ -344,11 +344,18 @@ export const STUCK_TURNS = 3;
  *   anyone can knock them out. Then they're their owners' again, where they stand.
  * - death: knocks out kings only, and for each it sends one of that colour's pieces in the centre back to its
  *   hangar, taking the points it brought (POINTS.home).
+ * - healer: while it's on the board, the first of its player's pieces to be knocked out (bombs and the dragon
+ *   too) comes back on the healer's square instead of the hangar, once a life.
+ * - jester: where it stops, other colours' pieces on the track within JESTER_REACH move backwards for their
+ *   owners' next JESTER_TURNS turns.
+ * - trickster: while it's on the board, the first time another colour's piece knocks out one of its player's,
+ *   its player may, at the start of their next turn, swap one of their pieces on the track with that piece
+ *   (once a life): each goes where the other stood.
  */
-export type HeroKind = 'archer' | 'engineer' | 'guardian' | 'frost' | 'thief' | 'rider' | 'wizard' | 'death';
-export const HERO_KINDS: readonly HeroKind[] = ['archer', 'engineer', 'guardian', 'frost', 'thief', 'rider', 'wizard', 'death'];
+export type HeroKind = 'archer' | 'engineer' | 'guardian' | 'frost' | 'thief' | 'rider' | 'wizard' | 'death' | 'healer' | 'jester' | 'trickster';
+export const HERO_KINDS: readonly HeroKind[] = ['archer', 'engineer', 'guardian', 'frost', 'thief', 'rider', 'wizard', 'death', 'healer', 'jester', 'trickster'];
 /** How many hero kinds each player picks for the game. */
-export const HERO_TEAM = 3;
+export const HERO_TEAM = 4;
 /** Rounds a hero rests after it leaves the board, knocked out or done, before its player can launch it again. */
 export const HERO_REST_ROUNDS = 9;
 /** How many squares a hero goes before it's gone: once round the track. */
@@ -362,6 +369,8 @@ export const FROST_TURNS = 5;
 /** What the thief takes, times what a knock-out would pay. */
 export const THIEF_TIMES = 1.5;
 export const CHARM_ROUNDS = 5;
+export const JESTER_REACH = 2;
+export const JESTER_TURNS = 2;
 /** The piece number a hero's move goes by, and the archer's move back. */
 export const HERO = 4;
 export const HERO_BACK = 5;
@@ -391,6 +400,8 @@ export interface Hero {
   vests: number;
   /** Turns of its player's it can't move (frost). */
   frozen: number;
+  /** Its once-a-life power is spent: the healer has healed, the trickster has swapped. */
+  used?: boolean;
 }
 
 /** A piece its guardian or its dragon rider saved, going in its place. */
@@ -515,6 +526,12 @@ export interface GameState {
   heroes: (Hero | null)[];
   /** The hero kinds each seat picked for the game (empty until it has). */
   heroTeams: HeroKind[][];
+  /** reversed[seat][piece]: how many more of that seat's turns the piece moves backwards (the jester). */
+  reversed: number[][];
+  /** A trickster's swap waiting for its player's next turn: `by` may swap a piece with the one that knocked theirs out. */
+  trick: { by: Seat; seat: Seat; piece: number } | null;
+  /** The healer's last save, numbered so it's shown once: the piece that came back, and where. */
+  heal: { n: number; seat: Seat; piece: number; to: number } | null;
   /** Per seat, the turn number from which each of its hero kinds that has left the board can be launched again. */
   heroRest: Partial<Record<HeroKind, number>>[];
   /**
@@ -676,6 +693,8 @@ export interface HeroMove {
   charmed: { seat: Seat; piece: number; from: number }[];
   /** Pieces death sent back from the centre for each king it took, and the points it took with each. */
   raised: { seat: Seat; piece: number; points: number; lost: number }[];
+  /** Pieces the jester turned round where it stopped. */
+  jested: { seat: Seat; piece: number }[];
   /** Its life is over with this move. */
   ends: boolean;
 }
@@ -776,7 +795,17 @@ export interface MoveEvent extends MovePlan {
   gameOver: boolean;
 }
 
-export type GameEvent = RollEvent | MoveEvent | BombEvent | BoxEvent | PowerEvent | BridgeEvent | SafeEvent | VestEvent | HeroEvent;
+/** A trickster's swap: the player's piece and the other colour's piece that had knocked out one of theirs. */
+export interface TrickEvent {
+  type: 'trick';
+  seat: Seat;
+  piece: number;
+  from: number;
+  to: number;
+  other: { seat: Seat; piece: number; from: number; to: number };
+}
+
+export type GameEvent = RollEvent | MoveEvent | BombEvent | BoxEvent | PowerEvent | BridgeEvent | SafeEvent | VestEvent | HeroEvent | TrickEvent;
 
 /** `rand(n)` gives an integer in [0, n). */
 export type Rand = (n: number) => number;
@@ -842,6 +871,9 @@ export function createGame(active: Seat[], rules: Rules = DEFAULT_RULES, firstTu
     heroes: SEATS.map(() => null),
     heroTeams: SEATS.map(() => []),
     heroRest: SEATS.map(() => ({})),
+    reversed: perPiece(),
+    trick: null,
+    heal: null,
     dragonStats: { points: 0, captures: 0, slain: 0 },
     charmed: [],
     heroEnding: null,
@@ -1101,9 +1133,15 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
     return plan;
   }
 
-  const target = from + dice;
+  // Turned round by a jester: back along the track (no further than its first square), with no jump, flight or bridge.
+  const backward = (state.reversed?.[seat]?.[piece] ?? 0) > 0 && from >= TRACK_FIRST && from <= TRACK_LAST;
+  const target = backward ? Math.max(TRACK_FIRST, from - dice) : from + dice;
+  if (backward && target === from) return null;
   let cur: number;
-  if (target > GOAL) {
+  if (backward) {
+    for (let p = from - 1; p >= target; p--) plan.path.push({ pos: p, kind: 'step' });
+    cur = target;
+  } else if (target > GOAL) {
     if (rules.finish === 'exact') return null;
     for (let p = from + 1; p <= GOAL; p++) plan.path.push({ pos: p, kind: 'step' });
     const back = target - GOAL;
@@ -1191,7 +1229,7 @@ export function planMove(state: GameState, seat: Seat, piece: number, dice: numb
 
   let landed = land(cur);
   if (landed === 'hangar') return finishPlan(plan, HANGAR, state);
-  if (landed === 'on' && isOnTrack(cur)) {
+  if (landed === 'on' && isOnTrack(cur) && !backward) {
     for (;;) {
       // A bridge carries the piece on, and the move ends where it puts it down.
       const bridge = !plan.bridge && isOnTrack(cur) ? state.bridges?.find((b) => b.square === trackIndex(seat, cur)) : undefined;
@@ -1266,7 +1304,7 @@ function finishPlan(plan: MovePlan, to: number, state: GameState): MovePlan {
 export type OpenBox = (options: readonly BoxOutcome[]) => BoxOutcome;
 
 /** A hero's move before anything happens on it. */
-const heroMove = (kind: HeroKind, back = false): HeroMove => ({ kind, back, hijacked: [], stolen: [], froze: [], charmed: [], raised: [], ends: false });
+const heroMove = (kind: HeroKind, back = false): HeroMove => ({ kind, back, hijacked: [], stolen: [], froze: [], charmed: [], raised: [], jested: [], ends: false });
 
 /** Rounds left before a hero kind that left the board can come on again; 0 when it can. */
 export function heroRestLeft(state: GameState, seat: Seat, kind: HeroKind): number {
@@ -1375,6 +1413,17 @@ function planHeroMove(state: GameState, seat: Seat, dice: number, back: boolean,
     // The dragon rider slays it for a king's prize; the archer as a plain piece.
     const rider = h.kind === 'rider';
     plan.dragon = { at: state.dragon!.at, atStep, points: rider ? DRAGON_PRIZE.king : DRAGON_PRIZE.piece, king: false };
+  }
+
+  if (h.kind === 'jester') {
+    for (const o of state.active) {
+      if (o === seat) continue;
+      state.pieces[o].forEach((p, j) => {
+        if (p >= TRACK_FIRST && p <= TRACK_LAST && charmedBy(state, o, j) === null && apart(trackIndex(o, p), to) <= JESTER_REACH && !taken.has(`${o}:${j}`)) {
+          move.jested.push({ seat: o, piece: j });
+        }
+      });
+    }
   }
 
   if (h.kind === 'frost') {
@@ -1506,6 +1555,7 @@ export function seatFinished(state: GameState, seat: Seat): boolean {
 function nextTurn(s: GameState, rand: Rand): void {
   s.frozen ??= perPiece();
   s.frozen[s.turn] = s.frozen[s.turn].map((n) => Math.max(0, n - 1));
+  if (s.reversed) s.reversed[s.turn] = s.reversed[s.turn].map((n) => Math.max(0, n - 1));
   const hero = s.heroes?.[s.turn];
   if (hero && hero.frozen > 0) hero.frozen--;
   s.sixStreak = 0;
@@ -1571,7 +1621,23 @@ function knockOut(s: GameState, seat: Seat, piece: number): void {
   s.pieces[seat][piece] = HANGAR;
   if (s.frozen) s.frozen[seat][piece] = 0;
   if (s.kills) s.kills[seat][piece] = 0;
+  if (s.reversed) s.reversed[seat][piece] = 0;
+  heal(s, seat, piece);
   breakCharms(s);
+}
+
+/**
+ * A piece of `seat` just went back to the hangar: its healer, if on the board with its save unspent, brings it back
+ * on the healer's square instead (or the takeoff spot, while the healer waits there or stands just behind it).
+ */
+function heal(s: GameState, seat: Seat, piece: number): void {
+  const h = s.heroes?.[seat];
+  if (h?.kind !== 'healer' || h.used || s.pieces[seat][piece] !== HANGAR) return;
+  h.used = true;
+  const own = h.square === HERO_START ? TAKEOFF : seatPos(seat, h.square);
+  const to = own >= TRACK_FIRST && own <= TRACK_LAST ? own : TAKEOFF;
+  s.pieces[seat][piece] = to;
+  s.heal = { n: (s.heal?.n ?? 0) + 1, seat, piece, to };
 }
 
 /** A hero leaves the board; its player can launch one again, but this one only after it has rested. */
@@ -1764,6 +1830,8 @@ export function applyRoll(state: GameState, dice: number, rand: Rand = defaultRa
   s.seq++;
   s.dice = dice;
   const event: RollEvent = { type: 'roll', seat, dice, outcome: 'move', movable: [], penalized: [] };
+  // Rolling instead of swapping lets a trickster's chance go.
+  if (s.trick?.by === seat) s.trick = null;
   if (s.dragon) moveDragon(s, dice, event);
 
   if (dice === 6) {
@@ -1855,6 +1923,11 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
     s.kills[seat][piece] = plan.to === HANGAR ? 0 : s.kills[seat][piece] + plan.captures.length;
   }
   for (const c of plan.captures) knockOut(s, c.seat, c.piece);
+  // A piece that knocks out one of a trickster's player's pieces can be swapped with one of theirs, on their next turn.
+  if (!hero) {
+    const fooled = plan.captures.find((c) => c.piece < HERO && c.seat !== ps && s.heroes?.[c.seat]?.kind === 'trickster' && !s.heroes[c.seat]!.used);
+    if (fooled) s.trick = { by: fooled.seat, seat: ps, piece: pp };
+  }
   if (plan.bridge) s.bridges = s.bridges.filter((b) => b.square !== plan.bridge!.square);
   if (plan.dragon) {
     // Whoever slays it, a king too, another comes later.
@@ -1935,6 +2008,8 @@ export function applyMove(state: GameState, piece: number, rand: Rand = defaultR
       }
     }
   }
+  // The mover blown up by a bomb or a magic box: its healer may bring it back.
+  if (!hero && plan.to === HANGAR) heal(s, ps, pp);
   if (plan.hero) heroDoes(s, plan, hero);
   breakCharms(s);
   if (plan.to === GOAL && !hero) s.stats[seat].home++;
@@ -2045,6 +2120,8 @@ function heroDoes(s: GameState, plan: MovePlan, hero: Hero | null): void {
       s.pieces[v.seat][v.piece] = ABSOLUTE + trackIndex(v.seat, v.from);
     }
   }
+  s.reversed ??= perPiece();
+  for (const j of move.jested) s.reversed[j.seat][j.piece] = Math.max(s.reversed[j.seat][j.piece], JESTER_TURNS);
   for (const r of move.raised) {
     s.pieces[r.seat][r.piece] = HANGAR;
     s.stats[r.seat].home = Math.max(0, s.stats[r.seat].home - 1);
@@ -2132,6 +2209,44 @@ function resumeAfterPower(s: GameState, rand: Rand): void {
 /** Pieces that can be given a vest: any not yet in the centre, in the hangar or out. */
 export function vestOptions(state: GameState): number[] {
   return state.pieces[state.turn].flatMap((p, j) => (p === GOAL || charmedBy(state, state.turn, j) !== null ? [] : [j]));
+}
+
+/**
+ * Which of the player's pieces their trickster can swap with the piece that knocked out one of theirs: on their
+ * turn, before they roll, with the trickster on the board and its swap unspent, both pieces on the track (neither
+ * charmed), and neither landing past its own turn home.
+ */
+export function trickOptions(state: GameState): number[] {
+  const t = state.trick;
+  if (!t || state.phase !== 'roll' || t.by !== state.turn) return [];
+  const h = state.heroes?.[t.by];
+  if (h?.kind !== 'trickster' || h.used) return [];
+  const theirs = state.pieces[t.seat]?.[t.piece] ?? HANGAR;
+  if (theirs < TRACK_FIRST || theirs > TRACK_LAST || charmedBy(state, t.seat, t.piece) !== null) return [];
+  const at = trackIndex(t.seat, theirs);
+  const onTrack = (pos: number) => pos >= TRACK_FIRST && pos <= TRACK_LAST;
+  return state.pieces[t.by].flatMap((p, j) => {
+    if (!onTrack(p) || charmedBy(state, t.by, j) !== null) return [];
+    const mine = trackIndex(t.by, p);
+    return mine !== at && onTrack(seatPos(t.by, at)) && onTrack(seatPos(t.seat, mine)) ? [j] : [];
+  });
+}
+
+/** The trickster's swap: the player's piece and the one that knocked out theirs change places. Then they roll. */
+export function applyTrick(state: GameState, piece: number): { state: GameState; event: TrickEvent } {
+  if (!trickOptions(state).includes(piece)) throw new RuleError('That piece cannot swap');
+  const s = structuredClone(state);
+  const t = s.trick!;
+  s.seq++;
+  const mine = s.pieces[t.by][piece];
+  const theirs = s.pieces[t.seat][t.piece];
+  const to = seatPos(t.by, trackIndex(t.seat, theirs));
+  const back = seatPos(t.seat, trackIndex(t.by, mine));
+  s.pieces[t.by][piece] = to;
+  s.pieces[t.seat][t.piece] = back;
+  s.heroes[t.by]!.used = true;
+  s.trick = null;
+  return { state: s, event: { type: 'trick', seat: t.by, piece, from: mine, to, other: { seat: t.seat, piece: t.piece, from: theirs, to: back } } };
 }
 
 /** Puts the vest from a magic box on one of the mover's pieces, where it stays until it stops a bomb. */

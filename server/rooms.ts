@@ -24,6 +24,7 @@ import {
   applyPlace,
   applyPower,
   applyRoll,
+  applyTrick,
   applyVest,
   createGame,
   RuleError,
@@ -433,6 +434,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       else if (a.type === 'power') commit(room, applyPower(g, a.choice, rand, a.over));
       else if (a.type === 'vest') commit(room, applyVest(g, a.piece, rand));
       else if (a.type === 'hero') commit(room, applyHero(g, a.kinds));
+      else if (a.type === 'trick') commit(room, applyTrick(g, a.piece));
     } catch (err) {
       console.error(`Auto move failed in ${room.code}:`, err);
     }
@@ -731,6 +733,16 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         requireHost(room, user);
         requireWaiting(room);
         startGame(room);
+        return null;
+      }),
+    );
+
+    socket.on(
+      'game:trick',
+      handler((req) => {
+        const room = getRoom(req?.code);
+        requireTurn(room, user);
+        commit(room, applyTrick(room.game!, Number(req?.piece)));
         return null;
       }),
     );

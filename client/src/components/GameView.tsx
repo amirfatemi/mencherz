@@ -13,6 +13,7 @@ import {
   distinctMoves,
   freeSquares,
   placeOptions,
+  trickOptions,
   ambushTargets,
   vestOptions,
   type HeroKind,
@@ -121,6 +122,8 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
   // On a shared device the turn belongs to whoever is holding it, so say their name.
   const you = mySeat === game.turn ? 'You' : seatName(view.seats, game.turn);
   const canRoll = myTurn && game.phase === 'roll' && !busy;
+  // The trickster's swap, before rolling: the viewer's pieces that can swap with the piece that knocked theirs out.
+  const trickable = canRoll ? trickOptions(game) : [];
   // Who wears a vest from a magic box is picked on the board, like a move.
   const givingVest = myTurn && game.phase === 'vest' && !busy;
   const movable = myTurn && game.phase === 'move' && !busy ? game.movable : givingVest ? vestOptions(game) : [];
@@ -225,7 +228,9 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
     const whose = mySeat === game.turn ? 'Your' : `${you}'s`;
     status =
       game.phase === 'roll'
-        ? `${whose} turn — roll the dice`
+        ? trickable.length
+          ? `🎩 ${whose} trickster: tap one of your 🎩 pieces to swap it with the one that knocked yours out, or roll`
+          : `${whose} turn — roll the dice`
         : launches.length
           ? `${you} rolled ${game.dice} — pick a piece, or 🦸 in your hangar for a hero`
           : forced
@@ -291,6 +296,8 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
             dropped={stream.dropped}
             onMove={(p) => act(givingVest ? 'game:vest' : 'game:move', p)}
             onTarget={(sq) => act(hidingBox ? 'game:box' : placing ? 'game:place' : 'game:bomb', sq)}
+            trickable={trickable}
+            onTrick={(p) => send(call('game:trick', { code: view.code, piece: p }))}
           />
           {stream.reveal && <BoxRevealCard key={stream.reveal.key} reveal={stream.reveal} seats={view.seats} />}
           {stream.banner && (

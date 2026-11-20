@@ -69,6 +69,9 @@ export function upgradeGame(game: GameState): GameState {
   }
   g.heroes ??= SEATS.map(() => null);
   g.heroRest ??= SEATS.map(() => ({}));
+  g.reversed ??= perPiece();
+  g.trick ??= null;
+  g.heal ??= null;
   g.dragonStats ??= { points: 0, captures: 0, slain: 0 };
   g.heroEnding ??= null;
   g.heroBlast ??= null;

@@ -258,6 +258,8 @@ export interface ClientToServer {
   'room:start': (req: { code: string }, ack: Ack<null>) => void;
   /** Seats a registered player at the caller's device, proven by the one-time code from their settings. */
   'room:addLocal': (req: { code: string; seat: Seat; username: string; pairCode: string }, ack: Ack<null>) => void;
+  /** The trickster's swap, before rolling: this piece changes places with the one that knocked out one of the player's. */
+  'game:trick': (req: { code: string; piece: number }, ack: Ack<null>) => void;
   /** `slow`: the dice was held down, so it's thrown in slow motion (in cinematic games). */
   'game:roll': (req: { code: string; slow?: boolean }, ack: Ack<null>) => void;
   'game:move': (req: { code: string; piece: number }, ack: Ack<null>) => void;

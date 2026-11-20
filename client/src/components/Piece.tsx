@@ -50,6 +50,10 @@ interface Props {
   movable?: boolean;
   /** Locked in place by a magic box's ice. */
   frozen?: boolean;
+  /** Turned round by a jester: it moves backwards for now. */
+  reversed?: boolean;
+  /** One the player's trickster can swap now. */
+  trick?: boolean;
   /** The colour's king (or a stack holding it): wears a crown. */
   king?: boolean;
   /** Two or more of a colour on a track square: a wall others can't pass. */
@@ -125,6 +129,8 @@ export const Piece = memo(function Piece({
   count = 1,
   movable,
   frozen,
+  reversed,
+  trick,
   king,
   wall,
   vest,
@@ -180,6 +186,24 @@ export const Piece = memo(function Piece({
           <circle r={size * 0.6} />
           <text textAnchor="middle" dy="0.35em" fontSize={size * 0.78}>
             ❄
+          </text>
+        </g>
+      )}
+      {reversed && (
+        <g transform={`translate(${size * 0.85} ${-size * (pawn ? 1.15 : 0.85)})`} className="piece-reversed">
+          <title>Turned round by a jester: moves backwards for now</title>
+          <circle r={size * 0.6} />
+          <text textAnchor="middle" dy="0.35em" fontSize={size * 0.72}>
+            🤡
+          </text>
+        </g>
+      )}
+      {trick && (
+        <g transform={`translate(${size * 0.85} ${size * 0.55})`} className="piece-trick">
+          <title>Your trickster can swap this piece</title>
+          <circle r={size * 0.6} />
+          <text textAnchor="middle" dy="0.35em" fontSize={size * 0.72}>
+            🎩
           </text>
         </g>
       )}

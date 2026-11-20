@@ -534,6 +534,9 @@ interface BoardProps {
   dropped?: Bomb | null;
   onMove: (piece: number) => void;
   onTarget: (square: number) => void;
+  /** The viewer's pieces their trickster can swap now, and the piece that knocked one of theirs out. */
+  trickable?: number[];
+  onTrick?: (piece: number) => void;
 }
 
 interface Item {
@@ -618,7 +621,7 @@ function ReactionLayer({ reactions, rot }: { reactions: ActiveReaction[]; rot: n
   );
 }
 
-export function Board({ game, seats, anim, movable, pieceStyle, popups, reactions, targets, targetKind, previewMove, countdown, dropped, onMove, onTarget }: BoardProps) {
+export function Board({ game, seats, anim, movable, pieceStyle, popups, reactions, targets, targetKind, previewMove, countdown, dropped, onMove, onTarget, trickable = [], onTrick }: BoardProps) {
   // Everyone sees the board the same way round (yellow top-left, red bottom-left), on every device.
   const rot = 0;
   const [hover, setHover] = useState<number | null>(null);
@@ -943,6 +946,9 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
             const canMove = mover !== undefined;
             const at = game.pieces[it.seat][it.pieces[0]];
             const wall = !it.animated && !!game.rules.walls && isOnTrack(at) && game.pieces[it.seat].filter((q) => q === at).length > 1;
+            // The trickster's swap: the viewer's pieces that can swap, and the one they'd swap with.
+            const swap = !it.animated && it.charmBy === undefined && it.seat === game.turn ? it.pieces.find((p) => trickable.includes(p)) : undefined;
+            const target = !it.animated && trickable.length > 0 && game.trick?.seat === it.seat && it.pieces.includes(game.trick.piece);
             return (
               <Piece
                 key={it.key}
@@ -958,12 +964,16 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
                 spin={it.spin}
                 size={PIECE_SIZE}
                 count={it.pieces.length}
-                movable={canMove}
+                movable={canMove || swap !== undefined}
                 frozen={!it.animated && it.pieces.some((p) => (game.frozen?.[it.seat]?.[p] ?? 0) > 0)}
+                reversed={!it.animated && it.pieces.some((p) => (game.reversed?.[it.seat]?.[p] ?? 0) > 0)}
+                trick={swap !== undefined || target}
                 king={!!game.rules.kings && it.pieces.includes(KING_PIECE)}
                 vest={it.pieces.some((p) => (game.vested?.[it.seat]?.[p] ?? 0) > 0)}
                 wall={wall}
-                onClick={canMove ? () => (TOUCH && hovered !== mover ? setHover(mover) : onMove(mover)) : undefined}
+                onClick={
+                  swap !== undefined ? () => onTrick?.(swap) : canMove ? () => (TOUCH && hovered !== mover ? setHover(mover) : onMove(mover)) : undefined
+                }
                 onHover={canMove && !TOUCH ? (on) => setHover(on ? mover : null) : undefined}
                 label={canMove ? (it.charmBy !== undefined ? 'Move the charmed piece' : `Move piece ${piece! + 1}${it.pieces.length > 1 ? ` (${it.pieces.length} here)` : ''}`) : undefined}
               />
