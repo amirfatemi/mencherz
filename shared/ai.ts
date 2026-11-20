@@ -121,11 +121,11 @@ function heroScore(plan: MovePlan): number {
 }
 
 /**
- * Launching a hero instead of a piece: about as good as launching a piece with two already out, the dragon rider
- * better with the dragon about.
+ * Launching a hero instead of a piece: about as good as launching a piece with two already out. (The dragon rider
+ * once counted for much more with the dragon about, so bots kept sending it out to be eaten.)
  */
-function launchScore(state: GameState, plan: MovePlan): number {
-  return 7 + (plan.hero!.kind === 'rider' && state.dragon ? 6 : 0);
+function launchScore(_state: GameState, _plan: MovePlan): number {
+  return 7;
 }
 
 /**

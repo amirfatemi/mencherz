@@ -27,7 +27,7 @@ import {
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { BOX_REVEAL_MS, PASS_HOLD_MS } from '../../../shared/timing.ts';
 import benchFace from '../assets/heroes/bench.webp';
-import { HERO_FACE, HERO_LOOK } from '../heroes.ts';
+import { HERO_FACE, HERO_LOOK, HERO_ROLE, HERO_ROLES } from '../heroes.ts';
 import { HeroIcon } from './HeroArt.tsx';
 import { Modal } from './Modal.tsx';
 
@@ -407,6 +407,9 @@ function Heroes() {
                 <span className="howto-hero-name">
                   <b>{look.fa}</b>
                   <small dir="ltr">{look.en}</small>
+                </span>
+                <span className="hero-card-role" style={{ '--role': HERO_ROLES[HERO_ROLE[k]].color } as CSSProperties}>
+                  {HERO_ROLES[HERO_ROLE[k]].icon} {HERO_ROLES[HERO_ROLE[k]].fa}
                 </span>
               </div>
               <p>{look.power}</p>

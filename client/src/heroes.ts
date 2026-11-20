@@ -25,6 +25,28 @@ import wizardFace from './assets/heroes/token-wizard.webp';
 
 const fa = (n: number) => n.toLocaleString('fa-IR');
 
+/** What a hero is for, at a glance, on its card. */
+export type HeroRole = 'attack' | 'defence' | 'control' | 'points';
+export const HERO_ROLES: Record<HeroRole, { fa: string; icon: string; color: string }> = {
+  attack: { fa: 'حمله', icon: '⚔️', color: '#c62828' },
+  defence: { fa: 'دفاع', icon: '🛡️', color: '#1565c0' },
+  control: { fa: 'کنترل', icon: '🌀', color: '#6a1b9a' },
+  points: { fa: 'امتیاز', icon: '💰', color: '#ef6c00' },
+};
+export const HERO_ROLE: Record<HeroKind, HeroRole> = {
+  archer: 'attack',
+  engineer: 'attack',
+  guardian: 'defence',
+  healer: 'defence',
+  rider: 'defence',
+  frost: 'control',
+  wizard: 'control',
+  jester: 'control',
+  trickster: 'control',
+  thief: 'points',
+  death: 'points',
+};
+
 export interface HeroLook {
   /** Persian name, shown first; the English one goes in titles and the game log. */
   fa: string;

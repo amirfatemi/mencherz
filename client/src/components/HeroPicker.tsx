@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from 'react';
 import { COLOR_HEX, type Seat } from '../../../shared/board.ts';
 import { GUARDIAN_KILL, HERO_KILL, HERO_KINDS, HERO_LIFE, HERO_REST_ROUNDS, HERO_TEAM, type HeroKind } from '../../../shared/rules.ts';
-import { HERO_ART, HERO_LOOK } from '../heroes.ts';
+import { HERO_ART, HERO_LOOK, HERO_ROLE, HERO_ROLES } from '../heroes.ts';
 import { HeroIcon } from './HeroArt.tsx';
 
 const fa = (n: number) => n.toLocaleString('fa-IR');
@@ -90,6 +90,9 @@ export function HeroPicker({ seat, name, onPick, onHide }: Props) {
                         <small dir="ltr">{look.en}</small>
                       </span>
                     </span>
+                  </span>
+                  <span className="hero-card-role" style={{ '--role': HERO_ROLES[HERO_ROLE[kind]].color } as CSSProperties}>
+                    {HERO_ROLES[HERO_ROLE[kind]].icon} {HERO_ROLES[HERO_ROLE[kind]].fa}
                   </span>
                   <span className="hero-card-power">{look.power}</span>
                   {n >= 0 && (
