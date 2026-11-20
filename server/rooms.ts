@@ -1,7 +1,8 @@
 import { randomInt } from 'node:crypto';
-import { botAction, type BotLevel } from '../shared/ai.ts';
+import { BOT_PERSONAS, botAction, type BotLevel, type BotPersona } from '../shared/ai.ts';
 import type { Seat } from '../shared/board.ts';
 import {
+  COLOUR_PERSONA,
   peopleIn,
   type Ack,
   type ClientToServer,
@@ -101,6 +102,14 @@ const occupied = (s: SeatView) => s.kind === 'human' || s.kind === 'bot';
 const playsFor = (s: SeatView | undefined, userId: number) =>
   s?.kind === 'human' && !s.left && (s.userId === userId || s.controllerId === userId);
 
+/** A character for the bot at `seat`, at random among those no other bot in the room has. */
+function drawPersona(seats: SeatView[], seat: number): BotPersona {
+  const taken = new Set(seats.flatMap((s, i) => (i !== seat && s.kind === 'bot' && s.persona ? [s.persona] : [])));
+  const free = BOT_PERSONAS.filter((p) => !taken.has(p));
+  const pool = free.length ? free : BOT_PERSONAS;
+  return pool[randomInt(pool.length)];
+}
+
 function parseSeat(v: unknown): Seat {
   const seat = Number(v);
   if (!Number.isInteger(seat) || seat < 0 || seat > 3) throw new InputError('Invalid seat');
@@ -176,6 +185,10 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
           turnDeadline: null,
           busyUntil: 0,
         };
+        // Bots from before characters keep the one their colour had, so their names don't change mid-game.
+        room.seats.forEach((s, i) => {
+          if (s.kind === 'bot' && !s.left && !s.persona) s.persona = COLOUR_PERSONA[i];
+        });
         rooms.set(room.code, room);
         schedule(room);
       } catch (err) {
@@ -384,17 +397,19 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         const medals = medalsWon(room.game!, i as Seat).map((m) => m.id);
         auth.recordGame(s.userId, i === winner, { ...stats, medals });
       }
-      // Each colour's computer player counts on the leaderboard too, under its own name.
-      if (s.kind === 'bot' && !s.left && room.game!.active.includes(i as Seat)) auth.recordNpc(`bot:${i}`, i === winner, stats);
+      // Each computer player counts on the leaderboard too, under its character's name.
+      if (s.kind === 'bot' && !s.left && s.persona && room.game!.active.includes(i as Seat)) auth.recordNpc(`bot:${s.persona}`, i === winner, stats);
     });
     // So does the dragon: what it took, and how many times it was slain.
     const d = room.game.dragonStats;
     if (room.game.rules.dragon && d) auth.recordNpc('dragon', false, { points: d.points, captures: d.captures, lost: d.slain, minutes });
   }
 
-  function roll(room: Room) {
+  function roll(room: Room, slow = false) {
     const g = room.game!;
-    commit(room, applyRoll(g, rollWeighted(rollWeights(g), rand), rand));
+    const result = applyRoll(g, rollWeighted(rollWeights(g), rand), rand);
+    if (slow && room.settings.cinematic !== false) result.event.slow = true;
+    commit(room, result);
   }
 
   function move(room: Room, piece: number) {
@@ -406,7 +421,9 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
     const g = room.game;
     if (!g || room.status !== 'playing') return;
     try {
-      const a = botAction(g, level);
+      // A bot plays its character; a player whose time ran out, or who left, plainly.
+      const seat = room.seats[g.turn];
+      const a = botAction(g, level, undefined, seat?.kind === 'bot' && !seat.left ? seat.persona : undefined);
       if (!a) return;
       if (a.type === 'roll') roll(room);
       else if (a.type === 'move') move(room, a.piece);
@@ -559,6 +576,9 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
               ? { kind: 'bot', botLevel: s.botLevel }
               : { kind: s.kind },
         );
+        seats.forEach((s, i) => {
+          if (s.kind === 'bot') s.persona = drawPersona(seats, i);
+        });
         const now = Date.now();
         const room: Room = {
           code: newCode(),
@@ -646,7 +666,11 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
         if (target.kind === 'human' && target.userId === user.id) throw new InputError("That's your seat");
         if (req?.action === 'open') room.seats[seat] = { kind: 'open' };
         else if (req?.action === 'close') room.seats[seat] = { kind: 'closed' };
-        else if (req?.action === 'bot') room.seats[seat] = { kind: 'bot', botLevel: parseBotLevel(req.botLevel) };
+        else if (req?.action === 'bot') {
+          // A new bot draws a character; changing a bot's level keeps it.
+          const persona = target.kind === 'bot' && target.persona ? target.persona : drawPersona(room.seats, seat);
+          room.seats[seat] = { kind: 'bot', botLevel: parseBotLevel(req.botLevel), persona };
+        }
         else throw new InputError('Unknown seat action');
         touch(room);
         return null;
@@ -716,7 +740,7 @@ export function createRooms(io: IO, db: Db, auth: Auth, opts: { timeScale: numbe
       handler((req) => {
         const room = getRoom(req?.code);
         requireTurn(room, user);
-        roll(room);
+        roll(room, req?.slow === true);
         return null;
       }),
     );

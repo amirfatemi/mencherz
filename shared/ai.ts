@@ -38,6 +38,46 @@ import {
 export type BotLevel = 'easy' | 'normal' | 'hard';
 export const BOT_LEVELS: readonly BotLevel[] = ['easy', 'normal', 'hard'];
 
+/**
+ * A computer player's character, drawn at random for each game (no two bots of a game alike); its level says how
+ * well it plays, its character what it goes for. Ares hunts, Apollo races home, Poseidon plays with bombs, boxes
+ * and power squares, Athena weighs it all and watches her back.
+ */
+export type BotPersona = 'ares' | 'apollo' | 'poseidon' | 'athena';
+export const BOT_PERSONAS: readonly BotPersona[] = ['ares', 'apollo', 'poseidon', 'athena'];
+
+interface Style {
+  /** What it plays first: any knock-out, then any piece home ('hits'), or the other way round ('homes'). */
+  first: 'hits' | 'homes';
+  /** Weights on knocking out, and on getting along and home. */
+  hunt: number;
+  race: number;
+  /** How much it likes ending a move just behind other colours' pieces, to hit them next. */
+  chase: number;
+  /** Weighs the threat to its pieces at every level, as a hard bot does. */
+  careful: boolean;
+  /** How much it likes power squares, and how little it minds the gamble of a magic box (1 = as anyone). */
+  power: number;
+  boxRisk: number;
+  /** Extra for bringing on a hero rather than a piece. */
+  launch: number;
+  /** Power-square choices it values more, times how much. */
+  powers: Partial<Record<PowerChoice, number>>;
+  /** Heroes it likes to have: two of these, and one at random. */
+  heroes: HeroKind[];
+}
+
+/** How a bot without a character plays (one standing in for a player who's away): the bots of old. */
+const PLAIN: Style = { first: 'hits', hunt: 1, race: 1, chase: 0, careful: false, power: 1, boxRisk: 1, launch: 0, powers: {}, heroes: [] };
+
+const STYLES: Record<BotPersona, Style> = {
+  ares: { ...PLAIN, hunt: 1.8, race: 0.6, chase: 8, launch: 3, powers: { ambush: 1.6, hell: 1.4 }, heroes: ['archer', 'death', 'thief'] },
+  apollo: { ...PLAIN, first: 'homes', hunt: 0.6, race: 1.5, boxRisk: 2, launch: -3, powers: { heaven: 1.6, safe: 1.6 }, heroes: ['rider', 'guardian', 'frost'] },
+  poseidon: { ...PLAIN, power: 3, boxRisk: 0.3, powers: { superBomb: 2, hell: 1.6, box: 2.5 }, heroes: ['engineer', 'thief', 'frost'] },
+  athena: { ...PLAIN, careful: true, heroes: ['wizard', 'guardian', 'archer'] },
+};
+const styleOf = (persona?: BotPersona) => (persona ? STYLES[persona] : PLAIN);
+
 const value = (pos: number) => (pos === HANGAR ? 0 : pos + 2);
 
 /** Chance that some opponent can land on this piece with their next roll. */
@@ -94,32 +134,47 @@ function charmScore(plan: MovePlan): number {
   return 1 + plan.points * 1.5 + plan.captures.length * 12 - plan.dice * 0.3 - (plan.to === HANGAR ? 4 : 0);
 }
 
-/** Picks a bot's heroes for the game, at random. */
-export function chooseTeam(rand: () => number = Math.random): HeroKind[] {
-  const kinds = [...HERO_KINDS];
-  for (let i = kinds.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [kinds[i], kinds[j]] = [kinds[j], kinds[i]];
-  }
-  return kinds.slice(0, HERO_TEAM);
+/** Picks a bot's heroes for the game: at random, or two of its character's favourites and one more at random. */
+export function chooseTeam(rand: () => number = Math.random, persona?: BotPersona): HeroKind[] {
+  const shuffle = <T>(xs: T[]) => {
+    for (let i = xs.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [xs[i], xs[j]] = [xs[j], xs[i]];
+    }
+    return xs;
+  };
+  const liked = shuffle([...styleOf(persona).heroes]).slice(0, HERO_TEAM - 1);
+  return [...liked, ...shuffle(HERO_KINDS.filter((k) => !liked.includes(k)))].slice(0, HERO_TEAM);
 }
 
-function score(state: GameState, plan: MovePlan, careful: boolean): number {
-  if (plan.hero?.launch) return launchScore(state, plan);
-  if (plan.hero) return heroScore(plan);
-  if (plan.charm) return charmScore(plan);
+function score(state: GameState, plan: MovePlan, careful: boolean, style: Style = PLAIN): number {
+  if (plan.hero?.launch) return launchScore(state, plan) + style.launch;
+  if (plan.hero) return heroScore(plan) + plan.captures.length * 12 * (style.hunt - 1);
+  if (plan.charm) return charmScore(plan) + plan.captures.length * 12 * (style.hunt - 1);
   const onBoard = state.pieces[plan.seat].filter((p) => p !== HANGAR && p !== GOAL).length;
-  let s = value(plan.to) - value(plan.from);
+  let s = (value(plan.to) - value(plan.from)) * style.race;
   if (plan.from === HANGAR) s += 9 - onBoard * 2;
-  for (const c of plan.captures) s += 12 + value(along(c.seat, c.from)) * 0.6;
-  if (plan.to === GOAL) s += 18;
-  if (plan.from < HOME_FIRST && plan.to >= HOME_FIRST) s += 6;
+  for (const c of plan.captures) s += (12 + value(along(c.seat, c.from)) * 0.6) * style.hunt;
+  if (plan.to === GOAL) s += 18 * style.race;
+  if (plan.from < HOME_FIRST && plan.to >= HOME_FIRST) s += 6 * style.race;
   if (plan.path.some((p) => p.kind === 'bounce')) s -= 4;
   if (plan.bombed) s -= plan.bombed.saved ? 3 : 15;
   // A magic box is a gamble: a 1 in 5 chance each of a bomb and of being frozen in place; the points even out.
-  if (plan.box) s -= value(plan.to) * 0.2 + 1;
+  if (plan.box) s -= (value(plan.to) * 0.2 + 1) * style.boxRisk;
   // A power square gives a bridge or a magic box.
-  if (plan.power) s += 4;
+  if (plan.power) s += 4 * style.power;
+  // A hunter likes to end up one to six squares behind someone it can knock out next time.
+  if (style.chase && isOnTrack(plan.to)) {
+    const from = trackIndex(plan.seat, plan.to);
+    for (const other of state.active) {
+      if (other === plan.seat) continue;
+      for (const p of state.pieces[other]) {
+        if (!isOnTrack(p) || plan.captures.some((c) => c.seat === other && c.from === p)) continue;
+        const gap = (trackIndex(other, p) - from + 52) % 52;
+        if (gap >= 1 && gap <= 6) s += style.chase * (1 + along(other, p) / 25);
+      }
+    }
+  }
   // When points decide the winner, knock-outs and pieces home are worth chasing for their own sake.
   if (state.rules.winBy === 'points') s += plan.points * 1.5;
   if (careful) {
@@ -185,26 +240,29 @@ export function chooseBox(state: GameState, level: BotLevel, rand: () => number 
   return best;
 }
 
-/** Picks which piece to move in the `move` phase. */
-export function chooseMove(state: GameState, level: BotLevel, rand: () => number = Math.random): number {
+/** Picks which piece to move in the `move` phase, the way its character plays. */
+export function chooseMove(state: GameState, level: BotLevel, rand: () => number = Math.random, persona?: BotPersona): number {
   const options = distinctMoves(state);
   if (options.length === 1) return options[0];
   if (level === 'easy' && rand() < 0.6) return options[Math.floor(rand() * options.length)];
 
-  const careful = level === 'hard';
+  const style = styleOf(persona);
+  const careful = level === 'hard' || style.careful;
   // Bots don't see through fog either.
   const seen = asSeen(state);
   const plans = options.map((j) => planMove(seen, seen.turn, j, seen.dice!));
-  // Bots hunt first: any move that knocks a piece out beats the rest; then any move that brings one home.
+  // Most bots hunt first: any move that knocks a piece out beats the rest, then any move that brings one home.
+  // A racer goes home first.
   const hits = options.filter((_, i) => plans[i]?.captures.length);
   const homes = options.filter((_, i) => plans[i]?.to === GOAL);
-  const pool = hits.length ? hits : homes.length ? homes : options;
+  const [a, b] = style.first === 'hits' ? [hits, homes] : [homes, hits];
+  const pool = a.length ? a : b.length ? b : options;
   let best = pool[0];
   let bestScore = -Infinity;
   for (const j of pool) {
     const plan = plans[options.indexOf(j)];
     if (!plan) continue;
-    const sc = score(seen, plan, careful) + rand() * 0.5;
+    const sc = score(seen, plan, careful, style) + rand() * 0.5;
     if (sc > bestScore) {
       bestScore = sc;
       best = j;
@@ -293,7 +351,7 @@ function ambushValues(state: GameState): { over: Seat; value: number }[] {
 }
 
 /** Picks a power: whichever of the bridges, an ambush or a safe square looks best, or a magic box when none does much. */
-export function choosePower(state: GameState, level: BotLevel, rand: () => number = Math.random): PowerPick {
+export function choosePower(state: GameState, level: BotLevel, rand: () => number = Math.random, persona?: BotPersona): PowerPick {
   const targets = ambushTargets(state);
   const open = availablePowers(state);
   if (level === 'easy') {
@@ -315,6 +373,9 @@ export function choosePower(state: GameState, level: BotLevel, rand: () => numbe
   ];
   if (ambush) options.push({ pick: { choice: 'ambush', over: ambush.over }, value: ambush.value });
   options.push({ pick: { choice: 'superBomb' }, value: superBombPlan(state)?.value ?? 0 });
+  // Its character's favourites count for more.
+  const likes = styleOf(persona).powers;
+  for (const o of options) o.value *= likes[o.pick.choice] ?? 1;
   return options.filter((o) => open.includes(o.pick.choice)).reduce((a, b) => (b.value > a.value ? b : a)).pick;
 }
 
@@ -366,23 +427,26 @@ export type BotAction =
   | { type: 'power'; choice: PowerChoice; over?: Seat }
   | { type: 'hero'; kinds: HeroKind[] };
 
-/** What a bot does next, whatever the phase; also plays the turn of a player whose time ran out. */
-export function botAction(state: GameState, level: BotLevel, rand: () => number = Math.random): BotAction | null {
+/**
+ * What a bot does next, whatever the phase, the way its character plays; also plays the turn of a player whose
+ * time ran out (with no character).
+ */
+export function botAction(state: GameState, level: BotLevel, rand: () => number = Math.random, persona?: BotPersona): BotAction | null {
   switch (state.phase) {
     case 'roll':
       return { type: 'roll' };
     case 'move':
-      return { type: 'move', piece: chooseMove(state, level, rand) };
+      return { type: 'move', piece: chooseMove(state, level, rand, persona) };
     case 'bomb':
       return { type: 'bomb', square: chooseBomb(state, level, rand) };
     case 'box':
       return { type: 'box', square: chooseBox(state, level, rand) };
     case 'power':
-      return { type: 'power', ...choosePower(state, level, rand) };
+      return { type: 'power', ...choosePower(state, level, rand, persona) };
     case 'vest':
       return { type: 'vest', piece: chooseVest(state) };
     case 'hero':
-      return { type: 'hero', kinds: chooseTeam(rand) };
+      return { type: 'hero', kinds: chooseTeam(rand, persona) };
     case 'place':
       // A box from a power square goes where a bomb would: in front of the others' pieces.
       if (state.placing === 'box') return { type: 'place', square: chooseBomb(state, level, rand) };

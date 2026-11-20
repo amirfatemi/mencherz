@@ -1478,6 +1478,72 @@ select:focus {
   cursor: default;
 }
 
+/* Held down: the dice turns in the hand, glowing brighter, before it's thrown. */
+.dice {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.dice.holding .dice-body {
+  transform-origin: center;
+  animation: dice-hold 0.9s ease-in-out infinite;
+}
+.dice.holding svg {
+  animation: dice-charge 0.5s ease-in-out infinite alternate;
+}
+/* Let go after a hold: a slow-motion tumble that loses speed, then a heavy landing. */
+.dice.rolling.slow .dice-body {
+  transform-origin: center;
+  animation: dice-slow 2.6s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+.dice.rolling.slow .dice-shadow {
+  animation: dice-shadow 0.6s ease-in-out infinite alternate;
+}
+.dice.rolling.slow svg {
+  filter: drop-shadow(0 0 14px var(--dice-color));
+}
+
+@keyframes dice-hold {
+  0% {
+    transform: rotate(-8deg) scale(1.04);
+  }
+  50% {
+    transform: rotate(8deg) scale(1.1) translateY(-4px);
+  }
+  100% {
+    transform: rotate(-8deg) scale(1.04);
+  }
+}
+@keyframes dice-charge {
+  from {
+    filter: drop-shadow(0 0 6px var(--dice-color));
+  }
+  to {
+    filter: drop-shadow(0 0 22px var(--dice-color)) brightness(1.08);
+  }
+}
+@keyframes dice-slow {
+  0% {
+    transform: translateY(0) rotate(0deg) scale(1.08);
+  }
+  20% {
+    transform: translateY(-34px) rotate(560deg) scale(1.2);
+  }
+  45% {
+    transform: translateY(-12px) rotate(900deg) scale(1.12);
+  }
+  70% {
+    transform: translateY(-18px) rotate(1040deg) scale(1.08);
+  }
+  88% {
+    transform: translateY(-4px) rotate(1075deg) scale(1.03);
+  }
+  100% {
+    transform: translateY(0) rotate(1080deg) scale(1);
+  }
+}
+
 @keyframes dice-tumble {
   0% {
     transform: translateY(0) rotate(0deg);
@@ -1969,7 +2035,8 @@ select:focus {
   .piece-ring,
   .threat,
   .dice.can-roll .dice-body,
-  .dice.rolling .dice-body {
+  .dice.rolling .dice-body,
+  .dice.holding .dice-body {
     animation: none;
   }
 }

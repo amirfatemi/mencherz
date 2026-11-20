@@ -70,6 +70,108 @@ function ResetDialog({ user, onClose }: { user: AdminUserRow; onClose: () => voi
 
 const STATUS_LABEL: Record<AccountStatus, string> = { pending: '⏳ Waiting', active: 'Active', disabled: '⛔ Disabled' };
 
+interface BackupFile {
+  name: string;
+  size: number;
+  createdAt: string;
+}
+
+/**
+ * The database's backups on GitHub (a draft release of the project's repository, encrypted): taken every day by
+ * the server, or now; any can be put back, which first backs up what's there and signs everyone out.
+ */
+function Backups() {
+  const [files, setFiles] = useState<BackupFile[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () =>
+    api<BackupFile[]>('/admin/backups')
+      .then((f) => {
+        setFiles(f);
+        setError(null);
+      })
+      .catch((e: Error) => setError(e.message));
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const backUpNow = () => {
+    setBusy(true);
+    setNote(null);
+    api<BackupFile>('/admin/backup', {})
+      .then((f) => {
+        setNote(`Backed up: ${f.name}`);
+        return load();
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(false));
+  };
+  const restore = (f: BackupFile) => {
+    const when = new Date(f.createdAt).toLocaleString();
+    if (!window.confirm(`Put back the backup from ${when}?\n\nEverything since then is replaced (a backup of it is taken first), every game in progress goes back to how it was, and everyone has to sign in again.`)) return;
+    setBusy(true);
+    setNote(null);
+    api('/admin/restore', { name: f.name })
+      .then(() => {
+        setNote('Restored. The server is starting over on it; sign in again in a moment.');
+        setTimeout(() => window.location.reload(), 3000);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <section className="card leaderboard admin-backups">
+      <div className="admin-head">
+        <h2>
+          Backups {files && <span className="muted small">· {files.length}</span>}
+        </h2>
+        <button className="btn primary small" disabled={busy} onClick={backUpNow}>
+          {busy ? 'Working…' : 'Back up now'}
+        </button>
+      </div>
+      <p className="muted small">
+        Every day at 06:00 (Tehran) the server backs up all accounts, games and records, encrypted, to a draft release of the project's GitHub
+        repository, keeping the last two weeks. Only someone with the backup key can open one.
+      </p>
+      {error && <div className="error">{error}</div>}
+      {note && <div className="notice">{note}</div>}
+      {!files ? (
+        !error && <p className="muted">Loading…</p>
+      ) : files.length === 0 ? (
+        <p className="muted">No backups yet.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Taken</th>
+              <th>Kind</th>
+              <th className="num">Size</th>
+              <th aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {files.map((f) => (
+              <tr key={f.name}>
+                <td>{new Date(f.createdAt).toLocaleString()}</td>
+                <td>{f.name.replace(/^.*Z-|\.mzb$/g, '')}</td>
+                <td className="num">{(f.size / 1024).toFixed(0)} KB</td>
+                <td className="num admin-actions">
+                  <button className="btn ghost small" disabled={busy} onClick={() => restore(f)}>
+                    Restore
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 export function AdminPage({ user }: { user: PublicUser }) {
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -188,6 +290,7 @@ export function AdminPage({ user }: { user: PublicUser }) {
           </table>
         )}
       </section>
+      <Backups />
       {resetting && <ResetDialog user={resetting} onClose={() => setResetting(null)} />}
     </div>
   );

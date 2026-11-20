@@ -686,6 +686,8 @@ export interface RollEvent {
   type: 'roll';
   seat: Seat;
   dice: number;
+  /** Thrown in slow motion: the roller held the dice before letting go (cinematic games only). */
+  slow?: boolean;
   outcome: RollOutcome;
   movable: number[];
   /** Pieces sent back to the hangar by the three-sixes penalty. */

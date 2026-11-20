@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { MEDALS, titleFor } from '../../../shared/awards.ts';
-import { COLOR_HEX, COLOR_NAMES } from '../../../shared/board.ts';
 import {
+  BOT_ICONS,
+  BOT_STYLES,
   LEADER_SORTS,
   type AdminUserRow,
   type LeaderRow,
@@ -108,8 +109,8 @@ function Leaderboard({ rows, me, sort, onSort }: { rows: LeaderRow[] | null; me:
                   {r.npc === 'dragon' ? (
                     <span title="The dragon">🐉</span>
                   ) : r.npc === 'bot' ? (
-                    <span title={`The ${COLOR_NAMES[r.seat ?? 0].toLowerCase()} computer player`} style={{ color: COLOR_HEX[r.seat ?? 0] }}>
-                      🤖
+                    <span title={r.persona ? `Computer player: ${r.username}, ${BOT_STYLES[r.persona]}` : 'Computer player'}>
+                      {r.persona ? BOT_ICONS[r.persona] : '🤖'}
                     </span>
                   ) : (
                     <span title={titleFor(r.points).name}>{titleFor(r.points).icon}</span>

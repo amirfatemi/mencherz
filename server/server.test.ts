@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import WebSocket from 'ws';
 import { botAction } from '../shared/ai.ts';
-import { BOT_NAMES, DRAGON_NAME, type AdminUserRow, type Captcha, type HistoryPage, type LeaderRow, type PublicUser, type RoomUpdate, type RoomView } from '../shared/protocol.ts';
+import { BOT_NAMES, DRAGON_NAME, botName, type AdminUserRow, type Captcha, type HistoryPage, type LeaderRow, type PublicUser, type RoomUpdate, type RoomView } from '../shared/protocol.ts';
 import type { GameState } from '../shared/rules.ts';
 import { REACTION_BY_ID } from '../shared/reactions.ts';
 import { GameSocket, type WsLike } from '../shared/socket-client.ts';
@@ -336,15 +336,17 @@ describe('online game', () => {
       assert.deepEqual(record.players.map((p) => p.place), [1, 2, 3]);
       assert.deepEqual(
         record.players.map((p) => [p.name, p.kind, p.points]),
-        final.game!.standings.map((seat) => [['alice', 'bob', BOT_NAMES[2]][seat], seat === 2 ? 'bot' : 'human', final.game!.stats[seat].points]),
+        final.game!.standings.map((seat) => [['alice', 'bob', botName(final.seats[2], 2)][seat], seat === 2 ? 'bot' : 'human', final.game!.stats[seat].points]),
       );
       assert.ok(record.finishedAt >= record.startedAt && record.awards.length > 0);
     }
 
-    // The green computer player is on the leaderboard under its own name, and so is the dragon.
+    // The green computer player is on the leaderboard under its character's name, and so is the dragon.
+    const persona = final.seats[2].persona!;
+    assert.ok(persona, 'the bot drew a character');
     const board = (await (await fetch(`${base}/api/leaderboard`, { headers: { cookie: bobCookie } })).json()) as LeaderRow[];
     const bot = board.find((r) => r.npc === 'bot')!;
-    assert.deepEqual([bot.username, bot.seat, bot.gamesPlayed, bot.points], [BOT_NAMES[2], 2, 1, final.game!.stats[2].points]);
+    assert.deepEqual([bot.username, bot.persona, bot.gamesPlayed, bot.points], [BOT_NAMES[persona], persona, 1, final.game!.stats[2].points]);
     const dragon = board.find((r) => r.npc === 'dragon')!;
     assert.deepEqual([dragon.username, dragon.gamesPlayed, dragon.points, dragon.wins], [DRAGON_NAME, 1, final.game!.dragonStats.points, 0]);
 
@@ -552,6 +554,24 @@ describe('pause', () => {
     else await new Promise((r) => setTimeout(r, 300));
     const on = await call<RoomView>(host, 'room:join', { code });
     assert.ok(on.game!.seq > before.game!.seq, 'play went on');
+    host.disconnect();
+  });
+});
+
+describe('computer players', () => {
+  test('each bot of a game draws a different character, and keeps it when its level changes', async () => {
+    const host = await socketFor(await signUp('botmaster'));
+    const { code } = await call<{ code: string }>(host, 'room:create', {
+      settings: { name: 'Gods', isPublic: false, turnSeconds: 0 },
+      seats: [{ kind: 'host' }, { kind: 'bot', botLevel: 'easy' }, { kind: 'bot', botLevel: 'normal' }, { kind: 'bot', botLevel: 'hard' }],
+    });
+    const view = await call<RoomView>(host, 'room:join', { code });
+    const personas = view.seats.slice(1).map((s) => s.persona);
+    assert.equal(new Set(personas).size, 3, 'no two alike');
+    assert.ok(personas.every((p) => p && BOT_NAMES[p]));
+    await call(host, 'room:seat', { code, seat: 2, action: 'bot', botLevel: 'hard' });
+    const after = await call<RoomView>(host, 'room:join', { code });
+    assert.deepEqual([after.seats[2].persona, after.seats[2].botLevel], [personas[1], 'hard']);
     host.disconnect();
   });
 });

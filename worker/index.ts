@@ -17,7 +17,15 @@ interface Env {
   ADMINS?: string;
   /** Which deployed version this code is (wrangler.toml [version_metadata]). */
   CF_VERSION_METADATA?: { id: string };
+  /** Backups (server/backup.ts): a GitHub token that can write releases, and the AES key (secrets); the repo and how many to keep (vars). */
+  GITHUB_TOKEN?: string;
+  BACKUP_KEY?: string;
+  BACKUP_REPO?: string;
+  BACKUP_KEEP?: string;
 }
+
+/** Asked by the daily schedule; not under /api, so nothing from outside reaches it. */
+const BACKUP_PATH = '/_backup';
 
 const VERSION_HEADER = 'x-mencherz-version';
 
@@ -34,6 +42,13 @@ export class MencherzHub extends DurableObject<Env> {
       allowedOrigins: list(env.ALLOWED_ORIGINS),
       admins: list(env.ADMINS),
       version: env.CF_VERSION_METADATA?.id,
+      backup:
+        env.GITHUB_TOKEN && env.BACKUP_KEY && env.BACKUP_REPO
+          ? { token: env.GITHUB_TOKEN, key: env.BACKUP_KEY, repo: env.BACKUP_REPO, keep: Number(env.BACKUP_KEEP) || 14 }
+          : undefined,
+      transaction: (fn) => ctx.storage.transactionSync(fn),
+      // A restored backup is read in by a fresh object.
+      restart: () => ctx.abort('a backup was restored'),
     });
   }
 
@@ -45,6 +60,10 @@ export class MencherzHub extends DurableObject<Env> {
     if (wanted && mine && wanted !== mine) this.ctx.abort('a newer version was deployed');
 
     const url = new URL(request.url);
+    if (url.pathname === BACKUP_PATH) {
+      const done = await this.game.backUp();
+      return Response.json(done ?? { skipped: 'backups are not set up' });
+    }
     if (url.pathname !== WS_PATH) return this.game.api(request, request.headers.get('CF-Connecting-IP') ?? '');
 
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
@@ -98,5 +117,16 @@ export default {
       }
     }
     return env.ASSETS.fetch(request);
+  },
+
+  /** The daily backup (wrangler.toml [triggers]). */
+  async scheduled(_controller, env, ctx) {
+    const hub = env.HUB.get(env.HUB.idFromName('mencherz'));
+    ctx.waitUntil(
+      hub
+        .fetch(new Request(`https://hub${BACKUP_PATH}`, { method: 'POST' }))
+        .then(async (res) => console.log('Backup:', res.status, await res.text()))
+        .catch((err) => console.error('Backup failed:', err)),
+    );
   },
 } satisfies ExportedHandler<Env>;

@@ -14,6 +14,7 @@ import {
   DRAGON_PAUSE_MS,
   HERO_MS,
   ROLL_MS,
+  SLOW_ROLL_MS,
   STEP_MS,
   arrivalAt,
   blastAt,
@@ -411,7 +412,7 @@ export function useRoomStream(code: string) {
   const [view, setView] = useState<RoomView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [anim, setAnim] = useState<AnimFrame | null>(null);
-  const [rolling, setRolling] = useState(false);
+  const [rolling, setRolling] = useState<boolean | 'slow'>(false);
   const [lastRoll, setLastRoll] = useState<{ seat: Seat; value: number } | null>(null);
   /** The dice has stopped and shows its number while the rest of the roll plays (the dragon moving with it). */
   const [landed, setLanded] = useState(false);
@@ -546,10 +547,14 @@ export function useRoomStream(code: string) {
             }, r.at / speed);
           }
           if (ev.type === 'roll') {
-            setRolling(true);
-            sfx.roll();
-            await sleep(ROLL_MS / speed);
+            // A held dice tumbles in slow motion, slowing down to its number.
+            const slow = !!ev.slow && !skip;
+            setRolling(slow ? 'slow' : true);
+            if (slow) sfx.slowRoll(SLOW_ROLL_MS / 1000);
+            else sfx.roll();
+            await sleep((slow ? SLOW_ROLL_MS : ROLL_MS) / speed);
             setRolling(false);
+            if (slow) sfx.slam();
             setLanded(true);
             if (ev.outcome === 'penalty' || ev.outcome === 'forfeit') sfx.bad();
             else sfx.land();

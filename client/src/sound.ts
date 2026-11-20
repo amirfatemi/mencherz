@@ -93,6 +93,18 @@ export const sfx = {
   roll: () => {
     for (let i = 0; i < 7; i++) noise({ at: i * 0.085 + Math.random() * 0.02, dur: 0.035, vol: 0.22, freq: 2200 + Math.random() * 1500 });
   },
+  /** A dice thrown in slow motion: rattles that come further and further apart, over `secs` seconds. */
+  slowRoll: (secs: number) => {
+    for (let t = 0, gap = 0.06; t < secs - 0.1; t += gap, gap *= 1.18) {
+      noise({ at: t, dur: 0.04, vol: 0.2, freq: 1600 + Math.random() * 1400 });
+    }
+    tone({ f: 120, to: 240, dur: secs, type: 'sine', vol: 0.05 });
+  },
+  /** A slow-motion dice hitting the table: a deep thud. */
+  slam: () => {
+    tone({ f: 140, to: 50, dur: 0.3, vol: 0.32 });
+    noise({ dur: 0.09, vol: 0.22, freq: 900 });
+  },
   /** The dice coming to rest. */
   land: () => {
     tone({ f: 190, to: 95, dur: 0.12, vol: 0.22 });

@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { shade } from '../color.ts';
 
 // Pip spots on a 100x100 face, as columns/rows 0..2.
@@ -14,16 +14,33 @@ const PIPS: Record<number, [number, number][]> = {
 interface Props {
   /** The face to show; null shows a blank face, waiting for a roll. */
   value: number | null;
-  rolling: boolean;
+  /** Tumbling; 'slow' for a dice thrown in slow motion. */
+  rolling: boolean | 'slow';
   color: string;
   canRoll: boolean;
-  onRoll?: () => void;
+  /** `slow`: the dice was held down a moment before it was let go. */
+  onRoll?: (slow: boolean) => void;
+  /** Holding the dice down throws it in slow motion; off, it just rolls. */
+  cinematic?: boolean;
 }
 
-/** A flat, glossy die in the roller's colour with white pips. */
-export function Dice({ value, rolling, color, canRoll, onRoll }: Props) {
+/** How long the dice has to be held down before letting go throws it in slow motion. */
+const HOLD_MS = 350;
+/** A slow throw's faces change slower and slower: from this gap, growing by this much each time. */
+const SLOW_FIRST_MS = 60;
+const SLOW_GROWTH = 1.16;
+
+/**
+ * A flat, glossy die in the roller's colour with white pips. A tap rolls it; held down, it spins in the hand, and
+ * let go it tumbles in slow motion, slowing down to its number.
+ */
+export function Dice({ value, rolling, color, canRoll, onRoll, cinematic = true }: Props) {
   const [face, setFace] = useState<number | null>(value);
   const [landed, setLanded] = useState(0);
+  const [holding, setHolding] = useState(false);
+  const heldSince = useRef<number | null>(null);
+  // A hold's release rolls by itself; the click that follows it must not roll again.
+  const skipClick = useRef(false);
 
   useEffect(() => {
     if (!rolling) {
@@ -31,9 +48,48 @@ export function Dice({ value, rolling, color, canRoll, onRoll }: Props) {
       if (value !== null) setLanded((n) => n + 1);
       return;
     }
-    const t = setInterval(() => setFace((f) => (((f ?? 1) + Math.floor(Math.random() * 5)) % 6) + 1), 70);
+    const next = () => setFace((f) => (((f ?? 1) + Math.floor(Math.random() * 5)) % 6) + 1);
+    if (rolling === 'slow') {
+      let gap = SLOW_FIRST_MS;
+      let t: ReturnType<typeof setTimeout>;
+      const tick = () => {
+        next();
+        gap *= SLOW_GROWTH;
+        t = setTimeout(tick, gap);
+      };
+      t = setTimeout(tick, gap);
+      return () => clearTimeout(t);
+    }
+    const t = setInterval(next, 70);
     return () => clearInterval(t);
   }, [rolling, value]);
+
+  // Held in the hand: the faces turn over slowly.
+  useEffect(() => {
+    if (!holding) return;
+    const t = setInterval(() => setFace((f) => ((f ?? 0) % 6) + 1), 220);
+    return () => clearInterval(t);
+  }, [holding]);
+
+  const press = () => {
+    if (!canRoll || !cinematic) return;
+    heldSince.current = Date.now();
+    const started = heldSince.current;
+    // Only a real hold shows the dice in the hand; a tap just rolls.
+    setTimeout(() => heldSince.current === started && setHolding(true), HOLD_MS);
+  };
+  const release = (roll: boolean) => {
+    const since = heldSince.current;
+    heldSince.current = null;
+    setHolding(false);
+    if (since === null || !canRoll) return;
+    if (Date.now() - since >= HOLD_MS) {
+      // Some touch screens send no click after a long press, so the skip doesn't wait for one.
+      skipClick.current = true;
+      setTimeout(() => (skipClick.current = false), 400);
+      if (roll) onRoll?.(true);
+    }
+  };
 
   const edge = shade(color, -0.35);
   // The face is a plain fill in the roller's colour with a white sheen over it, the same for every colour. Safari
@@ -42,9 +98,20 @@ export function Dice({ value, rolling, color, canRoll, onRoll }: Props) {
   return (
     <button
       type="button"
-      className={`dice flat${rolling ? ' rolling' : ''}${canRoll ? ' can-roll' : ''}`}
+      className={`dice flat${rolling ? ' rolling' : ''}${rolling === 'slow' ? ' slow' : ''}${holding ? ' holding' : ''}${canRoll ? ' can-roll' : ''}`}
       style={{ '--dice-color': color } as CSSProperties}
-      onClick={canRoll ? onRoll : undefined}
+      onClick={() => {
+        if (skipClick.current) {
+          skipClick.current = false;
+          return;
+        }
+        if (canRoll) onRoll?.(false);
+      }}
+      onPointerDown={press}
+      onPointerUp={() => release(true)}
+      onPointerLeave={() => release(true)}
+      onPointerCancel={() => release(false)}
+      onContextMenu={(e) => e.preventDefault()}
       disabled={!canRoll}
       aria-label={canRoll ? 'Roll the dice' : face ? `Dice shows ${face}` : 'Dice'}
     >

@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { COLOR_HEX, PIECES_PER_SEAT, type Seat } from '../../../shared/board.ts';
-import { DRAGON_NAME, type SeatView } from '../../../shared/protocol.ts';
+import { BOT_ICONS, BOT_NAMES, BOT_STYLES, DRAGON_NAME, type SeatView } from '../../../shared/protocol.ts';
 import { DRAGON_PATH, type GameEvent, type GameState } from '../../../shared/rules.ts';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, killStreakBonus } from '../../../shared/scoring.ts';
 import { describe, seatName } from '../events.ts';
@@ -24,8 +24,8 @@ function Marks({ s, vests, userId }: { s: SeatView; vests: number; userId: numbe
   return (
     <>
       {s.kind === 'bot' && (
-        <span className="mark" title={s.left ? 'Left the game — a computer plays' : `Computer · ${s.botLevel}`}>
-          🤖
+        <span className="mark" title={s.left ? 'Left the game — a computer plays' : s.persona ? `${BOT_NAMES[s.persona]}, ${BOT_STYLES[s.persona]} · ${s.botLevel}` : `Computer · ${s.botLevel}`}>
+          {!s.left && s.persona ? BOT_ICONS[s.persona] : '🤖'}
         </span>
       )}
       {s.kind === 'human' && s.controllerId !== undefined && (

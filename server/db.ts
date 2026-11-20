@@ -70,6 +70,17 @@ export function initSchema(db: Db) {
     // before approvals existed are active.
     status: "TEXT NOT NULL DEFAULT 'active'",
   });
+  // Computer players were counted by colour ('bot:<seat>') before they had characters; each colour's bot had one.
+  ['apollo', 'poseidon', 'athena', 'ares'].forEach((persona, seat) => {
+    db.exec(`
+      INSERT INTO npc_stats (id, games_played, wins, total_points, total_captures, total_lost, total_minutes)
+        SELECT 'bot:${persona}', games_played, wins, total_points, total_captures, total_lost, total_minutes FROM npc_stats WHERE id = 'bot:${seat}'
+      ON CONFLICT(id) DO UPDATE SET games_played = games_played + excluded.games_played, wins = wins + excluded.wins,
+        total_points = total_points + excluded.total_points, total_captures = total_captures + excluded.total_captures,
+        total_lost = total_lost + excluded.total_lost, total_minutes = total_minutes + excluded.total_minutes;
+      DELETE FROM npc_stats WHERE id = 'bot:${seat}';
+    `);
+  });
   // A finished game's report for the game history (a GameRecord as JSON), worked out the first time it's asked for.
   addColumns(db, 'games', { summary: 'TEXT' });
   db.exec('CREATE INDEX IF NOT EXISTS games_by_status ON games (status, updated_at)');

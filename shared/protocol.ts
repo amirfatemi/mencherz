@@ -1,4 +1,4 @@
-import type { BotLevel } from './ai.ts';
+import type { BotLevel, BotPersona } from './ai.ts';
 import type { Award } from './awards.ts';
 import type { Seat } from './board.ts';
 import type { ShownReaction } from './reactions.ts';
@@ -11,6 +11,8 @@ export interface SeatView {
   userId?: number;
   name?: string;
   botLevel?: BotLevel;
+  /** A computer player's character, drawn when the seat became a bot: it names the bot and says how it plays. */
+  persona?: BotPersona;
   online?: boolean;
   /** A human who left mid-game; a bot plays for them. */
   left?: boolean;
@@ -136,17 +138,31 @@ export interface AdminUserRow {
   isAdmin: boolean;
 }
 
-/** Computer players' names, one per colour and the same in every game: gods of Greek myth (sun, sea, olive, war). */
-export const BOT_NAMES = ['Apollo', 'Poseidon', 'Athena', 'Ares'] as const;
+/** Computer players' characters: gods of Greek myth, each with its own way of playing (see BotPersona). */
+export const BOT_NAMES: Record<BotPersona, string> = { ares: 'Ares', apollo: 'Apollo', poseidon: 'Poseidon', athena: 'Athena' };
+export const BOT_ICONS: Record<BotPersona, string> = { ares: '⚔️', apollo: '☀️', poseidon: '🔱', athena: '🦉' };
+export const BOT_STYLES: Record<BotPersona, string> = {
+  ares: 'the hunter: goes for knock-outs first',
+  apollo: 'the racer: runs his pieces home',
+  poseidon: 'the bomber: loves bombs, magic boxes and power squares',
+  athena: 'the strategist: weighs it all and keeps her pieces safe',
+};
+/** The character each colour's bot had when bots were named by colour, for games and records from then. */
+export const COLOUR_PERSONA: readonly BotPersona[] = ['apollo', 'poseidon', 'athena', 'ares'];
+
+/** A computer player's name: its character's, or its colour's for one standing in for a player who left. */
+export function botName(s: SeatView | undefined, seat: Seat): string {
+  return s?.persona ? BOT_NAMES[s.persona] : `${['Yellow', 'Blue', 'Green', 'Red'][seat]} bot`;
+}
 /** The dragon's name on the scoreboard and the leaderboard, where it plays as one more player. */
 export const DRAGON_NAME = 'Dragon';
 
 export interface LeaderRow {
   /** A person's username, or a computer player's or the dragon's name (see `npc`). */
   username: string;
-  /** Not a person: a colour's computer player (with its seat), or the dragon. */
+  /** Not a person: a computer player (with its character), or the dragon. */
   npc?: 'bot' | 'dragon';
-  seat?: Seat;
+  persona?: BotPersona;
   points: number;
   gamesPlayed: number;
   wins: number;
@@ -242,7 +258,8 @@ export interface ClientToServer {
   'room:start': (req: { code: string }, ack: Ack<null>) => void;
   /** Seats a registered player at the caller's device, proven by the one-time code from their settings. */
   'room:addLocal': (req: { code: string; seat: Seat; username: string; pairCode: string }, ack: Ack<null>) => void;
-  'game:roll': (req: { code: string }, ack: Ack<null>) => void;
+  /** `slow`: the dice was held down, so it's thrown in slow motion (in cinematic games). */
+  'game:roll': (req: { code: string; slow?: boolean }, ack: Ack<null>) => void;
   'game:move': (req: { code: string; piece: number }, ack: Ack<null>) => void;
   /** After three sixes: drop a bomb on this absolute track square. */
   'game:bomb': (req: { code: string; square: number }, ack: Ack<null>) => void;

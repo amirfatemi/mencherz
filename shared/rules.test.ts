@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { botAction, chooseBomb, chooseBox, chooseMove, type BotLevel } from './ai.ts';
+import { botAction, chooseBomb, chooseBox, chooseMove, chooseTeam, type BotLevel } from './ai.ts';
 import {
   ABSOLUTE,
   FLIGHT_CROSSES,
@@ -28,7 +28,7 @@ import {
 } from './board.ts';
 import { MEANNESS, rollWeighted, rollWeights } from './dice.ts';
 import { REACTIONS, REACTION_BY_ID, reactionsFor } from './reactions.ts';
-import { BOX_REVEAL_MS, CAPTURE_MS, COUNTDOWN_MS, DRAGON_PAUSE_MS, PASS_HOLD_MS, ROLL_MS, STEP_MS, blastAt, boxOpenAt, eventDuration } from './timing.ts';
+import { BOX_REVEAL_MS, CAPTURE_MS, COUNTDOWN_MS, DRAGON_PAUSE_MS, PASS_HOLD_MS, ROLL_MS, SLOW_ROLL_MS, STEP_MS, blastAt, boxOpenAt, eventDuration } from './timing.ts';
 import { EARLY_UNTIL, KING, LATE_FROM, POINTS, REVENGE, captureValue, killStreakBonus } from './scoring.ts';
 import {
   DEFAULT_RULES,
@@ -812,6 +812,14 @@ describe('magic boxes', () => {
   });
 });
 
+describe('slow-motion dice', () => {
+  test('a dice thrown in slow motion takes longer to land, and the game waits for it', () => {
+    const r = applyRoll(at(game([0, 1]), 0, [10]), 3);
+    assert.equal(eventDuration(r.event, false), ROLL_MS);
+    assert.equal(eventDuration({ ...r.event, slow: true }, false), SLOW_ROLL_MS);
+  });
+});
+
 describe('bot priorities', () => {
   test('knocking a piece out comes before bringing one home', () => {
     for (const level of ['normal', 'hard'] as const) {
@@ -826,6 +834,25 @@ describe('bot priorities', () => {
     const g = at(game([0, 2]), 0, [GOAL - 3, 9]);
     Object.assign(g, { phase: 'move', dice: 3, movable: [0, 1] });
     assert.equal(chooseMove(g, 'hard', () => 0), 0);
+  });
+
+  test('each character plays its own way: Ares knocks out, Apollo goes home, and each picks heroes it likes', () => {
+    const g = at(game([0, 2]), 0, [GOAL - 3, 9]);
+    at(g, 2, [sameSquare(0, 12, 2)]);
+    Object.assign(g, { phase: 'move', dice: 3, movable: [0, 1] });
+    assert.equal(chooseMove(g, 'normal', () => 0, 'ares'), 1, 'the hunter knocks out');
+    assert.equal(chooseMove(g, 'normal', () => 0, 'apollo'), 0, 'the racer goes home');
+    assert.equal(chooseMove(g, 'normal', () => 0), 1, 'a plain bot hunts first, as bots always did');
+    // Two of each character's favourite heroes, and one more.
+    for (const [persona, liked] of [
+      ['ares', ['archer', 'death', 'thief']],
+      ['poseidon', ['engineer', 'thief', 'frost']],
+    ] as const) {
+      const team = chooseTeam(() => 0.3, persona);
+      assert.equal(new Set(team).size, 3);
+      assert.equal(team.filter((k) => (liked as readonly string[]).includes(k)).length >= 2, true, persona);
+    }
+    assert.equal(botAction({ ...g, phase: 'hero' } as GameState, 'normal', () => 0.3, 'poseidon')?.type, 'hero');
   });
 });
 

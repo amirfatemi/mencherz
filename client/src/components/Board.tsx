@@ -34,7 +34,7 @@ import {
   type Seat,
   type Shape,
 } from '../../../shared/board.ts';
-import { BOT_NAMES, type SeatView } from '../../../shared/protocol.ts';
+import { BOT_ICONS, botName, type SeatView } from '../../../shared/protocol.ts';
 import { REACTION_BY_ID } from '../../../shared/reactions.ts';
 import { POINTS } from '../../../shared/scoring.ts';
 import {
@@ -735,7 +735,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
           const seat = seats[s];
           const rank = game.standings.indexOf(s);
           const medal = game.phase === 'over' && rank >= 0 ? `${['🥇', '🥈', '🥉', '4th'][rank]} ` : '';
-          const name = seat?.name ?? (seat?.kind === 'bot' ? BOT_NAMES[s] : '');
+          const name = seat?.name ?? (seat?.kind === 'bot' ? botName(seat, s) : '');
           // The leader's hangar says MOST WANTED in its border, on the side facing the middle, opposite the name.
           const wanted = game.rules.bounty && game.bounty?.seat === s && game.phase !== 'over' ? game.bounty.value : 0;
           const centre = toPx(HANGAR_CENTERS[s], rot);
@@ -745,7 +745,7 @@ export function Board({ game, seats, anim, movable, pieceStyle, popups, reaction
               <text x={x} y={y} className="hangar-label" textAnchor="middle" dominantBaseline="central">
                 {medal}
                 {name.length > 13 ? `${name.slice(0, 12)}…` : name}
-                {seat?.kind === 'bot' && !seat.left ? ' 🤖' : ''}
+                {seat?.kind === 'bot' && !seat.left ? ` ${seat.persona ? BOT_ICONS[seat.persona] : '🤖'}` : ''}
               </text>
               {wanted > 0 && <WantedLabel x={x} y={opposite} value={wanted} />}
             </g>

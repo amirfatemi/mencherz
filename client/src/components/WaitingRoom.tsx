@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type FormEvent } from 'react';
 import type { BotLevel } from '../../../shared/ai.ts';
 import { COLOR_HEX, COLOR_NAMES, type Seat } from '../../../shared/board.ts';
-import { BOT_NAMES, peopleIn, type PublicUser, type RoomSettings, type RoomView, type SeatView } from '../../../shared/protocol.ts';
+import { BOT_ICONS, BOT_NAMES, BOT_STYLES, botName, peopleIn, type PublicUser, type RoomSettings, type RoomView, type SeatView } from '../../../shared/protocol.ts';
 import { RANKED_MIN_PEOPLE } from '../../../shared/scoring.ts';
 import { navigate } from '../router.ts';
 import { call } from '../socket.ts';
@@ -100,10 +100,12 @@ function SeatCard({ view, seat, s, user, isHost, mySeat, onError, onAddLocal }: 
   } else if (s.kind === 'bot') {
     body = (
       <div className="seat-who">
-        <span className="avatar bot" style={{ background: COLOR_HEX[seat] }}>
-          🤖
+        <span className="avatar bot" style={{ background: COLOR_HEX[seat] }} title={s.persona ? `${BOT_NAMES[s.persona]}, ${BOT_STYLES[s.persona]}` : 'Computer player'}>
+          {s.persona ? BOT_ICONS[s.persona] : '🤖'}
         </span>
-        <span className="seat-name" title="Computer player">{BOT_NAMES[seat]}</span>
+        <span className="seat-name" title={s.persona ? `${BOT_NAMES[s.persona]}, ${BOT_STYLES[s.persona]}` : 'Computer player'}>
+          {botName(s, seat)}
+        </span>
         {isHost ? (
           <select value={s.botLevel} onChange={(e) => act({ action: 'bot', botLevel: e.target.value as BotLevel })} aria-label="Computer level">
             <option value="easy">easy</option>

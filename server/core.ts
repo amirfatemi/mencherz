@@ -1,6 +1,7 @@
 import type { AccountStatus, ClientToServer, ServerToClient } from '../shared/protocol.ts';
 import { FORBIDDEN, UNAUTHORIZED, type ServerFrame } from '../shared/wire.ts';
 import { createAuth, unref } from './auth.ts';
+import { backUp, fetchBackup, importData, listBackups, type BackupConfig } from './backup.ts';
 import { initSchema, type Db } from './db.ts';
 import { createHistory } from './history.ts';
 import { Hub, type Conn } from './hub.ts';
@@ -19,6 +20,14 @@ export interface CoreConfig {
   signInTries?: number;
   /** The deployed version, reported by /api/health. */
   version?: string;
+  /** Where and how backups go (GitHub, encrypted); without it there are none. */
+  backup?: BackupConfig;
+  /** Runs a function as one database transaction (the Durable Object's own way, or BEGIN/COMMIT on Node). */
+  transaction?: <T>(fn: () => T) => T;
+  /** Starts the server over on what's in the database, after a backup was restored into it. */
+  restart?: () => void;
+  /** For tests: how backups reach GitHub. */
+  fetcher?: typeof fetch;
 }
 
 /** What the runtime knows about a WebSocket upgrade request. */
@@ -54,6 +63,36 @@ export function createGameServer(config: CoreConfig) {
     }
   }
 
+  /**
+   * The admin's backups: GET /admin/backups lists them, POST /admin/backup takes one now, and POST /admin/restore
+   * { name } puts one back (after taking a backup of what's there), then starts over on it.
+   */
+  async function backups(request: Request, path: string): Promise<Response> {
+    const user = auth.userFromCookieHeader(request.headers.get('cookie'));
+    if (!user) return auth.json({ error: 'Not signed in' }, 401);
+    if (!user.isAdmin) return auth.json({ error: 'Admins only' }, 403);
+    const cfg = config.backup;
+    if (!cfg) return auth.json({ error: "Backups aren't set up: the server needs GITHUB_TOKEN and BACKUP_KEY" }, 400);
+    try {
+      if (path === '/admin/backups' && request.method === 'GET') return auth.json(await listBackups(cfg, config.fetcher));
+      if (path === '/admin/backup' && request.method === 'POST') return auth.json(await backUp(db, cfg, config.fetcher, 'manual'));
+      if (path === '/admin/restore' && request.method === 'POST') {
+        const { name } = (await request.json().catch(() => ({}))) as { name?: unknown };
+        if (typeof name !== 'string' || !name) return auth.json({ error: 'Which backup?' }, 400);
+        const data = await fetchBackup(cfg, name, config.fetcher);
+        const before = await backUp(db, cfg, config.fetcher, 'before-restore');
+        importData(db, data, config.transaction);
+        console.log(`Restored backup ${name} (taken ${new Date(data.at).toISOString()}); what was there is ${before.name}`);
+        setTimeout(() => config.restart?.(), 200);
+        return auth.json({ restored: name, at: data.at, before: before.name });
+      }
+      return auth.json({ error: 'Not found' }, 404);
+    } catch (err) {
+      console.error('Backup:', err);
+      return auth.json({ error: (err as Error).message }, 502);
+    }
+  }
+
   return {
     async api(request: Request, ip: string): Promise<Response> {
       // Node mounts this under /api and passes the rest of the path; the Worker passes all of it.
@@ -64,11 +103,17 @@ export function createGameServer(config: CoreConfig) {
           if (!auth.userFromCookieHeader(request.headers.get('cookie'))) return auth.json({ error: 'Not signed in' }, 401);
           return auth.json(history.handle(request));
         }
+        if (path.startsWith('/admin/backup') || path === '/admin/restore') return await backups(request, path);
         return (await auth.handle(request, ip)) ?? auth.json({ error: 'Not found' }, 404);
       } catch (err) {
         console.error(err);
         return auth.json({ error: 'Something went wrong' }, 500);
       }
+    },
+
+    /** Takes a backup now (the daily one, from the Worker's schedule); null when backups aren't set up. */
+    async backUp(label = 'daily') {
+      return config.backup ? backUp(db, config.backup, config.fetcher, label) : null;
     },
 
     /** Takes a WebSocket at /ws. Returns the message/close callbacks, or null if it was turned away (and closed). */

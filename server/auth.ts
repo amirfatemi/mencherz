@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto';
-import type { Seat } from '../shared/board.ts';
+import type { BotPersona } from '../shared/ai.ts';
 import {
   BOT_NAMES,
   DRAGON_NAME,
@@ -75,14 +75,14 @@ interface UserRow {
 }
 
 // Each order breaks ties by points, then wins, then fewer games.
-/** A leaderboard id for a computer player ('bot:<seat>') or the dragon ('dragon'): what kind it is, and its seat. */
-function npcOf(id: string | null): Pick<LeaderRow, 'npc' | 'seat'> {
+/** A leaderboard id for a computer player ('bot:<character>') or the dragon ('dragon'): what kind it is. */
+function npcOf(id: string | null): Pick<LeaderRow, 'npc' | 'persona'> {
   if (!id) return {};
   if (id === 'dragon') return { npc: 'dragon' };
-  return { npc: 'bot', seat: Number(id.slice(4)) as Seat };
+  return { npc: 'bot', persona: id.slice(4) as BotPersona };
 }
 function npcName(id: string): string {
-  return id === 'dragon' ? DRAGON_NAME : (BOT_NAMES[Number(id.slice(4))] ?? id);
+  return id === 'dragon' ? DRAGON_NAME : (BOT_NAMES[id.slice(4) as BotPersona] ?? id);
 }
 
 const LEADER_ORDER: Record<LeaderSort, string> = {
@@ -442,7 +442,7 @@ export function createAuth(
       if (status === 'pending') throw new InputError(`${who} is waiting for an admin to approve it. Until then it can't create or join games.`);
       if (status === 'disabled') throw new InputError(`${who} has been disabled by an admin, so it can't create or join games.`);
     },
-    /** A computer player's ('bot:<seat>') or the dragon's ('dragon') game, for the leaderboard. */
+    /** A computer player's ('bot:<character>') or the dragon's ('dragon') game, for the leaderboard. */
     recordNpc(id: string, won: boolean, stats: { points: number; captures: number; lost: number; minutes: number }) {
       q.recordNpc.run(id, won ? 1 : 0, Math.max(0, Math.round(stats.points)), stats.captures, stats.lost, stats.minutes);
     },

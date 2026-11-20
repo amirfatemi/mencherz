@@ -152,10 +152,10 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
     setError(null);
     req.catch((e: Error) => setError(e.message)).finally(() => setPending(false));
   };
-  const act = (event: 'game:roll' | 'game:move' | 'game:vest' | 'game:bomb' | 'game:box' | 'game:place', n?: number) =>
+  const act = (event: 'game:roll' | 'game:move' | 'game:vest' | 'game:bomb' | 'game:box' | 'game:place', n?: number, slow = false) =>
     send(
       event === 'game:roll'
-        ? call(event, { code: view.code })
+        ? call(event, { code: view.code, ...(slow ? { slow } : {}) })
         : event === 'game:move' || event === 'game:vest'
           ? call(event, { code: view.code, piece: n! })
           : call(event, { code: view.code, square: n! }),
@@ -339,7 +339,14 @@ export function GameView({ stream, user }: { stream: Stream; user: PublicUser })
                 label={game.placing === 'safe' ? 'Safe square' : `${game.placing} bridge`}
               />
             ) : (
-              <Dice value={stream.rolling ? null : diceValue} rolling={stream.rolling} color={COLOR_HEX[diceSeat]} canRoll={canRoll} onRoll={() => act('game:roll')} />
+              <Dice
+                value={stream.rolling ? null : diceValue}
+                rolling={stream.rolling}
+                color={COLOR_HEX[diceSeat]}
+                canRoll={canRoll}
+                cinematic={view.settings.cinematic !== false}
+                onRoll={(slow) => act('game:roll', undefined, slow)}
+              />
             )}
             <div className="dice-help">
               {canRoll ? null : pickingHero ? (

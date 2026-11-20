@@ -11,6 +11,8 @@ export const STEP_MS: Record<StepKind, number> = {
   bridge: 950,
 };
 export const ROLL_MS = 750;
+/** A dice held down and let go tumbles in slow motion this long instead, slowing to its number. */
+export const SLOW_ROLL_MS = 2600;
 export const CAPTURE_MS = 700;
 /** A bomb or a magic box dropping onto its square. */
 export const BOMB_MS = 700;
@@ -32,7 +34,7 @@ export const COUNTDOWN_MS = 1800;
 export function eventDuration(event: GameEvent | null | undefined, holdPasses = true): number {
   if (!event) return 0;
   if (event.type === 'roll') {
-    return ROLL_MS + dragonMs(event) + (event.penalized.length ? CAPTURE_MS : 0) + (event.outcome === 'pass' && holdPasses ? PASS_HOLD_MS : 0);
+    return (event.slow ? SLOW_ROLL_MS : ROLL_MS) + dragonMs(event) + (event.penalized.length ? CAPTURE_MS : 0) + (event.outcome === 'pass' && holdPasses ? PASS_HOLD_MS : 0);
   }
   // The engineer's last super bomb drops, then it counts down and goes off.
   if (event.type === 'bomb' && event.ends) return BOMB_MS + COUNTDOWN_MS + CAPTURE_MS;

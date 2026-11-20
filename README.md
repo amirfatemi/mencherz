@@ -60,16 +60,16 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
   - **Admins** (named in `ADMINS`) get an Admin page. It lists every player, new ones waiting for approval first, and can approve, disable or re-enable an account, and set a new password for anyone, which signs that player out everywhere. A disabled account can't create or join games either. The lobby tells an admin when new players are waiting. Admins themselves can't be disabled.
   - **Change password:** in Settings, with the current password. Other devices are signed out.
 - **Lobby:**
-  - Create an online game, or play together on one device. Any seat can be a computer player.
+  - Create an online game, or play together on one device. Any seat can be a computer player. Each computer player of a game draws a different character, whatever its colour, which names it and sets how it plays (its level sets how well): **Ares ⚔️** the hunter goes for knock-outs and ends his moves just behind other pieces; **Apollo ☀️** the racer runs his pieces home first and steers clear of magic boxes; **Poseidon 🔱** the bomber loves power squares, magic boxes, super bombs and hell bridges, and picks the bomb engineer; **Athena 🦉** the strategist weighs it all and keeps her pieces out of reach, at every level. Each also picks heroes it likes.
   - Join by code or invite link.
   - A list of open public games, which can be joined, or watched once they're in progress.
   - "Your games", which lets you resume any game and flags the ones where it's your turn.
-  - A leaderboard of every player's total points, average points per game, games and wins. The computer players count there too, one name per colour (Apollo, Poseidon, Athena and Ares), and so does the dragon.
+  - A leaderboard of every player's total points, average points per game, games and wins. The computer players count there too, by character (Ares, Apollo, Poseidon, Athena), and so does the dragon.
   - **Game history:** every finished game that counted (practice games against computers alone are left out), newest first, 5 to a page, filtered by winner and by length (under 30 minutes, 30–60, over 60). Tapping one shows when it started and ended, how long it took, who played (bots too, and who left), the final table, the highlights and the medals won: its whole end-of-game report. Each report is worked out once, the first time it's asked for, and kept with the game (`server/history.ts`).
 - **Waiting room:** four seats (Red, Blue, Green, Yellow). The host sets each seat to *open*, *computer (easy / normal / hard)* or *nobody*, and can remove players, change settings and start the game. Players can switch to any free seat.
 - **Game:**
   - The server decides every roll and move. Everyone sees the board the same way round: yellow top-left, blue top-right, green bottom-right, red bottom-left.
-  - The dice takes the colour of whoever is rolling.
+  - The dice takes the colour of whoever is rolling. A tap rolls it. Held down, it turns in the hand, glowing; let go, it tumbles in slow motion for everyone and slows down to its number, with a thud (in games with cinematic moments on).
   - Animations for rolls, steps, jumps, flights and captures.
   - Hovering a plane previews its move and which planes it would knock out.
   - Players always make their own move, even when only one is possible.
@@ -86,6 +86,7 @@ npm run deploy       # builds, then deploys to Cloudflare (needs `wrangler login
 - **Turn timer:** off, or 10–90 s. When time runs out, the move is made for the player. The host can **pause** the game, which stops the clock and all turns, bots included, and resume it later.
 - **Absent players:** a player who closes the tab has their turns played for them, so the others can carry on. A game where no human is present pauses.
 - **Auto-save:** every change is written to SQLite, and games survive a server restart. Leaving mid-game hands your seat to a computer player.
+- **Backups:** every day the live server backs up all accounts, games and records, encrypted, to a draft release of this repository, keeping two weeks; an admin can back up now or restore one from the Admin page (see DEPLOY.md).
 - **Game clock:** the scoreboard shows the time played (pauses left out), and the results the whole game's length.
 - **End-of-game report:** with the results come the game's highlights (player of the match, top hunter, biggest hit, longest kill streak, demolition expert, frequent flyer, six machine, unluckiest) and the medals each person won.
 - **Medals and titles** (`shared/awards.ts`): in games that count, players win medals for good (Rocket, Hunter, Triple kill, Sniper, Demolisher, Untouchable, Dragon slayer, Phoenix), shown on the leaderboard and the Settings page. A title comes with total points: Rookie, Pilot (150), Captain (500), Ace (1200), Legend (2500).
@@ -215,7 +216,7 @@ The weights live in `shared/dice.ts`.
 shared/     game logic, used by both server and browser
   board.ts    board geometry and position numbering
   rules.ts    pure rules engine: createGame / planMove / applyRoll / applyMove
-  ai.ts       computer players (easy = mostly random, normal = greedy, hard = greedy + danger avoidance), bomb and box placement.
+  ai.ts       computer players (easy = mostly random, normal = greedy, hard = greedy + danger avoidance) and their characters, bomb and box placement.
               Bots knock a piece out whenever they can; failing that, they bring a piece home if they can.
   dice.ts     dice weights per difficulty
   reactions.ts reaction GIFs and when they show
@@ -228,6 +229,7 @@ server/     the game server, independent of where it runs
   hub.ts      rooms, broadcasts and acks over plain WebSockets
   auth.ts     sign-up/in, sessions, login rate limit, one-time codes, account approval, leaderboard
   history.ts  the game history: each finished game's end-of-game report
+  backup.ts   daily encrypted backups to a draft GitHub release, and restoring one (backup-cli.ts opens a file)
   rooms.ts    lobby, seats, turn flow, bots, timers, persistence
   db.ts       SQLite schema, behind an interface both runtimes implement
   app.ts, index.ts, sqlite.ts   the Node runtime: Express for the client, `ws`, node:sqlite

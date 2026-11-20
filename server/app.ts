@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { WS_PATH } from '../shared/wire.ts';
+import type { BackupConfig } from './backup.ts';
 import { createGameServer } from './core.ts';
 import { openSqlite } from './sqlite.ts';
 
@@ -27,6 +28,12 @@ export interface ServerConfig {
   admins?: string[];
   /** Sign-in and sign-up tries allowed per address every 10 minutes. Tests, all from one address, use more. */
   signInTries?: number;
+  /** Backups to GitHub (server/backup.ts), if set up. */
+  backup?: BackupConfig;
+  /** Exit after a backup is restored, for a process manager to start the server again on it. */
+  restartOnRestore?: boolean;
+  /** For tests: how backups reach GitHub. */
+  fetcher?: typeof fetch;
 }
 
 /** Turns a Node request into a fetch Request for the shared API handler. */
@@ -54,6 +61,21 @@ export async function startServer(config: ServerConfig) {
     timeScale: config.timeScale,
     admins: config.admins,
     signInTries: config.signInTries,
+    backup: config.backup,
+    transaction: (fn) => {
+      db.exec('BEGIN');
+      try {
+        const out = fn();
+        db.exec('COMMIT');
+        return out;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+    // On Node a restored backup is read in on the next start; a process manager (Docker) starts it again.
+    restart: config.restartOnRestore ? () => process.exit(0) : undefined,
+    fetcher: config.fetcher,
   });
 
   const app = express();
